@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "openguessr-429713",
+  "private_key_id": "beb2e39c60d56d19d1a83120434de7e5345f3abc",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDjo9poyAnqV+Ui\nphOT4N8B2wbdICtxh4tv5Ytt19bVAC9382dvcykay5FaeVTCq77rve10feBnYzYh\ns8gTGOldCUh7p4JhHSPumyJPW67Zt+SYCoEMQFSbX/V47DbKJCShWM3/Kz/ZhLHd\nj9D4EVFRFoGsuBOM5kdkzqeE7d0ZpIidYJeVLirZDjF4TT2T2crzE2ylYMIsh084\nKgJN4oY7x3l2jXRv0DJktsxxJeu9vjcRGp+9avDGkw2cRzyVr58paZFM3m3HN9YK\nbv5+KZzraED9XOZfJzRdrWnvwg9VkmShkEW4TQk+D2fOvZfR1VeygnBJ6U0o5g3p\nuBgFoITvAgMBAAECggEAEW833RU6XS5aKECGo1QdAFa2vId9jEu7TC33yHPiykbM\nsT0ny4tgYeL8FkJ7UWWMpnV8vZKedeH4AAt1jrDhE/UQDhhoOJPeGqTbCITsa/7/\njP17oLqUlZ8l0nBqSdUMJnysr5cFDt3GLu1C2Jz1mLub4Y8/lWeq9CI3sPX0HHCD\n3VuGsJHXAZDQ001cUGqYj9S494beJOP4wJw/mBKP4HoQ5HL97zQM63yDXutw3C0g\ns3Wt95RPJZCoF7Q9c/0UKpx2Mu3jKpGLATIHAkD9MB44L/DhZu1pgLpmudlgNiDQ\ncp7iHCiB6A5ziCWI3BHlm31mjR+OY1pm1sXuCbZLwQKBgQD6cdVJuEyKdiOM6VPm\nZ2hXvLdFPwFSUIFIcxNDwHg7F+2Tg9nD+kAH+rh7l77Ua4Z2CEvRsovBY6mG1J/+\n2niDbWbKN3CuO5tiT8on+xYfYb+oRVagE3IXH7jveieRpPgels0S5gl1IBFJ/oT5\n0Cw2z3AHdYFT0fFO01Wx97WGsQKBgQDosIXCapL3xHocV02vSKb8sa/thBlO0m3a\nMqA0FJlArre5ezmryoAk/1MSnul/3ManMnDRpoSrS6o7g/BJPwwfQJ68pGbxZx/+\nNwm+uvmtbIPkmlIHvfrunkmCxu5EumB5niBtqNF3DQHpYtEZJbtnZ3Uuy7rt78nC\nHybR7TDtnwKBgFUYcJxH3tn9Ij8y2Ksk37NQEAWbTtulNwhi8VzH/RI3IyZIWqnY\nUgFkE2MLQG/0yQ856mkp/YqMToHdpS93FBO0DIURKVxKLJXO/qVvDylCkViflrt1\nYAKzaKcWHnPCVfwuySduui/t4XH+5Tfsn9lPyoT+TB8q6o8aB7gcrrVBAoGBAN3+\n045ZWR/TLmDtler+GHqLF3o2BmMh9bYviJJHeLKyPgxSmQHh74HcqifgvorDWi9X\nuzT5didqx92CEfP/l5QVdZwqCSCUr3w8jCqQffZLykWGSW6jfMy87Qs8uUOOwM4m\n429bmYPIQCOmqDEiw3lyxeTAb/XjSIzQZZvwfDanAoGAEKm71KxA6Txpvv7A3ZL2\naF+ytlMvFRN4lfdNkTLO6O6gEgxN81X+CoiXgdzxpV7wiCyhIqrc59GbDC1UZA+E\nxtPdtSx+1z5uOl9n6AhbXyzcJisDn+CtPM2OyFgB8ds0TxH59mFgrID3wNWcEANL\n8MgoMZIXn54PqgUDHgzso2o=\n-----END PRIVATE KEY-----\n",
+  "client_email": "maps-api-key-server@openguessr-429713.iam.gserviceaccount.com",
+  "client_id": "114436729011627655574",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/maps-api-key-server%40openguessr-429713.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
