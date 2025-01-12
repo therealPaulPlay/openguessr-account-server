@@ -36,7 +36,7 @@ function checkSupporterRateLimit(req, res) {
 // Maplimit endpoint
 mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
     const db = getDB();
-    
+
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Expires', '0');
 
@@ -97,14 +97,12 @@ mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
 
         // Capture map load for statistics
         try {
-            const mapLoadTime = new Date(); // Current timestamp
-            const date = mapLoadTime.toISOString().split('T')[0]; // Date part for easy querying
             const ipAddress = req.clientIp || 'anonymous'; // Use client IP address or 'anonymous' if not available
 
             // Insert the map load record into the database
-            const insertQuery = 'INSERT INTO cost_statistics (ip_address, map_load_time, date) VALUES (?, ?, ?)';
+            const insertQuery = 'INSERT INTO cost_statistics (ip_address) VALUES (?)';
             await new Promise((resolve, reject) => {
-                db.query(insertQuery, [ipAddress, mapLoadTime, date], (err, results) => {
+                db.query(insertQuery, [ipAddress], (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });

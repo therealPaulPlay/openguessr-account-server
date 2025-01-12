@@ -57,25 +57,44 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
     }
 });
 
+async function fetchReportData(table = "blacklist", type, referenceId) {
+    const response = await axios.put("https://api.openreport.dev/report/get-entry", {
+        appId: reportAppId,
+        table: table,
+        type,
+        secret: reportSecret,
+        referenceId
+    });
+
+    if (response.data && response.data.entry) {
+        return { blacklisted: true, entry: response.data.entry };
+    } else {
+        return { blacklisted: false };
+    }
+}
+
 // Get user blacklist status
 accountRouter.get('/check-blacklist/:id', standardLimiter, async (req, res) => {
     try {
         const referenceId = `user-${req.params?.id}`; // Prepend "user-" to the provided id
         const type = 'user';
+        const jsonResponse = await fetchReportData("blacklist", type, referenceId);
 
-        const response = await axios.put("https://api.openreport.dev/report/get-entry", {
-            appId: reportAppId,
-            table: "blacklist",
-            type: type,
-            secret: reportSecret,
-            referenceId: referenceId
-        });
+        res.json(jsonResponse)
+    } catch (error) {
+        console.error('Error fetching blacklist entry:', error.message);
+        res.status(500).json({ error: 'An error occurred while checking the blacklist.' });
+    }
+});
 
-        if (response.data && response.data.entry) {
-            res.json({ blacklisted: true, entry: response.data.entry });
-        } else {
-            res.json({ blacklisted: false });
-        }
+// Get user warnlist status
+accountRouter.get('/check-warnlist/:id', standardLimiter, async (req, res) => {
+    try {
+        const referenceId = `user-${req.params?.id}`; // Prepend "user-" to the provided id
+        const type = 'user';
+        const jsonResponse = await fetchReportData("warnlist", type, referenceId);
+
+        res.json(jsonResponse)
     } catch (error) {
         console.error('Error fetching blacklist entry:', error.message);
         res.status(500).json({ error: 'An error occurred while checking the blacklist.' });
