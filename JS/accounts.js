@@ -67,9 +67,9 @@ async function fetchReportData(table = "blacklist", type, referenceId) {
     });
 
     if (response.data && response.data.entry) {
-        return { blacklisted: true, entry: response.data.entry };
+        return { listed: true, entry: response.data.entry };
     } else {
-        return { blacklisted: false };
+        return { listed: false };
     }
 }
 
