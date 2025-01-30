@@ -22,6 +22,7 @@ module.exports = {
         database: process.env.DB_DATABASE,
     },
     jwtSecret: process.env.JWT_SECRET,
+    jwtResetSecret: process.env.JWT_RESET_SECRET,
     emailConfig: {
         host: process.env.EMAIL_HOST,
         port: 465,

@@ -5,7 +5,7 @@ const { standardLimiter, registerLimiter, loginLimiter } = require("./rateLimite
 const { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const axios = require('axios');
-const SECRET_KEY = require("./config.js").jwtSecret;
+const RESET_KEY = require("./config.js").jwtResetSecret;
 const mailTransporter = require("./mailer.js");
 const validateCaptcha = require('./captchaMiddleware');
 const { reportSecret, reportAppId, emailConfig } = require('./config.js');
@@ -488,7 +488,7 @@ accountRouter.post('/reset-password-request', loginLimiter, async (req, res) => 
         }
 
         // Create a password reset token
-        const resetToken = jwt.sign({ email: email, id: user.id }, SECRET_KEY, { expiresIn: '1h' });
+        const resetToken = jwt.sign({ email: email, id: user.id }, RESET_KEY, { expiresIn: '1h' });
 
         // Send email with the reset token
         const resetUrl = `https://openguessr.com/signup?token=${resetToken}`;
@@ -523,7 +523,7 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
 
     try {
         // Verify the reset token + get user Id from the token so that the correct account's password can be changed
-        const decoded = jwt.verify(token, SECRET_KEY);
+        const decoded = jwt.verify(token, RESET_KEY);
 
         // Hash the new password
         const hashedPassword = await getEncodedPassword(newPassword);
