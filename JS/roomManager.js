@@ -115,6 +115,16 @@ roomRouter.delete('/delete/:code', standardLimiter, authenticateTokenWithId, asy
     }
 });
 
+// Get current timestamp (for timer resume etc.)
+roomRouter.get('/time/timestamp', standardLimiter, async (req, res) => {
+    try {
+        res.json({ timestamp: Date.now() });
+    } catch (error) {
+        console.error('Error getting timestamp:', error);
+        res.status(500).json({ error: 'Failed to get timestamp.' });
+    }
+});
+
 // Periodic cleanup function to delete room codes older than 10 seconds
 const CLEANUP_INTERVAL = 10000; // 10 seconds
 
