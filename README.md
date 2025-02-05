@@ -1,4 +1,10 @@
 # newAccountServer
-This new account server should replace the previous OpenGuessr User API Backend.
+This is the new main OpenGuessr server.
 
-It handles account creation (login and registration), updating user data (username, experience..) and the Duels matchmaking. 
+## What is this server used for?
+- Accounts
+- Experience & Exp. leaderboard
+- Matchmaking
+- Profiles
+- Payments
+- ...
