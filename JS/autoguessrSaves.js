@@ -53,7 +53,7 @@ autoguessrRouter.post('/save', standardLimiter, authenticateTokenWithId, async (
 });
 
 // Retrieve the saved JSON for a given user ID (not save ID!)
-autoguessrRouter.get('/get-save/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
+autoguessrRouter.get('/get-save/:id', standardLimiter, async (req, res) => {
     const db = getDB();
     const { id } = req.params;
 
