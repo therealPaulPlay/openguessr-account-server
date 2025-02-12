@@ -9,6 +9,7 @@ module.exports = {
             /\.openguessr\.com$/,
             "https://openguessr-86h.pages.dev",
             /\.openguessr-86h\.pages\.dev\/?$/,
+            "https://autoguessr.com",
             "https://og-venatus-test.netlify.app"
         ],
         allowedHeaders: ['Origin', 'Content-Type', 'Authorization', 'Access-Control-Allow-Origin', 'Access-Control-Allow-Credentials', 'Accept', 'cf-turnstile-response'],
