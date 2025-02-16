@@ -4,8 +4,8 @@ const { standardLimiter } = require("./rateLimiters.js");
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 
-// Post endpoint: /accounts/rooms/host/:code
-roomRouter.post('/host/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+// Post endpoint: /accounts/rooms/host-duel/:code
+roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
     const { id: userId } = req.body;
@@ -53,8 +53,8 @@ roomRouter.post('/host/:code', standardLimiter, authenticateTokenWithId, async (
     }
 });
 
-// Get endpoint: /accounts/rooms/:index
-roomRouter.get('/:index', standardLimiter, async (req, res) => {
+// Get endpoint: /accounts/rooms/join-duel/:index
+roomRouter.get('/join-duel/:index', standardLimiter, async (req, res) => {
     const db = getDB();
     const index = parseInt(req.params.index, 10);
 
@@ -84,8 +84,8 @@ roomRouter.get('/:index', standardLimiter, async (req, res) => {
     }
 });
 
-// Delete endpoint: /accounts/rooms/delete/:code
-roomRouter.delete('/delete/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+// Delete endpoint: /accounts/rooms/delete-duel/:code
+roomRouter.delete('/delete-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
     const { id: userId } = req.body;
