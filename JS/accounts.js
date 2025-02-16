@@ -465,7 +465,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
 // Password resets via email -----------------------------------------------------------------------------
 
 // request password reset email endpoint
-accountRouter.post('/reset-password-request', loginLimiter, async (req, res) => {
+accountRouter.post('/reset-password-request', registerLimiter, async (req, res) => {
     const db = getDB();
     const { email } = req.body;
 

@@ -12,7 +12,7 @@ const registerLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 24 hours
     keyGenerator: (req) => req.clientIp, // use correct ip and not the one of the proxy. This uses request-ip, a package that checks various aspects of the request to get the correct ip address.
     max: 8, // limit each IP to 8 requests per windowMs
-    message: { error: 'Too many accounts created from this IP, please try again after 24 hours.' }
+    message: { error: 'Too many accounts created / passwords reset from this IP, please try again after 24 hours.' }
 });
 
 const loginLimiter = rateLimit({

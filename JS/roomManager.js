@@ -115,6 +115,7 @@ roomRouter.delete('/delete/:code', standardLimiter, authenticateTokenWithId, asy
     }
 });
 
+// Time ------------------------------------------------------------------------------------------------------------------------------
 // Get current timestamp (for timer resume etc.)
 roomRouter.get('/time/timestamp', standardLimiter, async (req, res) => {
     try {
@@ -125,6 +126,99 @@ roomRouter.get('/time/timestamp', standardLimiter, async (req, res) => {
     }
 });
 
+// Open Rooms ------------------------------------------------------------------------------------------------------------------------
+// Create an open room
+roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const db = getDB();
+    const { code } = req.params;
+    const { id, playerCount, map } = req.body;
+
+    if (!code || !id || !playerCount || !map) {
+        return res.status(400).json({ error: 'Code, ID, player count, and map are required.' });
+    }
+
+    try {
+        // Check for existing room code and update if found
+        const upsertQuery = `
+            INSERT INTO open_rooms (room_code, player_count, map, created_at)
+            VALUES (?, ?, ?, NOW())
+            ON DUPLICATE KEY UPDATE
+                player_count = VALUES(player_count),
+                map = VALUES(map),
+                created_at = NOW()
+        `;
+
+        await new Promise((resolve, reject) => {
+            db.query(upsertQuery, [code, playerCount, map], (err, results) => {
+                if (err) return reject(err);
+                resolve(results);
+            });
+        });
+
+        res.status(201).json({ message: 'Open room created/updated successfully.' });
+    } catch (error) {
+        console.error('Error creating/updating open room:', error);
+        res.status(500).json({ error: 'An error occurred while creating/updating the open room.' });
+    }
+});
+
+// List all open rooms
+roomRouter.get('/list-open-rooms', standardLimiter, async (req, res) => {
+    const db = getDB();
+
+    try {
+        const selectQuery = `
+            SELECT room_code, player_count, map, created_at
+            FROM open_rooms
+            WHERE created_at > NOW() - INTERVAL 10 SECOND
+            ORDER BY player_count DESC
+            LIMIT 50
+        `;
+        const rooms = await new Promise((resolve, reject) => {
+            db.query(selectQuery, (err, results) => {
+                if (err) return reject(err);
+                resolve(results);
+            });
+        });
+
+        res.json({ rooms });
+    } catch (error) {
+        console.error('Error fetching open rooms:', error);
+        res.status(500).json({ error: 'An error occurred while fetching open rooms.' });
+    }
+});
+
+// Delete an open room
+roomRouter.delete('/open-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const db = getDB();
+    const { code } = req.params;
+    const { id } = req.body;
+
+    if (!code || !id) {
+        return res.status(400).json({ error: 'Code and ID are required.' });
+    }
+
+    try {
+        const deleteQuery = 'DELETE FROM open_rooms WHERE room_code = ?';
+        const result = await new Promise((resolve, reject) => {
+            db.query(deleteQuery, [code], (err, results) => {
+                if (err) return reject(err);
+                resolve(results.affectedRows);
+            });
+        });
+
+        if (result === 0) {
+            return res.status(404).json({ error: 'Open room not found.' });
+        }
+
+        res.json({ message: 'Open room deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting open room:', error);
+        res.status(500).json({ error: 'An error occurred while deleting the open room.' });
+    }
+});
+
+// Cleanup ---------------------------------------------------------------------------------------------------------------------------------
 // Periodic cleanup function to delete room codes older than 10 seconds
 const CLEANUP_INTERVAL = 10000; // 10 seconds
 
@@ -133,19 +227,29 @@ setTimeout(() => {
         const db = getDB();
 
         try {
-            const deleteQuery = 'DELETE FROM room_code WHERE creation_date < NOW() - INTERVAL 10 SECOND';
+            // Delete old room codes
+            const deleteRoomCodesQuery = 'DELETE FROM room_code WHERE creation_date < NOW() - INTERVAL 10 SECOND';
             await new Promise((resolve, reject) => {
-                db.query(deleteQuery, (err, results) => {
+                db.query(deleteRoomCodesQuery, (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });
             });
 
-            console.log('Old room codes cleaned up successfully.');
+            // Delete old open rooms
+            const deleteOpenRoomsQuery = 'DELETE FROM open_rooms WHERE created_at < NOW() - INTERVAL 10 SECOND';
+            await new Promise((resolve, reject) => {
+                db.query(deleteOpenRoomsQuery, (err, results) => {
+                    if (err) return reject(err);
+                    resolve(results);
+                });
+            });
+
+            console.log('Old room codes and open rooms cleaned up successfully.');
         } catch (error) {
-            console.error('Error during room code cleanup:', error);
+            console.error('Error during cleanup:', error);
         }
     }, CLEANUP_INTERVAL);
-}, 1000 * 5 * Math.floor(Math.random())); // Delay the start by 0 - 5 seconds to ensure that if multiple servers are running, this query doesn't execute at the exact same time. 
+}, 1000 * 5 * Math.floor(Math.random())); // Delay the start by 0 - 5 seconds - if multiple servers are running, this doesn't execute at the same time. 
 
 module.exports = roomRouter;
