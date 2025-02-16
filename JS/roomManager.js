@@ -140,8 +140,8 @@ roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, as
     try {
         // Check for existing room code and update if found
         const upsertQuery = `
-            INSERT INTO open_rooms (room_code, player_count, map, created_at)
-            VALUES (?, ?, ?, NOW())
+            INSERT INTO open_rooms (room_code, player_count, map, created_at, creator_id)
+            VALUES (?, ?, ?, NOW(), ?)
             ON DUPLICATE KEY UPDATE
                 player_count = VALUES(player_count),
                 map = VALUES(map),
@@ -149,7 +149,7 @@ roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, as
         `;
 
         await new Promise((resolve, reject) => {
-            db.query(upsertQuery, [code, playerCount, map], (err, results) => {
+            db.query(upsertQuery, [code, playerCount, map, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
