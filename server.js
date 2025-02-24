@@ -31,7 +31,7 @@ app.use((req, res, next) => {
     if (req.originalUrl === '/stripe/webhook') {
         next(); // Skip body-parser for Stripe webhook
     } else {
-        bodyParser.json()(req, res, next); // Use body-parser for all other routes
+        bodyParser.json({ limit: "1mb" })(req, res, next); // Use body-parser for all other routes
     }
 });
 
