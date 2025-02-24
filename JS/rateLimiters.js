@@ -42,4 +42,40 @@ const supporterMapLoadLimiter = rateLimit({
     skipFailedRequests: true // Skip failed requests so we can handle them manually
 });
 
-module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter };
+const failedSubmissionLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 1 day
+    max: 100,
+    keyGenerator: (req) => req.clientIp,
+    message: {
+        error: 'Too many failed submissions for today.',
+    },
+});
+
+const successfulSubmissionLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 1 day
+    max: 3,
+    keyGenerator: (req) => req.clientIp,
+    message: {
+        error: 'Too many submissions for today.',
+    },
+});
+
+const createCompetitionLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 24 hours
+    max: 50,
+    message: {
+        error: 'You have reached the limit of 50 competition creations per day.'
+    },
+    keyGenerator: (req) => req.clientIp
+});
+
+const rankingLimiter = rateLimit({
+    windowMs: 1000 * 60 * 10, // 10 minutes
+    max: 8,
+    message: {
+        error: 'Too many ranking change requests, please wait a bit.'
+    },
+    keyGenerator: (req) => req.clientIp
+});
+
+module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter };

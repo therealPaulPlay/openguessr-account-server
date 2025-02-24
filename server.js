@@ -15,6 +15,8 @@ const accountRouter = require("./JS/accounts.js");
 const profileRoutes = require("./JS/profiles.js");
 const creatorRouter = require("./JS/creatorStatistic.js");
 const autoguessrRouter = require("./JS/autoguessrSaves.js");
+const communityMapRouter = require("./JS/communityMaps.js");
+const competitionsRouter = require("./JS/competitions.js");
 
 const { port } = require("./JS/config.js");
 const { corsOptions } = require("./JS/config.js");
@@ -47,6 +49,8 @@ app.use("/accounts", accountRouter);
 app.use("/accounts", leaderboardRouter);
 app.use("/creators", creatorRouter);
 app.use("/autoguessr", autoguessrRouter);
+app.use("/maps", communityMapRouter);
+app.use("/competitions", competitionsRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the server --------------------------------------------------------------------------------------
