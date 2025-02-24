@@ -132,6 +132,8 @@ const createDailyCompetition = (callback) => {
 // Delete expired competitions and their entries 7 days after the expiration + handle setting expired competitions to expired
 const cleanupCompetitions = () => {
     // Mark competitions whose durations have passed as expired
+    const db = getDB();
+    
     const markExpiredQuery = `
     UPDATE competitions
     SET expired = TRUE
