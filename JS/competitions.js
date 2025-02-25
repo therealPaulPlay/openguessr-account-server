@@ -54,7 +54,7 @@ const createDailyCompetition = (callback) => {
 
     try {
         // Read and parse the locations file
-        const data = fs.readFileSync('../JSON/dailyLocations.json', 'utf8');
+        const data = fs.readFileSync('./JSON/dailyLocations.json', 'utf8');
         dailyLocations = JSON.parse(data);
 
         // Validate the locations array
