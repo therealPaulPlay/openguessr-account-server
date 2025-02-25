@@ -104,17 +104,19 @@ const createDailyCompetition = (callback) => {
 
     // Insert the competition into the database
     db.execute(
-        'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO competitions (name, author, author_id, playercount, restriction, duration, round_length, description, location_amount, locations, expired, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             competitionData.name,
             competitionData.author,
             competitionData.author_id,
+            0,
             competitionData.restriction,
             competitionData.duration,
             competitionData.round_length,
             competitionData.description,
             competitionData.location_amount,
             competitionData.locations,
+            0,
             competitionData.private
         ],
         (err) => {
@@ -133,14 +135,14 @@ const createDailyCompetition = (callback) => {
 const cleanupCompetitions = () => {
     // Mark competitions whose durations have passed as expired
     const db = getDB();
-    
+
     const markExpiredQuery = `
     UPDATE competitions
     SET expired = TRUE
     WHERE (competitions.created_at + INTERVAL competitions.duration SECOND) < NOW() 
       AND expired = FALSE`;
 
-    db.query(markExpiredQuery, (err) => {
+    db.execute(markExpiredQuery, (err) => {
         if (err) {
             console.error('Error marking competitions as expired:', err);
         } else {
@@ -157,7 +159,7 @@ const cleanupCompetitions = () => {
       AND c.expired = TRUE 
       AND ((c.created_at + INTERVAL c.duration SECOND + INTERVAL 7 DAY) < NOW())`;
 
-    db.query(deleteExpiredCompetitionsQuery, (err) => {
+    db.execute(deleteExpiredCompetitionsQuery, (err) => {
         if (err) {
             console.error('Error deleting expired competitions:', err);
         } else {
