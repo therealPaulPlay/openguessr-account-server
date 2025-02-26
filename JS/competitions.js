@@ -104,19 +104,17 @@ const createDailyCompetition = (callback) => {
 
     // Insert the competition into the database
     db.execute(
-        'INSERT INTO competitions (name, author, author_id, playercount, restriction, duration, round_length, description, location_amount, locations, expired, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         [
             competitionData.name,
             competitionData.author,
             competitionData.author_id,
-            0,
             competitionData.restriction,
             competitionData.duration,
             competitionData.round_length,
             competitionData.description,
             competitionData.location_amount,
             competitionData.locations,
-            0,
             competitionData.private
         ],
         (err) => {
