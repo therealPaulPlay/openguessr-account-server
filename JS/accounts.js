@@ -10,6 +10,9 @@ const mailTransporter = require("./mailer.js");
 const validateCaptcha = require('./captchaMiddleware');
 const { reportSecret, reportAppId, emailConfig } = require('./config.js');
 
+// Regular expression to allow alphanumeric characters, emojis, spaces, and standard symbols
+const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{20D0}-\u{20FF}\u{2B50}\u{2B55}]+$/u;
+
 // Fetch User Details (bearer protected, this is for the user itself, not for others - use profile for others) ------------------------------------------------------------------------------
 accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
@@ -104,13 +107,21 @@ accountRouter.get('/check-warnlist/:id', standardLimiter, async (req, res) => {
 // Update Username -------------------------------------------------------------------------------------------------------------------------------------
 accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
-    const { id, userName } = req.body;
+    const { id } = req.body;
+    let { userName } = req.body;
 
     if (!id || !userName) {
         return res.status(400).json({ error: 'User ID and username are required.' });
     }
 
     try {
+        // Check if the username consists only of spaces
+        userName = userName.trim();
+
+        if (!validUsernameRegex.test(userName) || userName.length === 0) {
+            return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        }
+        
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
@@ -165,9 +176,6 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
 
 // Registration and Login ---------------------------------------------------------------------------------------------------------
 
-// Regular expression to allow alphanumeric characters, emojis, spaces, and standard symbols
-const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{20D0}-\u{20FF}\u{2B50}\u{2B55}]+$/u;
-
 // Register Endpoint
 accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, res) => {
     const db = getDB();
@@ -178,15 +186,15 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         return res.status(400).json({ error: 'Username, email, and password are required.' });
     }
 
-    userName = userName.trim(); // remove whitespaces from username
-    email = email.trim(); // remove whitespaces from email
-
-    // Check if the username consists only of spaces
-    if (!validUsernameRegex.test(userName) || userName.trim().length === 0) {
-        return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
-    }
-
     try {
+        userName = userName.trim(); // remove whitespaces from username
+        email = email.trim(); // remove whitespaces from email
+
+        // Check if the username consists only of spaces
+        if (!validUsernameRegex.test(userName) || userName.length === 0) {
+            return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        }
+
         // Check if email already exists
         const emailExistsQuery = 'SELECT id FROM users WHERE email = ?';
         const existingEmailUser = await new Promise((resolve, reject) => {
