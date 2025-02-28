@@ -121,7 +121,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         if (!validUsernameRegex.test(userName) || userName.length === 0) {
             return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
         }
-        
+
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
@@ -323,25 +323,24 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         return res.status(400).json({ error: "Invalid token" });
     }
 
-    // Now, check if there is an account associated with that crazy games id - if so, log the user in - otherwise, create an account
-    let existingUser;
-    let userId;
+    // Now, check if there is an account associated with that crazy games id
     try {
         const userExistsQuery = 'SELECT id FROM users WHERE crazy_games_id = ?';
-        existingUser = await new Promise((resolve, reject) => {
+        const existingUser = await new Promise((resolve, reject) => {
             db.query(userExistsQuery, [crazyGamesUserId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
         });
-    } catch (error) {
-        console.error("Error checking for existing user during crazy games authentication:", error);
-        res.status(500).json({ error: 'An error occurred checking for existing account that is linked with a CrazyGames id.' });
-    }
 
-    // If no account exists, create one (register via CrazyGames ID)
-    if (!existingUser) {
-        try {
+        let userId;
+
+        // If user already exists, just use their ID
+        if (existingUser) {
+            userId = existingUser.id;
+        } else {
+            // If no account exists, create one (register via CrazyGames ID)
+
             // Check if username already exists
             const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
             const existingUserNameUser = await new Promise((resolve, reject) => {
@@ -361,15 +360,15 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
                 username = newUsername; // Update the username to the unique value
 
                 // Check again
-                const existingUserNameUser = await new Promise((resolve, reject) => {
+                const duplicateCheck = await new Promise((resolve, reject) => {
                     db.query(userNameExistsQuery, [username], (err, results) => {
                         if (err) return reject(err);
                         resolve(results[0]);
                     });
                 });
 
-                if (existingUserNameUser) {
-                    res.status(400).json({ error: "The user name already exists and the generated fallback does too." });
+                if (duplicateCheck) {
+                    return res.status(400).json({ error: "The user name already exists and the generated fallback does too." });
                 }
             }
 
@@ -378,7 +377,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
 
             // Insert new user into the database
             const insertUserQuery = 'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)';
-            const newUser = await new Promise((resolve, reject) => {
+            await new Promise((resolve, reject) => {
                 db.query(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
                     if (err) return reject(err);
                     resolve(results.insertId);
@@ -399,29 +398,20 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
             }
 
             userId = user.id;
-        } catch (error) {
-            console.error('Error during registration:', error);
-            res.status(500).json({ error: 'An error occurred during registration.' });
         }
-    } else {
-        // If user already exists, just take the id
-        userId = existingUser.id;
-    }
 
-    // Now, they should have an account (if not already)
-    try {
         // Generate JWT token
         const bearerToken = createNewJwtToken({ id: userId });
 
-        // No status added here, because 200 is the default in express
-        res.json({
+        return res.json({
             message: 'Login successful',
-            token: bearerToken, // Include bearer...
-            id: userId// And include id. The rest will be fetched using the /user/:id endpoint on the client.
+            token: bearerToken,
+            id: userId
         });
+
     } catch (error) {
-        console.error('Error during crazygames login:', error);
-        res.status(500).json({ error: 'An unexpected error occurred during crazygames login.' });
+        console.error('Error during crazygames authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during crazygames authentication.' });
     }
 });
 
