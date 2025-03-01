@@ -46,8 +46,9 @@ async function updateCache() {
         console.log('Starting leaderboard cache update...');
         const segments = await calculateSegments();
 
-        await db.promise().execute('START TRANSACTION'); // Start transaction to ensure it goes smoothly (with potential rollback)
-        await db.promise().execute('TRUNCATE TABLE leaderboard_cache'); // Clear previous leaderboard cache table
+        // Use query() for transaction control statements!
+        await db.promise().query('START TRANSACTION');
+        await db.promise().query('TRUNCATE TABLE leaderboard_cache');
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
@@ -74,10 +75,10 @@ async function updateCache() {
             ]);
         }
 
-        await db.promise().execute('COMMIT');
+        await db.promise().query('COMMIT');
         console.log('Leaderboard cache update completed successfully');
     } catch (error) {
-        await db.promise().execute('ROLLBACK');
+        await db.promise().query('ROLLBACK');
         console.error('Error updating leaderboard cache:', error);
         throw error;
     }
@@ -218,7 +219,7 @@ leaderboardRouter.get('/elo-leaderboard', standardLimiter, async (req, res) => {
             ORDER BY elo DESC
             LIMIT 100
         `;
-        
+
         const [eloLeaderboard] = await db.promise().execute(leaderboardQuery);
         res.json(eloLeaderboard);
     } catch (err) {
