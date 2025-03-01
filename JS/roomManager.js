@@ -18,7 +18,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
         // First, check for existing room code
         const checkCodeQuery = 'SELECT id FROM room_code WHERE code = ?';
         const existingRoom = await new Promise((resolve, reject) => {
-            db.query(checkCodeQuery, [code], (err, results) => {
+            db.execute(checkCodeQuery, [code], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -31,7 +31,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
         // Check and delete any existing entry for this user
         const deleteQuery = 'DELETE FROM room_code WHERE user_id = ?';
         await new Promise((resolve, reject) => {
-            db.query(deleteQuery, [userId], (err, results) => {
+            db.execute(deleteQuery, [userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -40,7 +40,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
         // Insert new room code
         const insertQuery = 'INSERT INTO room_code (id, code, creation_date, user_id) VALUES (UUID(), ?, NOW(), ?)';
         await new Promise((resolve, reject) => {
-            db.query(insertQuery, [code, userId], (err, results) => {
+            db.execute(insertQuery, [code, userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -71,7 +71,7 @@ roomRouter.get('/join-duel/:index', standardLimiter, async (req, res) => {
             LIMIT 1 OFFSET ?
         `;
         const roomCode = await new Promise((resolve, reject) => {
-            db.query(selectQuery, [index], (err, results) => {
+            db.execute(selectQuery, [index], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0] ? results[0].code : null);
             });
@@ -98,7 +98,7 @@ roomRouter.delete('/delete-duel/:code', standardLimiter, authenticateTokenWithId
         // Delete the room code from the database
         const deleteQuery = 'DELETE FROM room_code WHERE code = ? AND user_id = ?';
         const result = await new Promise((resolve, reject) => {
-            db.query(deleteQuery, [code, userId], (err, results) => {
+            db.execute(deleteQuery, [code, userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results.affectedRows);
             });
@@ -149,7 +149,7 @@ roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, as
         `;
 
         await new Promise((resolve, reject) => {
-            db.query(upsertQuery, [code, playerCount, map, id], (err, results) => {
+            db.execute(upsertQuery, [code, playerCount, map, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -175,7 +175,7 @@ roomRouter.get('/list-open-rooms', standardLimiter, async (req, res) => {
             LIMIT 50
         `;
         const rooms = await new Promise((resolve, reject) => {
-            db.query(selectQuery, (err, results) => {
+            db.execute(selectQuery, (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -201,7 +201,7 @@ roomRouter.delete('/open-room/:code', standardLimiter, authenticateTokenWithId, 
     try {
         const deleteQuery = 'DELETE FROM open_rooms WHERE room_code = ?';
         const result = await new Promise((resolve, reject) => {
-            db.query(deleteQuery, [code], (err, results) => {
+            db.execute(deleteQuery, [code], (err, results) => {
                 if (err) return reject(err);
                 resolve(results.affectedRows);
             });
@@ -230,7 +230,7 @@ setTimeout(() => {
             // Delete old room codes
             const deleteRoomCodesQuery = 'DELETE FROM room_code WHERE creation_date < NOW() - INTERVAL 10 SECOND';
             await new Promise((resolve, reject) => {
-                db.query(deleteRoomCodesQuery, (err, results) => {
+                db.execute(deleteRoomCodesQuery, (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });
@@ -239,7 +239,7 @@ setTimeout(() => {
             // Delete old open rooms
             const deleteOpenRoomsQuery = 'DELETE FROM open_rooms WHERE created_at < NOW() - INTERVAL 10 SECOND';
             await new Promise((resolve, reject) => {
-                db.query(deleteOpenRoomsQuery, (err, results) => {
+                db.execute(deleteOpenRoomsQuery, (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });

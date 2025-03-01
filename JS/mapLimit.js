@@ -63,7 +63,7 @@ mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
             if (tokenId) {
                 const userIsSupporterQuery = 'SELECT supporter_level FROM users WHERE id = ?';
                 const userWithSupporter = await new Promise((resolve, reject) => {
-                    db.query(userIsSupporterQuery, [tokenId], (err, results) => {
+                    db.execute(userIsSupporterQuery, [tokenId], (err, results) => {
                         if (err) return reject(err);
                         resolve(results[0]);
                     });
@@ -102,7 +102,7 @@ mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
             // Insert the map load record into the database
             const insertQuery = 'INSERT INTO cost_statistics (ip_address) VALUES (?)';
             await new Promise((resolve, reject) => {
-                db.query(insertQuery, [ipAddress], (err, results) => {
+                db.execute(insertQuery, [ipAddress], (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });
@@ -164,7 +164,7 @@ cron.schedule('0 1 * * *', async () => {
     try {
         const deleteQuery = 'DELETE FROM cost_statistics WHERE date < CURDATE() - INTERVAL 2 DAY';
         await new Promise((resolve, reject) => {
-            db.query(deleteQuery, (err, results) => {
+            db.execute(deleteQuery, (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });

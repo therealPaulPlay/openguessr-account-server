@@ -32,7 +32,7 @@ profileRouter.put('/update', standardLimiter, authenticateTokenWithId, async (re
             // Check if badge and pin align with supporter value
             const getSupporterLevel = 'SELECT supporter_level FROM users WHERE id = ?';
             const supporterLevel = await new Promise((resolve, reject) => {
-                db.query(getSupporterLevel, [id], (err, results) => {
+                db.execute(getSupporterLevel, [id], (err, results) => {
                     if (err) return reject(err);
                     resolve(results[0]);
                 });
@@ -62,7 +62,7 @@ profileRouter.put('/update', standardLimiter, authenticateTokenWithId, async (re
         `;
 
         await new Promise((resolve, reject) => {
-            db.query(updateQuery, [profileData, id], (err, results) => {
+            db.execute(updateQuery, [profileData, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -87,7 +87,7 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
         // Query to get the user data for the given user ID
         const userQuery = 'SELECT user_name, experience, elo, profile_data, created_at, supporter_level, supported_amount FROM users WHERE id = ?';
         const userProfile = await new Promise((resolve, reject) => {
-            db.query(userQuery, [id], (err, results) => {
+            db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });

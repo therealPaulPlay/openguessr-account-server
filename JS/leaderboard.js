@@ -17,7 +17,7 @@ async function calculateSegments(targetSegments = 50) {
             FROM users
             WHERE experience > 0
         `;
-        const [[stats]] = await db.promise().query(query);
+        const [[stats]] = await db.promise().execute(query);
 
         const segments = [];
         const ratio = Math.pow(stats.max_exp / Math.max(1, stats.min_exp), 1 / targetSegments);
@@ -46,8 +46,8 @@ async function updateCache() {
         console.log('Starting leaderboard cache update...');
         const segments = await calculateSegments();
 
-        await db.promise().query('START TRANSACTION'); // Start transaction to ensure it goes smoothly (with potential rollback)
-        await db.promise().query('TRUNCATE TABLE leaderboard_cache'); // Clear previous leaderboard cache table
+        await db.promise().execute('START TRANSACTION'); // Start transaction to ensure it goes smoothly (with potential rollback)
+        await db.promise().execute('TRUNCATE TABLE leaderboard_cache'); // Clear previous leaderboard cache table
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
@@ -65,7 +65,7 @@ async function updateCache() {
                 WHERE experience > ? AND experience <= ?
             `;
 
-            await db.promise().query(query, [
+            await db.promise().execute(query, [
                 i + 1,
                 segment.lower,
                 segment.upper,
@@ -74,10 +74,10 @@ async function updateCache() {
             ]);
         }
 
-        await db.promise().query('COMMIT');
+        await db.promise().execute('COMMIT');
         console.log('Leaderboard cache update completed successfully');
     } catch (error) {
-        await db.promise().query('ROLLBACK');
+        await db.promise().execute('ROLLBACK');
         console.error('Error updating leaderboard cache:', error);
         throw error;
     }
@@ -100,7 +100,7 @@ async function getPlayerRank(experience) {
         AND ? <= lc.experience_upper_bound
     `;
 
-        const [[result]] = await db.promise().query(query, [experience, experience, experience]);
+        const [[result]] = await db.promise().execute(query, [experience, experience, experience]);
         return result ? result.approximate_rank : null;
     } catch (error) {
         console.error('Error getting player rank:', error);
@@ -120,7 +120,7 @@ leaderboardRouter.get('/leaderboard', standardLimiter, async (req, res) => {
             ORDER BY experience DESC
             LIMIT 100
         `;
-        const [experienceLeaderboard] = await db.promise().query(leaderboardQuery);
+        const [experienceLeaderboard] = await db.promise().execute(leaderboardQuery);
         res.json(experienceLeaderboard);
     } catch (err) {
         console.error("Error fetching leaderboard:", err);
@@ -135,7 +135,7 @@ leaderboardRouter.get('/user-leaderboard/:id', standardLimiter, async (req, res)
 
     try {
         // Fetch the user's details (name, experience, and supporter level) from the database
-        const [[user]] = await db.promise().query(`
+        const [[user]] = await db.promise().execute(`
             SELECT user_name, experience, supporter_level
             FROM users 
             WHERE id = ?
@@ -150,7 +150,7 @@ leaderboardRouter.get('/user-leaderboard/:id', standardLimiter, async (req, res)
         if (user.experience === 0) return res.json([{ ...user, position: userPosition, id: userId }]);
 
         // Fetch user's bracket details (lower/upper bounds and players_in_range)
-        const [[currentBracket]] = await db.promise().query(`
+        const [[currentBracket]] = await db.promise().execute(`
             SELECT experience_upper_bound, players_in_range
             FROM leaderboard_cache
             WHERE ? > experience_lower_bound AND ? <= experience_upper_bound
@@ -159,7 +159,7 @@ leaderboardRouter.get('/user-leaderboard/:id', standardLimiter, async (req, res)
         if (!currentBracket) return res.json([{ ...user, position: userPosition, id: userId }]);
 
         // Fetch the upper player within the bracket, ordered by experience (desc)
-        const [[upperUser]] = await db.promise().query(`
+        const [[upperUser]] = await db.promise().execute(`
             SELECT user_name, experience, supporter_level, id
             FROM users
             WHERE experience > ? AND experience <= ?
@@ -198,7 +198,7 @@ leaderboardRouter.get('/supporter-leaderboard', standardLimiter, async (req, res
             ORDER BY experience DESC
             LIMIT 100
         `;
-        const [experienceLeaderboard] = await db.promise().query(leaderboardQuery);
+        const [experienceLeaderboard] = await db.promise().execute(leaderboardQuery);
         res.json(experienceLeaderboard);
     } catch (err) {
         console.error("Error fetching supporter leaderboard:", err);
@@ -219,7 +219,7 @@ leaderboardRouter.get('/elo-leaderboard', standardLimiter, async (req, res) => {
             LIMIT 100
         `;
         
-        const [eloLeaderboard] = await db.promise().query(leaderboardQuery);
+        const [eloLeaderboard] = await db.promise().execute(leaderboardQuery);
         res.json(eloLeaderboard);
     } catch (err) {
         console.error("Error fetching elo leaderboard:", err);

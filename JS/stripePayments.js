@@ -14,7 +14,7 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
     const { productId, id } = req.body;
 
     // Fetch user details
-    db.query('SELECT supporter_level, supported_amount FROM users WHERE id = ?', [id], async (err, results) => {
+    db.execute('SELECT supporter_level, supported_amount FROM users WHERE id = ?', [id], async (err, results) => {
         if (err) {
             console.error('Error fetching user details:', err);
             return res.status(500).json({ error: 'An error occurred while fetching user details.' });
@@ -129,7 +129,7 @@ Make sure to also provide the Purchase ID. For tax information, please refer to 
         WHERE id = ?
         `;
 
-        db.query(updateQuery, [productId, amount_total / 100, id], (err, result) => {
+        db.execute(updateQuery, [productId, amount_total / 100, id], (err, result) => {
             if (err) {
                 console.error('Error updating user details:', err);
             } else {
@@ -151,7 +151,7 @@ Make sure to also provide the Purchase ID. For tax information, please refer to 
 
         const amountInDollars = amount_total / 100;
 
-        db.query(statisticQuery, [month, year, amountInDollars, amountInDollars], (err, result) => {
+        db.execute(statisticQuery, [month, year, amountInDollars, amountInDollars], (err, result) => {
             if (err) {
                 console.error('Error updating supporter statistics:', err);
             } else {
@@ -178,7 +178,7 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
         WHERE month = ? AND year = ?
     `;
 
-    db.query(query, [month, year], (err, results) => {
+    db.execute(query, [month, year], (err, results) => {
         if (err) {
             console.error('Error fetching current month statistics:', err);
             return res.status(500).send('Internal server error');

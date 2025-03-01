@@ -28,7 +28,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
         `;
 
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [userId], (err, results) => {
+            db.execute(userQuery, [userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -43,7 +43,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
                 WHERE id = ?
             `;
         await new Promise((resolve, reject) => {
-            db.query(activityQuery, [now, userId], (err, results) => {
+            db.execute(activityQuery, [now, userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -125,7 +125,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
-            db.query(userNameExistsQuery, [userName], (err, results) => {
+            db.execute(userNameExistsQuery, [userName], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -143,7 +143,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         `;
 
         await new Promise((resolve, reject) => {
-            db.query(updateQuery, [userName, id], (err, results) => {
+            db.execute(updateQuery, [userName, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -157,7 +157,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         `;
 
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [id], (err, results) => {
+            db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -198,7 +198,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         // Check if email already exists
         const emailExistsQuery = 'SELECT id FROM users WHERE email = ?';
         const existingEmailUser = await new Promise((resolve, reject) => {
-            db.query(emailExistsQuery, [email], (err, results) => {
+            db.execute(emailExistsQuery, [email], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -211,7 +211,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
-            db.query(userNameExistsQuery, [userName], (err, results) => {
+            db.execute(userNameExistsQuery, [userName], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -230,7 +230,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         // Insert new user into the database
         const insertUserQuery = 'INSERT INTO users (user_name, email, password, ip_address, created_at) VALUES (?, ?, ?, ?, ?)';
         const newUser = await new Promise((resolve, reject) => {
-            db.query(insertUserQuery, [userName, email, hashedPassword, userIp, now], (err, results) => {
+            db.execute(insertUserQuery, [userName, email, hashedPassword, userIp, now], (err, results) => {
                 if (err) return reject(err);
                 resolve(results.insertId);
             });
@@ -256,7 +256,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         // Find user by email
         const userQuery = 'SELECT id, user_name, password, experience FROM users WHERE email = ?';
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [email], (err, results) => {
+            db.execute(userQuery, [email], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -327,7 +327,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
     try {
         const userExistsQuery = 'SELECT id FROM users WHERE crazy_games_id = ?';
         const existingUser = await new Promise((resolve, reject) => {
-            db.query(userExistsQuery, [crazyGamesUserId], (err, results) => {
+            db.execute(userExistsQuery, [crazyGamesUserId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -344,7 +344,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
             // Check if username already exists
             const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
             const existingUserNameUser = await new Promise((resolve, reject) => {
-                db.query(userNameExistsQuery, [username], (err, results) => {
+                db.execute(userNameExistsQuery, [username], (err, results) => {
                     if (err) return reject(err);
                     resolve(results[0]);
                 });
@@ -361,7 +361,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
 
                 // Check again
                 const duplicateCheck = await new Promise((resolve, reject) => {
-                    db.query(userNameExistsQuery, [username], (err, results) => {
+                    db.execute(userNameExistsQuery, [username], (err, results) => {
                         if (err) return reject(err);
                         resolve(results[0]);
                     });
@@ -378,7 +378,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
             // Insert new user into the database
             const insertUserQuery = 'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)';
             await new Promise((resolve, reject) => {
-                db.query(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
+                db.execute(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
                     if (err) return reject(err);
                     resolve(results.insertId);
                 });
@@ -387,7 +387,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
             // Find user by crazy games user id (confirm that signup worked, and get id)
             const userQuery = 'SELECT id FROM users WHERE crazy_games_id = ?';
             const user = await new Promise((resolve, reject) => {
-                db.query(userQuery, [crazyGamesUserId], (err, results) => {
+                db.execute(userQuery, [crazyGamesUserId], (err, results) => {
                     if (err) return reject(err);
                     resolve(results[0]);
                 });
@@ -428,7 +428,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
         // Find user by email to retrieve password hash
         const userQuery = 'SELECT password FROM users WHERE id = ?';
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [id], (err, results) => {
+            db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -447,7 +447,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
         // Delete user account
         const deleteUserQuery = 'DELETE FROM users WHERE id = ?';
         await new Promise((resolve, reject) => {
-            db.query(deleteUserQuery, [id], (err, results) => {
+            db.execute(deleteUserQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -475,7 +475,7 @@ accountRouter.post('/reset-password-request', registerLimiter, async (req, res) 
         // Find user by email
         const userQuery = 'SELECT id, user_name FROM users WHERE email = ?';
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [email], (err, results) => {
+            db.execute(userQuery, [email], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -529,7 +529,7 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
         // Update the user's password in the database
         const updatePasswordQuery = 'UPDATE users SET password = ? WHERE id = ?';
         await new Promise((resolve, reject) => {
-            db.query(updatePasswordQuery, [hashedPassword, decoded.id], (err, results) => {
+            db.execute(updatePasswordQuery, [hashedPassword, decoded.id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -559,7 +559,7 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         // Fetch current experience and last update time from the database
         const userQuery = 'SELECT experience, last_experience_update FROM users WHERE id = ?';
         const user = await new Promise((resolve, reject) => {
-            db.query(userQuery, [id], (err, results) => {
+            db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -604,7 +604,7 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
             WHERE id = ?
         `;
         await new Promise((resolve, reject) => {
-            db.query(updateQuery, [experience, now, now, id], (err, results) => {
+            db.execute(updateQuery, [experience, now, now, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -613,7 +613,7 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         // Fetch updated user details
         const updatedUserQuery = 'SELECT experience AS experience FROM users WHERE id = ?';
         const updatedUser = await new Promise((resolve, reject) => {
-            db.query(updatedUserQuery, [id], (err, results) => {
+            db.execute(updatedUserQuery, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });

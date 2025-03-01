@@ -28,7 +28,7 @@ autoguessrRouter.post('/save', standardLimiter, authenticateTokenWithId, async (
         // First, try updating an existing save for the user
         const updateQuery = 'UPDATE autoguessr_saves SET main_save = ? WHERE user_id = ?';
         const updateResult = await new Promise((resolve, reject) => {
-            db.query(updateQuery, [saveString, id], (err, results) => {
+            db.execute(updateQuery, [saveString, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -38,7 +38,7 @@ autoguessrRouter.post('/save', standardLimiter, authenticateTokenWithId, async (
         if (updateResult.affectedRows === 0) {
             const insertQuery = 'INSERT INTO autoguessr_saves (user_id, main_save) VALUES (?, ?)';
             await new Promise((resolve, reject) => {
-                db.query(insertQuery, [id, saveString], (err, results) => {
+                db.execute(insertQuery, [id, saveString], (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });
@@ -62,7 +62,7 @@ autoguessrRouter.get('/get-save/:id', standardLimiter, async (req, res) => {
     try {
         const query = 'SELECT main_save FROM autoguessr_saves WHERE user_id = ?';
         const results = await new Promise((resolve, reject) => {
-            db.query(query, [id], (err, results) => {
+            db.execute(query, [id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });

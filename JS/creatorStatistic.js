@@ -22,7 +22,7 @@ creatorRouter.post('/creator-link-statistic', standardLimiter, async (req, res) 
         `;
 
         const result = await new Promise((resolve, reject) => {
-            db.query(query, [creator.toLowerCase(), ip_address, creator.toLowerCase(), ip_address], (err, results) => {
+            db.execute(query, [creator.toLowerCase(), ip_address, creator.toLowerCase(), ip_address], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });

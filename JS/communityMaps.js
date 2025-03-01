@@ -9,7 +9,7 @@ const { body, validationResult } = require('express-validator');
 communityMapRouter.get('/', standardLimiter, (req, res) => {
     const db = getDB();
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC', (err, results) => {
+    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC', (err, results) => {
         if (err) {
             console.error('Error fetching maps:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
@@ -42,7 +42,7 @@ communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
     const limit = 50;
 
     // the questionmarks in the sql are then being filled in by the array's content!
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
+    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
         if (err) {
             console.error('Error fetching maps:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
@@ -75,7 +75,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res)
 
     const limit = 50;
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY likes DESC LIMIT ? OFFSET ?', [category, limit, startIndex], (err, results) => {
+    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY likes DESC LIMIT ? OFFSET ?', [category, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error fetching maps by category:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
@@ -108,7 +108,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 
     const limit = 50;
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY likes DESC LIMIT ? OFFSET ?', [query, query, limit, startIndex], (err, results) => {
+    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY likes DESC LIMIT ? OFFSET ?', [query, query, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error searching maps:', err);
             return res.status(500).json({ error: 'Failed to search maps.' });
@@ -132,7 +132,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
     const db = getDB();
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE favourite = TRUE ORDER BY likes DESC', (err, results) => {
+    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE favourite = TRUE ORDER BY likes DESC', (err, results) => {
         if (err) {
             console.error('Error fetching favourite maps:', err);
             return res.status(500).json({ error: 'Failed to fetch favourite maps.' });
@@ -157,7 +157,7 @@ communityMapRouter.get('/:name', standardLimiter, (req, res) => {
     const db = getDB();
 
     const name = req.params.name.toLowerCase().replaceAll("_", " ");
-    db.query('SELECT * FROM maps WHERE LOWER(name) = ?', [name], (err, results) => {
+    db.execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name], (err, results) => {
         if (err) {
             console.error('Error fetching map:', err);
             return res.status(500).json({ error: 'Failed to fetch map.' });
@@ -263,13 +263,13 @@ communityMapRouter.post('', [
 
     try {
         // Check for duplicate map names
-        const [duplicateMap] = await db.promise().query('SELECT * FROM maps WHERE LOWER(name) = ?', [name.toLowerCase()]);
+        const [duplicateMap] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name.toLowerCase()]);
         if (duplicateMap.length > 0) {
             return res.status(409).json({ error: 'Map with this name already exists.' });
         }
 
         // Insert into maps table
-        await db.promise().query('INSERT INTO maps (name, author, description, favourite, map_data, category, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [name, author, description, false, JSON.stringify({ locations }), category || null, player_id]);
+        await db.promise().execute('INSERT INTO maps (name, author, description, favourite, map_data, category, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [name, author, description, false, JSON.stringify({ locations }), category || null, player_id]);
 
         successfulSubmissionLimiter(req, res, () => {
             console.log(`Successful submission for IP ${ip}`);
@@ -324,14 +324,14 @@ communityMapRouter.put('', [
 
     try {
         // Check if the map exists and if the requesting user is the owner
-        const [map] = await db.promise().query('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name.toLowerCase(), player_id]);
+        const [map] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name.toLowerCase(), player_id]);
 
         if (map.length === 0) {
             return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
         }
 
         // Update the map in the database
-        await db.promise().query('UPDATE maps SET map_data = ? WHERE LOWER(name) = ? AND author_id = ?', [JSON.stringify({ locations }), name.toLowerCase(), player_id]);
+        await db.promise().execute('UPDATE maps SET map_data = ? WHERE LOWER(name) = ? AND author_id = ?', [JSON.stringify({ locations }), name.toLowerCase(), player_id]);
 
         res.status(200).json({ message: 'Map updated successfully!' });
 
@@ -348,7 +348,7 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, (r
     const db = getDB();
 
     // Check if the map exists and if the author_id matches
-    db.query('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name, author_id], (err, results) => {
+    db.execute('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name, author_id], (err, results) => {
         if (err) {
             console.error('Error finding map:', err);
             return res.status(500).json({ error: 'Failed to find map.' });
@@ -359,7 +359,7 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, (r
         }
 
         // If map exists and author_id matches, proceed to delete
-        db.query('DELETE FROM maps WHERE LOWER(name) = ?', [name], (deleteErr) => {
+        db.execute('DELETE FROM maps WHERE LOWER(name) = ?', [name], (deleteErr) => {
             if (deleteErr) {
                 console.error('Error deleting map:', deleteErr);
                 return res.status(500).json({ error: 'Failed to delete map.' });
@@ -378,7 +378,7 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
 
     try {
         // Check if the map exists
-        const [mapResults] = await db.promise().query('SELECT * FROM maps WHERE LOWER(name) = ?', [name]);
+        const [mapResults] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name]);
 
         if (mapResults.length === 0) {
             return res.status(404).json({ error: 'Map not found.' });
@@ -388,22 +388,22 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
         const mapId = map.id;
 
         // Check if the player has already liked the map
-        const [likeResults] = await db.promise().query('SELECT * FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
+        const [likeResults] = await db.promise().execute('SELECT * FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
 
         if (likeResults.length > 0) {
             // Player already liked the map, so this is a dislike
-            await db.promise().query('DELETE FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
+            await db.promise().execute('DELETE FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
 
             // Decrement the likes count, ensuring it doesn't go below 0
-            await db.promise().query('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]);
+            await db.promise().execute('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]);
 
             return res.status(200).json({ message: 'Map disliked successfully.' });
         } else {
             // Player hasn't liked the map yet, so this is a like
-            await db.promise().query('INSERT INTO map_likes (map_id, map_name, player_id, `like`) VALUES (?, ?, ?, ?)', [mapId, map.name, player_id, 1]);
+            await db.promise().execute('INSERT INTO map_likes (map_id, map_name, player_id, `like`) VALUES (?, ?, ?, ?)', [mapId, map.name, player_id, 1]);
 
             // Increment the likes count
-            await db.promise().query('UPDATE maps SET likes = likes + 1 WHERE id = ?', [mapId]);
+            await db.promise().execute('UPDATE maps SET likes = likes + 1 WHERE id = ?', [mapId]);
 
             return res.status(200).json({ message: 'Map liked successfully.' });
         }
@@ -421,7 +421,7 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
 
     try {
         // Check if the map exists and retrieve the likes count
-        const [mapResults] = await db.promise().query('SELECT likes FROM maps WHERE LOWER(name) = ?', [name]);
+        const [mapResults] = await db.promise().execute('SELECT likes FROM maps WHERE LOWER(name) = ?', [name]);
 
         if (mapResults.length === 0) {
             return res.status(404).json({ error: 'Map not found.' });
@@ -432,7 +432,7 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
 
         if (player_id) {
             // Check if the player has liked the map
-            const [likeResults] = await db.promise().query('SELECT 1 FROM map_likes WHERE map_id = (SELECT id FROM maps WHERE LOWER(name) = ?) AND player_id = ?', [name, player_id]);
+            const [likeResults] = await db.promise().execute('SELECT 1 FROM map_likes WHERE map_id = (SELECT id FROM maps WHERE LOWER(name) = ?) AND player_id = ?', [name, player_id]);
 
             if (likeResults.length > 0) {
                 liked = true;
