@@ -71,7 +71,7 @@ roomRouter.get('/join-duel/:index', standardLimiter, async (req, res) => {
             LIMIT 1 OFFSET ?
         `;
         const roomCode = await new Promise((resolve, reject) => {
-            db.execute(selectQuery, [index], (err, results) => {
+            db.query(selectQuery, [index], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0] ? results[0].code : null);
             });
@@ -175,7 +175,7 @@ roomRouter.get('/list-open-rooms', standardLimiter, async (req, res) => {
             LIMIT 50
         `;
         const rooms = await new Promise((resolve, reject) => {
-            db.execute(selectQuery, (err, results) => {
+            db.query(selectQuery, (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });

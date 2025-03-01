@@ -42,7 +42,7 @@ communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
     const limit = 50;
 
     // the questionmarks in the sql are then being filled in by the array's content!
-    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
+    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
         if (err) {
             console.error('Error fetching maps:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
@@ -75,7 +75,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res)
 
     const limit = 50;
 
-    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY likes DESC LIMIT ? OFFSET ?', [category, limit, startIndex], (err, results) => {
+    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY likes DESC LIMIT ? OFFSET ?', [category, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error fetching maps by category:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
@@ -108,7 +108,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 
     const limit = 50;
 
-    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY likes DESC LIMIT ? OFFSET ?', [query, query, limit, startIndex], (err, results) => {
+    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY likes DESC LIMIT ? OFFSET ?', [query, query, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error searching maps:', err);
             return res.status(500).json({ error: 'Failed to search maps.' });
