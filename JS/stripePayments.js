@@ -165,7 +165,6 @@ Make sure to also provide the Purchase ID. For tax information, please refer to 
 
 stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) => {
     const db = getDB();
-
     // Get the current month and year
     const currentDate = new Date();
     const year = currentDate.getFullYear();
@@ -173,9 +172,9 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
 
     // Query to get the supported_amount for the current month and year
     const query = `
-        SELECT supported_amount
-        FROM supporter_statistics
-        WHERE month = ? AND year = ?
+      SELECT supported_amount
+      FROM supporter_statistics
+      WHERE month = ? AND year = ?
     `;
 
     db.execute(query, [month, year], (err, results) => {
@@ -189,8 +188,11 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
             return res.json({ supported_amount: 0 });
         }
 
+        // Format the number to 2 decimal places before returning
+        const supportedAmount = parseFloat(results[0].supported_amount.toFixed(2));
+
         // Return the supported amount for the current month
-        return res.json({ supported_amount: results[0].supported_amount });
+        return res.json({ supported_amount: supportedAmount });
     });
 });
 
