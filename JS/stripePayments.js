@@ -104,16 +104,16 @@ stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/
                 to: email,
                 subject: 'OpenGuessr Purchase Receipt',
                 text: `Hi!
-    
-Thank you for completing your purchase on OpenGuessr!
 
-Purchase ID: ${purchaseId}
-Amount: $${(amount_total / 100).toFixed(2)}
+  Thank you for completing your purchase on OpenGuessr!
 
-If you have any questions regarding the purchase, please do not hesitate to reach out through the contact form on https://paulplay.studio.
-Make sure to also provide the Purchase ID. For tax information, please refer to https://paulplay.studio/imprint.
+  Purchase ID: ${purchaseId}
+  Amount: $${(amount_total / 100).toFixed(2)}
 
-(This email was sent automatically, please do not reply directly)`
+  If you have any questions regarding the purchase, please do not hesitate to reach out through the contact form on https://paulplay.studio.
+  Make sure to also provide the Purchase ID. For tax information, please refer to https://paulplay.studio/imprint.
+
+  (This email was sent automatically, please do not reply directly)`
             };
 
             await mailTransporter.sendMail(mailOptions);
@@ -121,79 +121,94 @@ Make sure to also provide the Purchase ID. For tax information, please refer to 
             console.error("Error occurred when sending email after purchase:", error);
         }
 
-        // Update user's supporter_level and supported_amount
-        const updateQuery = `
-        UPDATE users 
-        SET supporter_level = GREATEST(supporter_level, ?),
+        try {
+            // Update user's supporter_level and supported_amount
+            await new Promise((resolve, reject) => {
+                const updateQuery = `
+            UPDATE users
+            SET supporter_level = GREATEST(supporter_level, ?),
             supported_amount = supported_amount + ?
-        WHERE id = ?
-        `;
+            WHERE id = ?
+          `;
+                db.execute(updateQuery, [productId, amount_total / 100, id], (err, result) => {
+                    if (err) {
+                        console.error('Error updating user details:', err);
+                        reject(err);
+                    } else {
+                        console.log(`Updated user ${id} to supporter level ${productId}`);
+                        resolve(result);
+                    }
+                });
+            });
 
-        db.execute(updateQuery, [productId, amount_total / 100, id], (err, result) => {
-            if (err) {
-                console.error('Error updating user details:', err);
-            } else {
-                console.log(`Updated user ${id} to supporter level ${productId}`);
-            }
-        });
+            // Get the current month and year
+            const currentDate = new Date();
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth() + 1; // JavaScript months are 0-based, so add 1
 
+            // Check if an entry for the current month exists in the supporter_statistics table
+            await new Promise((resolve, reject) => {
+                const statisticQuery = `
+            INSERT INTO supporter_statistics (month, year, supported_amount)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE supported_amount = supported_amount + ?
+          `;
+                const amountInDollars = amount_total / 100;
+                db.execute(statisticQuery, [month, year, amountInDollars, amountInDollars], (err, result) => {
+                    if (err) {
+                        console.error('Error updating supporter statistics:', err);
+                        reject(err);
+                    } else {
+                        console.log(`Updated supporter statistics for ${month}-${year}`);
+                        resolve(result);
+                    }
+                });
+            });
+        } catch (error) {
+            console.error("Database operation failed in stripe webhook:", error);
+            return res.status(500).json({ error: "Internal server error." });
+        }
+    }
+
+    return res.sendStatus(200);
+});
+
+stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) => {
+    const db = getDB();
+
+    try {
         // Get the current month and year
         const currentDate = new Date();
         const year = currentDate.getFullYear();
         const month = currentDate.getMonth() + 1; // JavaScript months are 0-based, so add 1
 
-        // Check if an entry for the current month exists in the supporter_statistics table
-        const statisticQuery = `
-        INSERT INTO supporter_statistics (month, year, supported_amount) 
-        VALUES (?, ?, ?) 
-        ON DUPLICATE KEY UPDATE supported_amount = supported_amount + ?
-        `;
-
-        const amountInDollars = amount_total / 100;
-
-        db.execute(statisticQuery, [month, year, amountInDollars, amountInDollars], (err, result) => {
-            if (err) {
-                console.error('Error updating supporter statistics:', err);
-            } else {
-                console.log(`Updated supporter statistics for ${month}-${year}`);
-            }
-        });
-    }
-
-    res.sendStatus(200);
-});
-
-stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) => {
-    const db = getDB();
-    // Get the current month and year
-    const currentDate = new Date();
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth() + 1; // JavaScript months are 0-based, so add 1
-
-    // Query to get the supported_amount for the current month and year
-    const query = `
+        // Query to get the supported_amount for the current month and year
+        const query = `
       SELECT supported_amount
       FROM supporter_statistics
       WHERE month = ? AND year = ?
     `;
 
-    db.execute(query, [month, year], (err, results) => {
-        if (err) {
-            console.error('Error fetching current month statistics:', err);
-            return res.status(500).send('Internal server error');
-        }
+        db.execute(query, [month, year], (err, results) => {
+            if (err) {
+                console.error('Error fetching current month statistics:', err);
+                return res.status(500).send('Internal server error');
+            }
 
-        // If no entry exists for the current month, return 0
-        if (results.length === 0) {
-            return res.json({ supported_amount: 0 });
-        }
+            // If no entry exists for the current month, return 0
+            if (results.length === 0) {
+                return res.json({ supported_amount: 0 });
+            }
 
-        // Format the number to 2 decimal places before returning
-        const supportedAmount = parseFloat(results[0].supported_amount.toFixed(2));
+            // Format the number to 2 decimal places before returning
+            const supportedAmount = parseFloat(results[0].supported_amount.toFixed(2));
 
-        // Return the supported amount for the current month
-        return res.json({ supported_amount: supportedAmount });
-    });
+            // Return the supported amount for the current month
+            return res.json({ supported_amount: supportedAmount });
+        });
+    } catch (error) {
+        return res.status(500).json({ error: "Internal server error." });
+    }
 });
 
 module.exports = stripeRouter;
