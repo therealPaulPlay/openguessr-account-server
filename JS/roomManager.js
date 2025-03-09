@@ -54,7 +54,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
 });
 
 // Get endpoint: /accounts/rooms/join-duel/:index
-roomRouter.get('/join-duel/:index', standardLimiter, async (req, res) => {
+roomRouter.get('/join-duel/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const index = parseInt(req.params.index, 10);
 
