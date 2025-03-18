@@ -30,27 +30,23 @@ async function isPasswordValid(plainPassword, hashedPassword) {
 // JWT Authentication with Bearer Token ------------------------------------------------------------------------------------------------
 
 function createNewJwtToken(user) {
-    let accessToken = '';
-
     try {
-        const jwtTokenExpirationTime = Math.floor(Date.now() / 1000) + (24 * 24 * 60 * 60);
-        accessToken = jwt.sign(
+        const accessToken = jwt.sign(
             {
                 sub: user.email || null, // Subject (email) - accessible via .sub (null for 3rd party SSO)
-                userId: user.id // Custom claim for user ID - accessible via .userId
+                userId: user.id // Custom claim for user ID
             },
             SECRET_KEY,
             {
-                expiresIn: jwtTokenExpirationTime
+                expiresIn: "30d"
             }
         );
-    } catch (e) {
-        accessToken = '';
-        console.error('Token generation error: ', e.message);
+        console.info('JWT token generated successfully.');
+        return accessToken;
+    } catch (error) {
+        console.error('Token generation error: ', error.message);
+        return null;
     }
-
-    console.info('JWT token generated successfully.');
-    return accessToken;
 }
 
 function authenticateTokenWithId(req, res, next) {
