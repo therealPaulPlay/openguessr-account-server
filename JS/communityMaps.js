@@ -233,13 +233,14 @@ communityMapRouter.post('', [
         return res.status(400).json({ error: 'All input fields are required.' });
     }
 
-    let name = rawName.trim().split("_").join(" ");
+    let name = rawName.split("_").join(" ");
     name = name.split("/").join(" ");
     name = name.split("+").join(" ");
     name = name.split("&").join(" ");
     name = name.split("#").join(" ");
+    name = name.split("?").join(" ");
+    name = name.replace(/\s+/g, " ").trim();
 
-    // Ensure the description ends with a '.', '?', or '!' 
     let description = rawDescription.trim();
     description = /[.?!]$/.test(description) ? description : `${description}.`;
 
@@ -263,7 +264,10 @@ communityMapRouter.post('', [
 
     try {
         // Check for duplicate map names
-        const [duplicateMap] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name.toLowerCase()]);
+        const [duplicateMap] = await db.promise().execute(
+            'SELECT * FROM maps WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
+            [name]
+        );
         if (duplicateMap.length > 0) {
             return res.status(409).json({ error: 'Map with this name already exists.' });
         }
