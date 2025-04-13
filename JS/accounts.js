@@ -188,7 +188,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
 
     try {
         userName = userName.trim(); // remove whitespaces from username
-        email = email.trim(); // remove whitespaces from email
+        email = email.trim().toLowerCase(); // remove whitespaces from email and make it lowercase
 
         // Check if the username consists only of spaces
         if (!validUsernameRegex.test(userName) || userName.length === 0) {
