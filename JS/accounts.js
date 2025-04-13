@@ -572,9 +572,8 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         const { experience: currentExperience, last_experience_update } = user;
         const experienceDifference = Math.abs(experience - currentExperience);
 
-        if (experienceDifference > 10000) {
-            return res.status(400).json({ error: 'Experience difference is too large.' });
-        }
+        if (experienceDifference > 10000) return res.status(400).json({ error: 'Experience difference is too large.' });
+        if (experienceDifference <= 0) return res.status(400).json({ error: 'Experience difference cannot be zero or negative.' });
 
         // Determine rate limit based on experience difference
         let rateLimitTimeout;
@@ -589,8 +588,7 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         if (lastUpdate) {
             timeElapsed = now - lastUpdate;
         } else {
-            // Assume a large enough timeElapsed if last_experience_update is NULL
-            timeElapsed = rateLimitTimeout + 1; // Ensure the rate limit is bypassed
+            timeElapsed = rateLimitTimeout + 1; // Assume a large enough timeElapsed if last_experience_update is NULL
         }
 
         if (timeElapsed < rateLimitTimeout) {
