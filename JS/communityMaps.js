@@ -276,7 +276,6 @@ communityMapRouter.post('', [
         await db.promise().execute('INSERT INTO maps (name, author, description, favourite, map_data, category, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [name, author, description, false, JSON.stringify({ locations }), category || null, player_id]);
 
         successfulSubmissionLimiter(req, res, () => {
-            console.log(`Successful submission for IP ${ip}`);
             res.status(201).json({ message: 'Map submitted successfully!' });
         });
 

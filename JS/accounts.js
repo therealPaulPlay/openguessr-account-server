@@ -325,89 +325,103 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
 
     // Now, check if there is an account associated with that crazy games id
     try {
-        const userExistsQuery = 'SELECT id FROM users WHERE crazy_games_id = ?';
-        const existingUser = await new Promise((resolve, reject) => {
-            db.execute(userExistsQuery, [crazyGamesUserId], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
-            });
-        });
-
         let userId;
+        let inTransaction = false;
 
-        // If user already exists, just use their ID
-        if (existingUser) {
-            userId = existingUser.id;
-        } else {
-            // If no account exists, create one (register via CrazyGames ID)
+        try {
+            // Start transaction for all database operations
+            await new Promise((resolve, reject) => {
+                db.beginTransaction(err => {
+                    if (err) return reject(err);
+                    inTransaction = true;
+                    resolve();
+                });
+            });
 
-            // Check if username already exists
-            const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
-            const existingUserNameUser = await new Promise((resolve, reject) => {
-                db.execute(userNameExistsQuery, [username], (err, results) => {
+            const userExistsQuery = 'SELECT id FROM users WHERE crazy_games_id = ? FOR UPDATE';
+            const existingUser = await new Promise((resolve, reject) => {
+                db.execute(userExistsQuery, [crazyGamesUserId], (err, results) => {
                     if (err) return reject(err);
                     resolve(results[0]);
                 });
             });
 
-            if (existingUserNameUser) {
-                // Generate a unique username by appending "_CG" and 4 random alphanumeric characters
-                const generateRandomSuffix = () => {
-                    return Math.random().toString(36).substring(2, 6).toUpperCase(); // Generate 4 random letters/numbers
-                };
-
-                let newUsername = `${username}_CG${generateRandomSuffix()}`;
-                username = newUsername; // Update the username to the unique value
-
-                // Check again
-                const duplicateCheck = await new Promise((resolve, reject) => {
+            if (existingUser) {
+                userId = existingUser.id; // If user already exists, just use their ID
+            } else {
+                // If no account exists, create one (register via CrazyGames ID)
+                // Check if username already exists
+                const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ? FOR UPDATE';
+                const existingUserNameUser = await new Promise((resolve, reject) => {
                     db.execute(userNameExistsQuery, [username], (err, results) => {
                         if (err) return reject(err);
                         resolve(results[0]);
                     });
                 });
 
-                if (duplicateCheck) {
-                    return res.status(400).json({ error: "The user name already exists and the generated fallback does too." });
+                if (existingUserNameUser) {
+                    const generateRandomSuffix = () => {
+                        return Math.random().toString(36).substring(2, 6).toUpperCase(); // Generate 4 random letters/numbers
+                    };
+
+                    username = `${username}_CG${generateRandomSuffix()}`; // Update the username to the unique value
+
+                    // Check again
+                    const duplicateCheck = await new Promise((resolve, reject) => {
+                        db.execute(userNameExistsQuery, [username], (err, results) => {
+                            if (err) return reject(err);
+                            resolve(results[0]);
+                        });
+                    });
+
+                    if (duplicateCheck) throw new Error("The username already exists and the unique fallback does too.");
                 }
+
+                // Get current timestamp
+                const now = new Date();
+
+                // Insert new user into the database
+                const insertUserQuery = 'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)';
+                const insertResult = await new Promise((resolve, reject) => {
+                    db.execute(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
+                        if (err) return reject(err);
+                        resolve(results);
+                    });
+                });
+
+                userId = insertResult.insertId;
             }
 
-            // Get current timestamp
-            const now = new Date();
-
-            // Insert new user into the database
-            const insertUserQuery = 'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)';
+            // Commit the transaction
             await new Promise((resolve, reject) => {
-                db.execute(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
+                db.commit(err => {
                     if (err) return reject(err);
-                    resolve(results.insertId);
+                    inTransaction = false;
+                    resolve();
                 });
             });
 
-            // Find user by crazy games user id (confirm that signup worked, and get id)
-            const userQuery = 'SELECT id FROM users WHERE crazy_games_id = ?';
-            const user = await new Promise((resolve, reject) => {
-                db.execute(userQuery, [crazyGamesUserId], (err, results) => {
-                    if (err) return reject(err);
-                    resolve(results[0]);
-                });
+            // Generate JWT token
+            const bearerToken = createNewJwtToken({ id: userId });
+
+            return res.json({
+                message: 'Login successful',
+                token: bearerToken,
+                id: userId
             });
 
-            if (!user) {
-                return res.status(400).json({ error: 'User not found. Registration via CrazyGames id went wrong.' });
+        } catch (error) {
+            if (inTransaction) {
+                await new Promise((resolve, reject) => {
+                    db.rollback(err => {
+                        if (err) console.error('Rollback error:', err);
+                        inTransaction = false;
+                        resolve();
+                    });
+                });
             }
-
-            userId = user.id;
+            throw error;
         }
-
-        // Generate JWT token
-        const bearerToken = createNewJwtToken({ id: userId });
-
-        return res.json({
-            message: 'Login successful',
-            token: bearerToken,
-            id: userId
-        });
 
     } catch (error) {
         console.error('Error during crazygames authentication:', error);
