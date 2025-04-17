@@ -65,7 +65,7 @@ roomRouter.post('/join-duel/:index', standardLimiter, authenticateTokenWithId, a
 
     try {
         // Find user's ELO division
-        const breakpoints = [0, 1200, 1400, 1600, 2000, Infinity];
+        const breakpoints = [0, 1200, 1400, 1600, 2000, 100000];
         let divIndex = 0;
         while (divIndex < breakpoints.length - 1 && userElo >= breakpoints[divIndex + 1]) divIndex++;
 
