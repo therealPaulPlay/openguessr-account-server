@@ -329,35 +329,21 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         let inTransaction = false;
 
         try {
-            // Start transaction for all database operations
-            await new Promise((resolve, reject) => {
-                db.beginTransaction(err => {
-                    if (err) return reject(err);
-                    inTransaction = true;
-                    resolve();
-                });
-            });
+            // Start transaction
+            await db.promise().query('START TRANSACTION');
+            inTransaction = true;
 
-            const userExistsQuery = 'SELECT id FROM users WHERE crazy_games_id = ? FOR UPDATE';
-            const existingUser = await new Promise((resolve, reject) => {
-                db.execute(userExistsQuery, [crazyGamesUserId], (err, results) => {
-                    if (err) return reject(err);
-                    resolve(results[0]);
-                });
-            });
+            // Check if user exists
+            const [existingUsers] = await db.promise().execute('SELECT id FROM users WHERE crazy_games_id = ? FOR UPDATE', [crazyGamesUserId]);
+            const existingUser = existingUsers[0];
 
             if (existingUser) {
                 userId = existingUser.id; // If user already exists, just use their ID
             } else {
                 // If no account exists, create one (register via CrazyGames ID)
                 // Check if username already exists
-                const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ? FOR UPDATE';
-                const existingUserNameUser = await new Promise((resolve, reject) => {
-                    db.execute(userNameExistsQuery, [username], (err, results) => {
-                        if (err) return reject(err);
-                        resolve(results[0]);
-                    });
-                });
+                const [existingUserNames] = await db.promise().execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+                const existingUserNameUser = existingUserNames[0];
 
                 if (existingUserNameUser) {
                     const generateRandomSuffix = () => {
@@ -367,12 +353,8 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
                     username = `${username}_CG${generateRandomSuffix()}`; // Update the username to the unique value
 
                     // Check again
-                    const duplicateCheck = await new Promise((resolve, reject) => {
-                        db.execute(userNameExistsQuery, [username], (err, results) => {
-                            if (err) return reject(err);
-                            resolve(results[0]);
-                        });
-                    });
+                    const [duplicateResults] = await db.promise().execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+                    const duplicateCheck = duplicateResults[0];
 
                     if (duplicateCheck) throw new Error("The username already exists and the unique fallback does too.");
                 }
@@ -381,25 +363,17 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
                 const now = new Date();
 
                 // Insert new user into the database
-                const insertUserQuery = 'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)';
-                const insertResult = await new Promise((resolve, reject) => {
-                    db.execute(insertUserQuery, [username, userIp, now, crazyGamesUserId], (err, results) => {
-                        if (err) return reject(err);
-                        resolve(results);
-                    });
-                });
+                const [insertResult] = await db.promise().execute(
+                    'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)',
+                    [username, userIp, now, crazyGamesUserId]
+                );
 
                 userId = insertResult.insertId;
             }
 
             // Commit the transaction
-            await new Promise((resolve, reject) => {
-                db.commit(err => {
-                    if (err) return reject(err);
-                    inTransaction = false;
-                    resolve();
-                });
-            });
+            await db.promise().query('COMMIT');
+            inTransaction = false;
 
             // Generate JWT token
             const bearerToken = createNewJwtToken({ id: userId });
@@ -412,12 +386,9 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
 
         } catch (error) {
             if (inTransaction) {
-                await new Promise((resolve, reject) => {
-                    db.rollback(err => {
-                        if (err) console.error('Rollback error:', err);
-                        inTransaction = false;
-                        resolve();
-                    });
+                // Rollback the transaction in case of error
+                await db.promise().query('ROLLBACK').catch(err => {
+                    console.error('Rollback error:', err);
                 });
             }
             throw error;
