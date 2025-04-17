@@ -8,39 +8,42 @@ const { getDB } = require("./dbConnection.js");
 roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
-    const { id: userId } = req.body;
+    const { id: userId, skillBased } = req.body;
 
     if (!code || !userId) {
         return res.status(400).json({ error: 'Code and user ID are required.' });
     }
 
     try {
-        // First, check for existing room code
-        const checkCodeQuery = 'SELECT id FROM room_code WHERE code = ?';
+        // Check for existing room code AND user ID
+        const checkCodeQuery = 'SELECT id FROM room_code WHERE code = ? OR user_id = ?';
         const existingRoom = await new Promise((resolve, reject) => {
-            db.execute(checkCodeQuery, [code], (err, results) => {
+            db.execute(checkCodeQuery, [code, userId], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
         });
 
-        if (existingRoom) {
-            return res.status(409).json({ error: 'Room code already exists in the db. Try again in 10s.' });
-        }
+        if (existingRoom) return res.status(409).json({ error: 'Room code or user id already exists for an active room. Try again in 10s.' });
 
-        // Check and delete any existing entry for this user
-        const deleteQuery = 'DELETE FROM room_code WHERE user_id = ?';
-        await new Promise((resolve, reject) => {
-            db.execute(deleteQuery, [userId], (err, results) => {
+        // Get user's ELO from the users table
+        const getUserEloQuery = 'SELECT elo FROM users WHERE id = ?';
+        const userData = await new Promise((resolve, reject) => {
+            db.execute(getUserEloQuery, [userId], (err, results) => {
                 if (err) return reject(err);
-                resolve(results);
+                if (!results || results.length === 0) return reject(new Error('User not found'));
+                resolve(results[0]);
             });
         });
 
-        // Insert new room code
-        const insertQuery = 'INSERT INTO room_code (id, code, creation_date, user_id) VALUES (UUID(), ?, NOW(), ?)';
+        if (!userData) return res.status(404).json({ error: 'User not found.' });
+
+        const userElo = userData.elo;
+
+        // Insert new room code with ELO
+        const insertQuery = 'INSERT INTO room_code (id, code, creation_date, user_id, user_elo, skill_based) VALUES (UUID(), ?, NOW(), ?, ?, ?)';
         await new Promise((resolve, reject) => {
-            db.execute(insertQuery, [code, userId], (err, results) => {
+            db.execute(insertQuery, [code, userId, userElo, skillBased ? 1 : 0], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
@@ -56,23 +59,45 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
 roomRouter.post('/join-duel/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const index = parseInt(req.params.index, 10);
+    const userElo = parseInt(req.query.elo, 10) || 1000; // Default to 1000 if not provided
+    const wantSkillBased = req.query['skill-based'] === 'true'; // Only true if explicitly set to 'true'
 
-    if (isNaN(index) || index < 0) {
-        return res.status(400).json({ error: 'Invalid index.' });
-    }
+    if (isNaN(index) || index < 0) return res.status(400).json({ error: 'Invalid index.' });
 
     try {
-        // Query to get the room code at the specified index
+        // Find user's ELO division
+        const breakpoints = [0, 1200, 1400, 1600, 2000, Infinity];
+        let divIndex = 0;
+        while (divIndex < breakpoints.length - 1 && userElo >= breakpoints[divIndex + 1]) divIndex++;
+
+        const minElo = breakpoints[divIndex];
+        const maxElo = breakpoints[divIndex + 1];
+
+        let whereClause, queryParams;
+        if (wantSkillBased) {
+            // User wants skill-based: Only match with players in their ELO range
+            whereClause = `WHERE user_elo >= ? AND user_elo < ?`;
+            queryParams = [minElo, maxElo];
+        } else {
+            // User takes anyone: Match with non-skill-based players AND skill-based players in their range
+            whereClause = `WHERE skill_based = 0 OR skill_based IS NULL OR 
+                      (skill_based = 1 AND user_elo >= ? AND user_elo < ?)`;
+            queryParams = [minElo, maxElo];
+        }
+
         const selectQuery = `
-            SELECT code
-            FROM room_code
-            ORDER BY creation_date
-            LIMIT 1 OFFSET ?
-        `;
+        SELECT code
+        FROM room_code
+        ${whereClause}
+        ORDER BY creation_date
+        LIMIT 1 OFFSET ?
+      `;
+
         const roomCode = await new Promise((resolve, reject) => {
-            db.query(selectQuery, [index], (err, results) => {
+            queryParams.push(index); // Add index to the query parameters
+            db.query(selectQuery, queryParams, (err, results) => {
                 if (err) return reject(err);
-                resolve(results[0] ? results[0].code : null);
+                resolve(results[0]?.code || null);
             });
         });
 

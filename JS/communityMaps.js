@@ -397,18 +397,13 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
         if (likeResults.length > 0) {
             // Player already liked the map, so this is a dislike
             await db.promise().execute('DELETE FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
-
-            // Decrement the likes count, ensuring it doesn't go below 0
-            await db.promise().execute('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]);
+            await db.promise().execute('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]); // Decrement the map's like count, ensuring it doesn't go below 0
 
             return res.status(200).json({ message: 'Map disliked successfully.' });
         } else {
             // Player hasn't liked the map yet, so this is a like
-            await db.promise().execute('INSERT INTO map_likes (map_id, map_name, player_id, `like`) VALUES (?, ?, ?, ?)', [mapId, map.name, player_id, 1]);
-
-            // Increment the likes count
-            await db.promise().execute('UPDATE maps SET likes = likes + 1 WHERE id = ?', [mapId]);
-
+            await db.promise().execute('INSERT INTO map_likes (map_id, map_name, player_id`) VALUES (?, ?, ?)', [mapId, map.name, player_id]);
+            await db.promise().execute('UPDATE maps SET likes = likes + 1 WHERE id = ?', [mapId]); // Increment the map's like count
             return res.status(200).json({ message: 'Map liked successfully.' });
         }
     } catch (error) {
