@@ -31,7 +31,6 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
         const userData = await new Promise((resolve, reject) => {
             db.execute(getUserEloQuery, [userId], (err, results) => {
                 if (err) return reject(err);
-                if (!results || results.length === 0) return reject(new Error('User not found'));
                 resolve(results[0]);
             });
         });
