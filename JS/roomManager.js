@@ -15,16 +15,14 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
     }
 
     try {
-        // Check for existing room code AND user ID
-        const checkCodeQuery = 'SELECT id FROM room_code WHERE code = ? OR user_id = ?';
-        const existingRoom = await new Promise((resolve, reject) => {
-            db.execute(checkCodeQuery, [code, userId], (err, results) => {
+        // Delete any existing room with this user ID
+        const deleteExistingRoomQuery = 'DELETE FROM room_code WHERE user_id = ?';
+        await new Promise((resolve, reject) => {
+            db.execute(deleteExistingRoomQuery, [userId], (err, results) => {
                 if (err) return reject(err);
-                resolve(results[0]);
+                resolve(results);
             });
         });
-
-        if (existingRoom) return res.status(409).json({ error: 'Room code or user id already exists for an active room. Try again in 10s.' });
 
         // Get user's ELO from the users table
         const getUserEloQuery = 'SELECT elo FROM users WHERE id = ?';
@@ -36,7 +34,6 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
         });
 
         if (!userData) return res.status(404).json({ error: 'User not found.' });
-
         const userElo = userData.elo;
 
         // Insert new room code with ELO
