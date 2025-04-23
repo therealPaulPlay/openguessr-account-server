@@ -78,4 +78,11 @@ const rankingLimiter = rateLimit({
     keyGenerator: (req) => req.clientIp
 });
 
-module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter };
+const friendRequestLimiter = rateLimit({
+    windowMs: 1 * 60 * 60 * 1000, // 1h
+    keyGenerator: (req) => req.clientIp, // correct IP
+    max: 20, // limit each IP to 20 requests per windowMs
+    message: { error: 'You are sending too many friend requests.' }
+});
+
+module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter };
