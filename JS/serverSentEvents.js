@@ -6,7 +6,7 @@ function initSSE(app) {
     // Middleware to handle SSE connections
     app.get('/events', (req, res) => {
         const userId = req.query.userId;
-        if (!userId)  return res.status(400).send('User ID is required');
+        if (!userId) return res.status(400).send('User ID is required');
 
         // Set headers for SSE
         res.setHeader('Content-Type', 'text/event-stream');
@@ -27,7 +27,19 @@ function initSSE(app) {
     });
 
     console.log("SSE server initialized at /events endpoint");
+
+    // Send a heartbeat every 30 seconds to keep connections alive and detect broken ones
+    setInterval(() => {
+        Object.keys(clients).forEach(userId => {
+            try {
+                clients[userId].write(": heartbeat\n\n");
+            } catch (error) {
+                delete clients[userId]; // If writing fails, the connection is broken, so remove it
+            }
+        });
+    }, 30000);
 }
+
 
 // Helper function to send events to a specific client
 function sendEventToClient(userId, eventData) {
