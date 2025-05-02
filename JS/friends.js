@@ -7,15 +7,10 @@ const { getDB } = require("./dbConnection.js");
 
 // Send a friend request
 friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: senderId, recipientId, senderName } = req.body;
+    const { id: senderId, recipientId } = req.body;
 
-    if (!senderId || !recipientId || !senderName) {
-        return res.status(400).json({ error: 'Sender ID, Name and recipient ID are required.' });
-    }
-
-    if (senderId == recipientId) {
-        return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
-    }
+    if (!senderId || !recipientId) return res.status(400).json({ error: 'Sender ID and recipient ID are required.' });
+    if (senderId == recipientId) return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
 
     try {
         const db = getDB();
@@ -24,20 +19,19 @@ friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async 
             SELECT * FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
         `;
         const [existingFriends] = await db.promise().query(checkFriendsQuery, [senderId, recipientId, recipientId, senderId]);
-
-        if (existingFriends.length > 0) {
-            return res.status(409).json({ error: 'You are already friends with this user.' });
-        }
+        if (existingFriends.length > 0) return res.status(409).json({ error: 'You are already friends with this user.' });
 
         // Check if a friend request already exists
         const checkRequestQuery = `
             SELECT * FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
         `;
         const [existingRequest] = await db.promise().query(checkRequestQuery, [senderId, recipientId]);
+        if (existingRequest.length > 0) return res.status(409).json({ error: 'Friend request already sent.' });
 
-        if (existingRequest.length > 0) {
-            return res.status(409).json({ error: 'Friend request already sent.' });
-        }
+        // Get name
+        const [users] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
+        if (!users.length) return res.status(400).json({ error: 'User not found.' });
+        const senderName = users[0]?.user_name;
 
         // Insert the friend request into the database
         const sendRequestQuery = `
@@ -271,21 +265,20 @@ friendRouter.post('/remove', standardLimiter, authenticateTokenWithId, async (re
 
 // Invites ----------------------------------------------------------------------------------------------------
 friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: senderId, friend_id: recipientId, roomcode, senderName, isDuel } = req.body;
+    const { id: senderId, friend_id: recipientId, roomcode, isDuel } = req.body;
 
     const db = getDB();
 
-    if (!senderId || !recipientId || !roomcode || !senderName || isDuel == null) {
-        return res.status(400).json({ error: 'Sender ID, recipient ID, duel state and roomcode are required.' });
-    }
+    if (!senderId || !recipientId || !roomcode || isDuel == null) return res.status(400).json({ error: 'Sender ID, recipient ID, duel state and roomcode are required.' });
 
-    const getSenderName = `
-    SELECT user_name FROM users WHERE id = ?
-    `;
-    const [rows] = await db.promise().query(getSenderName, [senderId]);
-    if (!rows.length || senderName !== rows[0].user_name) {
-        return res.status(400).json({ error: 'Sender name does not match actual username.' });
-    }
+    // Get sender name
+    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
+    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+    const senderName = rows[0]?.user_name;
+
+    // Check friend status
+    const [friendRows] = await db.promise().query(`SELECT * FROM friends WHERE user_id = ? AND friend_id = ?`, [senderId, recipientId]);
+    if (!friendRows.length) return res.status(400).json({ error: 'Not friends with this user.' });
 
     try {
         const eventData = {
@@ -309,11 +302,14 @@ friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, asyn
 
 // Accept an invite
 friendRouter.post('/accept-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: recipientId, friend_id: senderId, senderName } = req.body;
+    const { id: recipientId, friend_id: senderId } = req.body;
 
-    if (!recipientId || !senderId || !senderName) {
-        return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
-    }
+    if (!recipientId || !senderId) return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
+
+    const db = getDB();
+    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
+    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+    const senderName = rows[0]?.user_name;
 
     try {
         const eventData = {
@@ -332,11 +328,14 @@ friendRouter.post('/accept-invite', standardLimiter, authenticateTokenWithId, as
 
 // Decline an invite
 friendRouter.post('/decline-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: recipientId, friend_id: senderId, senderName } = req.body;
+    const { id: recipientId, friend_id: senderId } = req.body;
 
-    if (!recipientId || !senderId || !senderName) {
-        return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
-    }
+    if (!recipientId || !senderId) return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
+
+    const db = getDB();
+    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
+    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+    const senderName = rows[0]?.user_name;
 
     try {
         const eventData = {
