@@ -35,10 +35,10 @@ async function processDuelResult(connection, late = false, uuid) {
                 [duels[0].user1_id, duels[0].user2_id].forEach(playerId => {
                     sendEventToClient(playerId, {
                         type: 'duel-result-error',
-                        message: `Both players submitted the same result. This can happen when the p2p connection drops and both players finish independently. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}.`
+                        message: `Both players submitted the same result. Player 1's id: ${duels[0].user1_id}, Player 2's id: ${duels[0].user2_id}.`
                     });
                 });
-                console.error(`Both players submitted the same result - IDs: Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
+                console.error(`Both players submitted the same result. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
                 // Delete the duel entry so that no result is recorded
                 await connection.query('DELETE FROM duel_entries WHERE uuid = ?', [uuid]);
                 return;
