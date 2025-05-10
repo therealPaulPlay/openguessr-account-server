@@ -564,7 +564,6 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         let rateLimitTimeout = (experienceDifference / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference
 
         // Check if user is allowed to make the request based on rate limiting
-        const now = new Date().toISOString(); // Use ISO string format for UTC consistency
         const lastUpdate = last_experience_update ? new Date(last_experience_update) : null;
 
         let timeElapsed = 0;
@@ -582,12 +581,13 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         // Update user experience and last experience update time in the database
         const updateQuery = `
             UPDATE users 
-            SET experience = ?, last_experience_update = ?, last_activity = ?
+            SET experience = ?, 
+                last_experience_update = UTC_TIMESTAMP(), 
+                last_activity = UTC_TIMESTAMP()
             WHERE id = ?
         `;
-
         await new Promise((resolve, reject) => {
-            db.execute(updateQuery, [experience, now, now, id], (err, results) => {
+            db.execute(updateQuery, [experience, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
