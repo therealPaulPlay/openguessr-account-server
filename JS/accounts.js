@@ -561,19 +561,18 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
         if (experienceDifference <= 0) return res.status(400).json({ error: 'Experience difference cannot be zero or negative.' });
 
         // Determine rate limit based on experience difference
-        let rateLimitTimeout;
-        rateLimitTimeout = (experienceDifference / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference, 3s for 5,000 and so on
+        let rateLimitTimeout = (experienceDifference / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference
 
         // Check if user is allowed to make the request based on rate limiting
-        const now = new Date();
+        const now = new Date().toISOString(); // Use ISO string format for UTC consistency
         const lastUpdate = last_experience_update ? new Date(last_experience_update) : null;
 
         let timeElapsed = 0;
 
         if (lastUpdate) {
-            timeElapsed = now - lastUpdate;
+            timeElapsed = new Date() - lastUpdate; // Convert ISO string back to Date for calculation
         } else {
-            timeElapsed = rateLimitTimeout + 1; // Assume a large enough timeElapsed if last_experience_update is NULL
+            timeElapsed = rateLimitTimeout + 1; // Assume sufficient time elapsed if last_experience_update is NULL
         }
 
         if (timeElapsed < rateLimitTimeout) {
@@ -586,6 +585,7 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
             SET experience = ?, last_experience_update = ?, last_activity = ?
             WHERE id = ?
         `;
+
         await new Promise((resolve, reject) => {
             db.execute(updateQuery, [experience, now, now, id], (err, results) => {
                 if (err) return reject(err);
