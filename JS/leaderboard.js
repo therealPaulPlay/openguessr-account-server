@@ -110,7 +110,7 @@ async function getPlayerRank(experience) {
 }
 
 // Endpoint for Top 100 leaderboard by experience
-leaderboardRouter.get('/leaderboard', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/experience', standardLimiter, async (req, res) => {
     const db = getDB();
 
     try {
@@ -130,7 +130,7 @@ leaderboardRouter.get('/leaderboard', standardLimiter, async (req, res) => {
 });
 
 // Endpoint for user-specific leaderboard
-leaderboardRouter.get('/user-leaderboard/:id', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/experience-user-section/:id', standardLimiter, async (req, res) => {
     const db = getDB();
     const userId = req.params.id;
 
@@ -187,7 +187,7 @@ leaderboardRouter.get('/user-leaderboard/:id', standardLimiter, async (req, res)
 });
 
 // Supporter leaderboard
-leaderboardRouter.get('/supporter-leaderboard', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/experience-supporter', standardLimiter, async (req, res) => {
     const db = getDB();
 
     try {
@@ -208,7 +208,7 @@ leaderboardRouter.get('/supporter-leaderboard', standardLimiter, async (req, res
 });
 
 // Elo Leaderboard Top 100
-leaderboardRouter.get('/elo-leaderboard', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/elo', standardLimiter, async (req, res) => {
     const db = getDB();
 
     try {

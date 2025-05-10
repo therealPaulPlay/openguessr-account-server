@@ -61,7 +61,7 @@ app.use("/accounts/profile", profileRoutes);
 app.use("/accounts/rooms", roomRouter);
 app.use("/stripe", stripeRouter);
 app.use("/accounts", accountRouter);
-app.use("/accounts", leaderboardRouter);
+app.use("/leaderboard", leaderboardRouter);
 app.use("/creators", creatorRouter);
 app.use("/autoguessr", autoguessrRouter);
 app.use("/maps", communityMapRouter);
