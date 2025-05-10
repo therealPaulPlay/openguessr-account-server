@@ -1,10 +1,12 @@
+require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const requestIp = require('request-ip');
 const cors = require('cors');
 const xss = require('xss-clean');
-require('dotenv').config();
-
+const http = require('http');
+const PlaySocketServer = require('playsocketjs/server');
+const { attachPlaySocketEvents } = require('./JS/playSocketEvents.js');
 const { connectDB } = require("./JS/dbConnection.js");
 
 const roomRouter = require("./JS/roomManager.js");
@@ -24,7 +26,14 @@ const { port } = require("./JS/config.js");
 const { corsOptions } = require("./JS/config.js");
 const { initSSE } = require('./JS/serverSentEvents.js');
 
+// Initialize the server ---------------------------------------------------------------------------------
 const app = express();
+const server = http.createServer(app);
+const playSocketServer = new PlaySocketServer({
+    server,
+    path: '/socket'
+});
+attachPlaySocketEvents(playSocketServer);
 
 // CORS configuration ------------------------------------------------------------------------------------
 app.use(cors(corsOptions));
@@ -61,7 +70,17 @@ app.use("/friends", friendRouter);
 app.use("/duels", duelRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
-// Start the server --------------------------------------------------------------------------------------
-app.listen(port, () => { // Start the HTTP server, not the Express app
+// Start the http server --------------------------------------------------------------------------------------
+server.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
+
+// Handle shutdown gracefully ---------------------------------------------------------------------------------
+function shutdown() {
+    playSocketServer.stop();
+    process.exit(0);
+}
+
+// Handle both SIGINT (Ctrl+C) and SIGTERM (Docker stop)
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

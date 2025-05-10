@@ -28,7 +28,6 @@ async function isPasswordValid(plainPassword, hashedPassword) {
 }
 
 // JWT Authentication with Bearer Token ------------------------------------------------------------------------------------------------
-
 function createNewJwtToken(user) {
     try {
         const accessToken = jwt.sign(
