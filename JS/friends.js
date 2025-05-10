@@ -184,9 +184,7 @@ friendRouter.get('/search/:query', standardLimiter, async (req, res) => {
 friendRouter.post('/requests', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: recipientId } = req.body;
 
-    if (!recipientId) {
-        return res.status(400).json({ error: 'Recipient ID is required.' });
-    }
+    if (!recipientId) return res.status(400).json({ error: 'Recipient ID is required.' });
 
     try {
         const db = getDB();
@@ -214,9 +212,7 @@ friendRouter.post('/requests', standardLimiter, authenticateTokenWithId, async (
 friendRouter.post('/decline', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: recipientId, senderId } = req.body;
 
-    if (!senderId || !recipientId) {
-        return res.status(400).json({ error: 'Sender ID and recipient ID are required.' });
-    }
+    if (!senderId || !recipientId) return res.status(400).json({ error: 'Sender ID and recipient ID are required.' });
 
     try {
         const db = getDB();
@@ -240,9 +236,7 @@ friendRouter.post('/decline', standardLimiter, authenticateTokenWithId, async (r
 friendRouter.post('/remove', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: userId, friendId } = req.body;
 
-    if (!userId || !friendId) {
-        return res.status(400).json({ error: 'User ID and Friend ID are required.' });
-    }
+    if (!userId || !friendId) return res.status(400).json({ error: 'User ID and Friend ID are required.' });
 
     const db = getDB();
 
@@ -271,16 +265,16 @@ friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, asyn
 
     if (!senderId || !recipientId || !roomcode || isDuel == null) return res.status(400).json({ error: 'Sender ID, recipient ID, duel state and roomcode are required.' });
 
-    // Get sender name
-    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
-    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
-    const senderName = rows[0]?.user_name;
-
-    // Check friend status
-    const [friendRows] = await db.promise().query(`SELECT * FROM friends WHERE user_id = ? AND friend_id = ?`, [senderId, recipientId]);
-    if (!friendRows.length) return res.status(400).json({ error: 'Not friends with this user.' });
-
     try {
+        // Get sender name
+        const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
+        if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+        const senderName = rows[0]?.user_name;
+
+        // Check friend status
+        const [friendRows] = await db.promise().query(`SELECT * FROM friends WHERE user_id = ? AND friend_id = ?`, [senderId, recipientId]);
+        if (!friendRows.length) return res.status(400).json({ error: 'Not friends with this user.' });
+
         const eventData = {
             type: 'room-invite',
             roomcode,
@@ -302,23 +296,29 @@ friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, asyn
 
 // Accept an invite
 friendRouter.post('/accept-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: recipientId, friend_id: senderId } = req.body;
+    const { id, friend_id: friendId } = req.body;
 
-    if (!recipientId || !senderId) return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
+    if (!id || !friendId) return res.status(400).json({ error: 'Id and friend id are required.' });
 
     const db = getDB();
-    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
-    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
-    const senderName = rows[0]?.user_name;
 
     try {
+        // Get name
+        const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [id]);
+        if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+        const senderName = rows[0]?.user_name;
+
+        // Confirm friendship
+        const [friendRows] = await db.promise().query(`SELECT * FROM friends WHERE user_id = ? AND friend_id = ?`, [id, friendId]);
+        if (!friendRows.length) return res.status(400).json({ error: 'Not friends with this user.' });
+
         const eventData = {
             type: 'invite-accepted',
-            from: recipientId,
+            from: id,
             name: senderName
         };
 
-        sendEventToClient(senderId, eventData)
+        sendEventToClient(friendId, eventData)
         return res.json({ message: 'Invite accepted successfully.' });
     } catch (error) {
         console.error('Error accepting invite:', error);
@@ -328,23 +328,29 @@ friendRouter.post('/accept-invite', standardLimiter, authenticateTokenWithId, as
 
 // Decline an invite
 friendRouter.post('/decline-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: recipientId, friend_id: senderId } = req.body;
+    const { id, friend_id: friendId } = req.body;
 
-    if (!recipientId || !senderId) return res.status(400).json({ error: 'Recipient ID, sender ID, and roomcode are required.' });
+    if (!id || !friendId) return res.status(400).json({ error: 'Id and friend id are required.' });
 
     const db = getDB();
-    const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [senderId]);
-    if (!rows.length) return res.status(400).json({ error: 'User not found.' });
-    const senderName = rows[0]?.user_name;
 
     try {
+        // Get name
+        const [rows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [id]);
+        if (!rows.length) return res.status(400).json({ error: 'User not found.' });
+        const senderName = rows[0]?.user_name;
+
+        // Confirm friendship
+        const [friendRows] = await db.promise().query(`SELECT * FROM friends WHERE user_id = ? AND friend_id = ?`, [id, friendId]);
+        if (!friendRows.length) return res.status(400).json({ error: 'Not friends with this user.' });
+
         const eventData = {
             type: 'invite-declined',
-            from: recipientId,
+            from: id,
             name: senderName
         };
 
-        if (sendEventToClient(senderId, eventData)) {
+        if (sendEventToClient(friendId, eventData)) {
             return res.status(200).json({ message: 'Invite declined.' });
         } else {
             return res.status(404).json({ error: 'Sender is now offline.' });
