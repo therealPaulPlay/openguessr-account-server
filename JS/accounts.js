@@ -528,17 +528,13 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
 });
 
 // Experience Update Endpoint -------------------------------------------------------------------------------------------------------------------------
-accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId, async (req, res) => {
+accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
-    const { id, experience } = req.body;
+    const { id, experience: addExperience } = req.body;
 
-    if (!id || experience === undefined) {
-        return res.status(400).json({ error: 'User ID and experience are required.' });
-    }
-
-    if (experience < 0) {
-        return res.status(400).json({ error: 'Experience cannot be negative.' });
-    }
+    if (!id || addExperience === undefined || typeof addExperience !== "number") return res.status(400).json({ error: 'User ID and experience are required.' });
+    if (addExperience <= 0) return res.status(400).json({ error: 'Experience cannot be negative or zero.' });
+    if (addExperience > 10000) return res.status(400).json({ error: 'Added experience amount is too high.' });
 
     try {
         // Fetch current experience and last update time from the database
@@ -549,34 +545,22 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
                 resolve(results[0]);
             });
         });
-
-        if (!user) {
-            return res.status(404).json({ error: 'User not found.' });
-        }
+        if (!user) return res.status(404).json({ error: 'User not found.' });
 
         const { experience: currentExperience, last_experience_update } = user;
-        const experienceDifference = Math.abs(experience - currentExperience);
-
-        if (experienceDifference > 10000) return res.status(400).json({ error: 'Experience difference is too large.' });
-        if (experienceDifference <= 0) return res.status(400).json({ error: 'Experience difference cannot be zero or negative.' });
 
         // Determine rate limit based on experience difference
-        let rateLimitTimeout = (experienceDifference / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference
+        let rateLimitTimeout = (addExperience / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference
 
         // Check if user is allowed to make the request based on rate limiting
         const lastUpdate = last_experience_update ? new Date(last_experience_update) : null;
 
-        let timeElapsed = 0;
-
         if (lastUpdate) {
-            timeElapsed = new Date() - lastUpdate; // Convert ISO string back to Date for calculation
-        } else {
-            timeElapsed = rateLimitTimeout + 1; // Assume sufficient time elapsed if last_experience_update is NULL
+            const timeElapsed = new Date() - lastUpdate; // Calculate difference in milliseconds
+            if (timeElapsed < rateLimitTimeout) return res.status(429).json({ error: `Rate limit exceeded. Try again in ${Math.ceil((rateLimitTimeout - timeElapsed) / 1000)} seconds.` });
         }
 
-        if (timeElapsed < rateLimitTimeout) {
-            return res.status(429).json({ error: `Rate limit exceeded. Try again in ${Math.ceil((rateLimitTimeout - timeElapsed) / 1000)} seconds.` });
-        }
+        const newExperience = currentExperience + addExperience;
 
         // Update user experience and last experience update time in the database
         const updateQuery = `
@@ -587,22 +571,13 @@ accountRouter.put('/update/experience', standardLimiter, authenticateTokenWithId
             WHERE id = ?
         `;
         await new Promise((resolve, reject) => {
-            db.execute(updateQuery, [experience, id], (err, results) => {
+            db.execute(updateQuery, [newExperience, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });
         });
 
-        // Fetch updated user details
-        const updatedUserQuery = 'SELECT experience AS experience FROM users WHERE id = ?';
-        const updatedUser = await new Promise((resolve, reject) => {
-            db.execute(updatedUserQuery, [id], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
-            });
-        });
-
-        res.json({ user: updatedUser });
+        res.json({ user: { experience: newExperience } });
     } catch (error) {
         console.error('Error updating experience:', error);
         res.status(500).json({ error: 'An error occurred while updating the experience.' });
