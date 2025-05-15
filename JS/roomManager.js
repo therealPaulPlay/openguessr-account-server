@@ -3,6 +3,7 @@ const roomRouter = express.Router();
 const { standardLimiter } = require("./rateLimiters.js");
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
+const { checkIfUserIsInRoom } = require('./playSocketEvents.js');
 
 // Post endpoint: /accounts/rooms/host-duel/:code
 roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
@@ -15,6 +16,8 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
     }
 
     try {
+        if (!checkIfUserIsInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist or you are not part of it.' });
+
         // Delete any existing room with this user ID
         const deleteExistingRoomQuery = 'DELETE FROM room_code WHERE user_id = ?';
         await new Promise((resolve, reject) => {
@@ -158,6 +161,8 @@ roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, as
     }
 
     try {
+        if (!checkIfUserIsInRoom(code, id)) return res.status(400).json({ error: 'Room does not exist or you are not part of it.' });
+
         // Check for existing room code and update if found
         const upsertQuery = `
             INSERT INTO open_rooms (room_code, player_count, map, created_at, creator_id)
@@ -214,22 +219,18 @@ roomRouter.delete('/open-room/:code', standardLimiter, authenticateTokenWithId, 
     const { code } = req.params;
     const { id } = req.body;
 
-    if (!code || !id) {
-        return res.status(400).json({ error: 'Code and ID are required.' });
-    }
+    if (!code || !id) return res.status(400).json({ error: 'Code and ID are required.' });
 
     try {
-        const deleteQuery = 'DELETE FROM open_rooms WHERE room_code = ?';
+        const deleteQuery = 'DELETE FROM open_rooms WHERE room_code = ? AND creator_id = ?';
         const result = await new Promise((resolve, reject) => {
-            db.execute(deleteQuery, [code], (err, results) => {
+            db.execute(deleteQuery, [code, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results.affectedRows);
             });
         });
 
-        if (result === 0) {
-            return res.status(404).json({ error: 'Open room not found.' });
-        }
+        if (result === 0) return res.status(404).json({ error: 'Open room not found or not owned by you.' });
 
         res.json({ message: 'Open room deleted successfully.' });
     } catch (error) {
