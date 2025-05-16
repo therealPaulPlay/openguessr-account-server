@@ -52,6 +52,7 @@ function checkIfUserIsInRoom(roomId, userId) {
 
 // Add user id to duel room map (in registration)
 function addUserToOngoingDuel(userId, uuid) {
+    if (!authedMultiplayerUserId.has(Number(userId))) throw new Error("Your PlaySocket client is not authenticated!");
     userIdDuelUuid.set(Number(userId), uuid);
 }
 

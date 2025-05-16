@@ -61,7 +61,7 @@ async function processDuelResult(uuid, leavingUserId) {
                 'SELECT id, user_name, elo FROM users WHERE id IN (?, ?) FOR UPDATE',
                 [winner, loser]
             );
-            if (players.length !== 2) throw new Error('One or both users not found');
+            if (players.length !== 2) throw new Error('One or both users not found!');
 
             const winningPlayer = players.find(p => Number(p.id) === Number(winner));
             const losingPlayer = players.find(p => Number(p.id) === Number(loser));

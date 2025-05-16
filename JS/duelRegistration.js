@@ -82,9 +82,8 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
                 }
             }, 5000);
         }
-
-        await connection.commit();
         addUserToOngoingDuel(id, uuid);
+        await connection.commit();
         res.status(201).json({ message: 'Duel registration successful.', isFirstPlayer });
     } catch (error) {
         if (connection) await connection.rollback();
