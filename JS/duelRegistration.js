@@ -114,7 +114,8 @@ duelRouter.post('/duel-result/:uuid', standardLimiter, authenticateTokenWithId, 
             'SELECT * FROM duel_entries WHERE uuid = ? FOR UPDATE',
             [uuid]
         );
-        if (!duels.length || duels[0]?.processed !== 0) throw new Error("Duel not found or already processed.");
+        if (!duels.length) throw new Error("Duel not found.");
+        if (duels[0]?.processed !== 0) throw new Error("Duel already processed.");
 
         const isUser1 = Number(duels[0].user1_id) === id;
         const isUser2 = Number(duels[0].user2_id) === id;
