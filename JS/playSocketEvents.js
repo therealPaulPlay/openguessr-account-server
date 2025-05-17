@@ -7,7 +7,7 @@ const authedMultiplayerUserId = new Map(); // User id -> client id
 let playSocketServer;
 
 // Duel rooms
-const userIdDuelUuid = new Map(); // User id -> Active duel uuid (active = no result submited yet)
+const clientIdDuelUuid = new Map(); // Client id -> Active duel uuid (active = no result submited yet)
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // assign server
@@ -22,18 +22,18 @@ function attachPlaySocketEvents(server) {
     });
     server.onEvent("clientDisconnected", async (clientId) => {
         if (authedMultiplayerClients.has(clientId)) {
+
+            // Get user id and check if the user was in an ongoing duel (means they have not submitted a result)
             const userId = authedMultiplayerClients.get(clientId);
+            const duelUuid = clientIdDuelUuid.get(clientId);
 
             // Remove from maps
             authedMultiplayerClients.delete(clientId);
             authedMultiplayerUserId.delete(userId);
+            clientIdDuelUuid.delete(clientId);
 
-            // Check if user was in an ongoing duel (means they have also not submitted a result)
-            const duelUuid = userIdDuelUuid.get(userId);
-            if (duelUuid) {
-                userIdDuelUuid.delete(userId);
-                await processDuelResult(duelUuid, userId); // Process the result > This will fail silently in case the duel was already processed
-            }
+            // Process the result if in ongoing duel > This will fail silently if already processed
+            if (duelUuid && userId != null) await processDuelResult(duelUuid, userId);
         }
     });
 }
@@ -52,13 +52,15 @@ function checkIfUserIsInRoom(roomId, userId) {
 
 // Add user id to duel room map (in registration)
 function addUserToOngoingDuel(userId, uuid) {
-    if (!authedMultiplayerUserId.has(Number(userId))) throw new Error("Your PlaySocket client is not authenticated!");
-    userIdDuelUuid.set(Number(userId), uuid);
+    const clientId = authedMultiplayerUserId.get(Number(userId));
+    if (!clientId) throw new Error("Your PlaySocket client is not authenticated!");
+    clientIdDuelUuid.set(clientId, uuid);
 }
 
 // If they have sent in their result, they should be removed from here
 function removeUserFromOngoingDuel(userId) {
-    userIdDuelUuid.delete(Number(userId));
+    const clientId = authedMultiplayerUserId.get(Number(userId));
+    clientIdDuelUuid.delete(clientId);
 }
 
 module.exports = { attachPlaySocketEvents, checkIfUserIsInRoom, addUserToOngoingDuel, removeUserFromOngoingDuel };
