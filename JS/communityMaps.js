@@ -4,6 +4,9 @@ const { standardLimiter, failedSubmissionLimiter, successfulSubmissionLimiter } 
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const { body, validationResult } = require('express-validator');
+const { getPublicObjectURL, spacesClient } = require('./spacesConnection.js');
+const { s3Config } = require("./config.js");
+const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 // 1.1) Return the next 50 maps starting from a given index (without map data!)
 communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
@@ -119,33 +122,35 @@ communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
 });
 
 // 2) Get the actual map data by the name of the map
-communityMapRouter.get('/:name', standardLimiter, (req, res) => {
+communityMapRouter.get('/:name', standardLimiter, async (req, res) => {
     const db = getDB();
-
     const name = req.params.name.toLowerCase().replaceAll("_", " ");
-    db.execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name], (err, results) => {
-        if (err) {
-            console.error('Error fetching map:', err);
-            return res.status(500).json({ error: 'Failed to fetch map.' });
-        }
-        if (results.length === 0) {
-            return res.status(404).json({ error: 'Map not found.' });
-        }
 
-        const { name, author, author_id: authorId, description, map_data, favourite, category } = results[0];
+    try {
+        const [results] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name]);
+        if (results.length === 0) return res.status(404).json({ error: 'Map not found.' });
+        const { id, name: mapName, author, author_id: authorId, description, storage_key, favourite, category, likes } = results[0];
+        if (!storage_key) res.status(400).json({ error: 'This map does not yet have a storage key assigned.' });
+
+        let mapDataUrl = await getPublicObjectURL(storage_key);
 
         const map = {
-            name,
+            id,
+            name: mapName,
             author,
             authorId,
             description,
-            favourite: !!favourite, // convert to boolean if necessary
-            map_data, // map data
-            category
+            favourite: !!favourite, // Boolean conversion
+            category,
+            likes,
+            map_data_url: mapDataUrl // Include file url
         };
 
         res.json(map);
-    });
+    } catch (err) {
+        console.error('Error fetching map:', err);
+        return res.status(500).json({ error: 'Failed to fetch map.' });
+    }
 });
 
 
@@ -178,14 +183,14 @@ const isValidMap = (map) => {
 };
 
 // 3) Endpoint to submit a new map
-communityMapRouter.post('', [
+communityMapRouter.post('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
     body('name').isLength({ min: 3, max: 17 }).withMessage('Map name must be between 3 and 17 characters.'),
     body('author').isLength({ max: 255 }).withMessage('Author name cannot exceed 255 characters.'),
     body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.'),
-    body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (slightly above 10 000 locations).'),
+    body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
-    const { id: player_id, name: rawName, author, description: rawDescription, mapData, category } = req.body; // include category
+    const { id: player_id, name: rawName, author, description: rawDescription, mapData, category } = req.body;
 
     const db = getDB();
 
@@ -234,12 +239,48 @@ communityMapRouter.post('', [
         );
         if (duplicateMap.length > 0) return res.status(409).json({ error: 'Map with this name already exists.' });
 
-        // Insert into maps table
-        await db.promise().execute('INSERT INTO maps (name, author, description, favourite, map_data, category, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [name, author, description, false, JSON.stringify({ locations }), category || null, player_id]);
-
-        successfulSubmissionLimiter(req, res, () => {
-            res.status(201).json({ message: 'Map submitted successfully!' });
+        // Check rate limit BEFORE uploading or saving to database – this only counts for successful submissions that made it so far
+        await new Promise((resolve, reject) => {
+            successfulSubmissionLimiter(req, res, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
         });
+
+        // Insert basic map info into the database first (without map data)
+        const [result] = await db.promise().execute(
+            'INSERT INTO maps (name, author, description, favourite, category, author_id, likes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [name, author, description, false, category || null, player_id, 0]
+        );
+
+        const mapId = result.insertId;
+        const mapDataJson = JSON.stringify({ locations });
+        const storageKey = `openguessr-maps/${mapId}.json`;
+
+        try {
+            // Upload map data to Spaces
+            await spacesClient.send(
+                new PutObjectCommand({
+                    Bucket: s3Config.bucketName,
+                    Key: storageKey,
+                    Body: mapDataJson,
+                    ContentType: 'application/json',
+                    ACL: 'public-read', // Make publicly readable
+                })
+            );
+        } catch (uploadError) {
+            // Delete the database entry if upload fails
+            await db.promise().execute('DELETE FROM maps WHERE id = ?', [mapId]);
+            throw uploadError; // Re-throw to be caught by outer catch
+        }
+
+        // Update the map record with the storage key
+        await db.promise().execute(
+            'UPDATE maps SET storage_key = ? WHERE id = ?',
+            [storageKey, mapId]
+        );
+
+        res.status(201).json({ message: 'Map submitted successfully!' });
 
     } catch (err) {
         console.error('Error inserting map:', err);
@@ -248,12 +289,12 @@ communityMapRouter.post('', [
 });
 
 // Update map
-communityMapRouter.put('', [
+communityMapRouter.put('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
     body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.'),
-    body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (slightly above 10 000 locations).'),
+    body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
-    const { id: player_id, name: rawName, mapData } = req.body; // include player_id
+    const { id: player_id, name: rawName, mapData } = req.body;
     let name = rawName;
 
     const db = getDB();
@@ -273,28 +314,36 @@ communityMapRouter.put('', [
             parseFloat(coord[1])
         ]);
 
-        if (!isValidMap({ locations })) {
-            return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
-        }
+        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
+
     } catch (error) {
         console.error('Error parsing JSON:', error);
-        const mapDataSnippet = mapData.split('\n').slice(0, 10).join('\n');
+        const mapDataSnippet = mapData.substring(0, 100) + '...';
         return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse: ' + mapDataSnippet });
     }
 
     try {
         // Check if the map exists and if the requesting user is the owner
-        const [map] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name.toLowerCase(), player_id]);
+        const [map] = await db.promise().execute('SELECT id, storage_key FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name.toLowerCase(), player_id]);
 
-        if (map.length === 0) {
-            return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
-        }
+        if (map.length === 0) return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
 
-        // Update the map in the database
-        await db.promise().execute('UPDATE maps SET map_data = ? WHERE LOWER(name) = ? AND author_id = ?', [JSON.stringify({ locations }), name.toLowerCase(), player_id]);
+        const mapDataJson = JSON.stringify({ locations });
+        const storageKey = map[0].storage_key;
+        if (!storageKey) return res.status(400).json({ error: 'This map does not yet have a storage key assigned.' });
+
+        // Upload updated map data to Spaces
+        await spacesClient.send(
+            new PutObjectCommand({
+                Bucket: s3Config.bucketName,
+                Key: storageKey,
+                Body: mapDataJson,
+                ContentType: 'application/json',
+                ACL: 'public-read', // Make publicly readable
+            })
+        );
 
         res.status(200).json({ message: 'Map updated successfully!' });
-
     } catch (err) {
         console.error('Error updating map:', err);
         return res.status(500).json({ error: 'Failed to update map.' });
@@ -302,32 +351,43 @@ communityMapRouter.put('', [
 });
 
 // 3.1) Delete map
-communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, (req, res) => {
+communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const author_id = req.body.id;
     const db = getDB();
 
-    // Check if the map exists and if the author_id matches
-    db.execute('SELECT * FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name, author_id], (err, results) => {
-        if (err) {
-            console.error('Error finding map:', err);
-            return res.status(500).json({ error: 'Failed to find map.' });
-        }
+    try {
+        // Check if the map exists and if the author_id matches
+        const [results] = await db.promise().execute('SELECT id, storage_key FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name, author_id]);
 
         if (results.length === 0) {
-            return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
+            return res.status(404).json({ error: 'Map not found or you do not have permission to delete this map.' });
         }
 
-        // If map exists and author_id matches, proceed to delete
-        db.execute('DELETE FROM maps WHERE LOWER(name) = ?', [name], (deleteErr) => {
-            if (deleteErr) {
-                console.error('Error deleting map:', deleteErr);
-                return res.status(500).json({ error: 'Failed to delete map.' });
-            }
+        const { id, storage_key } = results[0];
 
-            res.status(200).json({ message: 'Map deleted successfully.' });
-        });
-    });
+        // If the map has a storage key, delete from Spaces
+        if (storage_key) {
+            try {
+                await spacesClient.send(
+                    new DeleteObjectCommand({
+                        Bucket: s3Config.bucketName,
+                        Key: storage_key
+                    })
+                );
+            } catch (error) {
+                throw new Error("Error deleting map from S3: " + error.message)
+            }
+        }
+
+        // Delete from the database
+        await db.promise().execute('DELETE FROM maps WHERE id = ?', [id]);
+
+        res.status(200).json({ message: 'Map deleted successfully.' });
+    } catch (err) {
+        console.error('Error deleting map:', err);
+        return res.status(500).json({ error: 'Failed to delete map.' });
+    }
 });
 
 // 3.2) Like or Dislike map

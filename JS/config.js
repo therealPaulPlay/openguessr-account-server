@@ -36,5 +36,10 @@ module.exports = {
     stripeKey: process.env.STRIPE_KEY,
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     reportSecret: process.env.REPORT_SECRET,
-    reportAppId: process.env.REPORT_APP_ID
+    reportAppId: process.env.REPORT_APP_ID,
+    s3Config: {
+        accessKeyId: process.env.SPACES_ACCESS_KEY_ID,
+        secretAccessKey: process.env.SPACES_SECRET_ACCESS_KEY,
+        bucketName: process.env.SPACES_BUCKET_NAME
+    }
 };

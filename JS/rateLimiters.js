@@ -47,7 +47,7 @@ const failedSubmissionLimiter = rateLimit({
     max: 100,
     keyGenerator: (req) => req.clientIp,
     message: {
-        error: 'Too many failed submissions for today.',
+        error: 'Too many attempted map submissions or updates for today.',
     },
 });
 
