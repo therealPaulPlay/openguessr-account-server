@@ -5,41 +5,13 @@ const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const { body, validationResult } = require('express-validator');
 
-// 1) Return a list of ALL maps (without map_data)
-communityMapRouter.get('/', standardLimiter, (req, res) => {
-    const db = getDB();
-
-    db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC', (err, results) => {
-        if (err) {
-            console.error('Error fetching maps:', err);
-            return res.status(500).json({ error: 'Failed to fetch maps.' });
-        }
-
-        const communityMaps = results.map(map => ({
-            name: map.name,
-            author: map.author,
-            authorId: map.author_id,
-            description: map.description,
-            favourite: !!map.favourite, // convert to boolean
-            category: map.category, // include category
-            likes: map.likes
-        }));
-
-        res.json({ communityMaps });
-    });
-});
-
-// 1.1) Return the next 50 maps starting from a given index
+// 1.1) Return the next 50 maps starting from a given index (without map data!)
 communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
     const db = getDB();
+    const limit = 50;
 
     const startIndex = parseInt(req.params.index, 10);
-
-    if (isNaN(startIndex) || startIndex < 0) {
-        return res.status(400).json({ error: 'Invalid start index' });
-    }
-
-    const limit = 50;
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
     // the questionmarks in the sql are then being filled in by the array's content!
     db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
@@ -68,10 +40,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res)
 
     const category = req.params.category;
     const startIndex = parseInt(req.params.index, 10);
-
-    if (isNaN(startIndex) || startIndex < 0) {
-        return res.status(400).json({ error: 'Invalid start index' });
-    }
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
     const limit = 50;
 
@@ -101,10 +70,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 
     const query = `%${req.params.query}%`;
     const startIndex = parseInt(req.params.index, 10);
-
-    if (isNaN(startIndex) || startIndex < 0) {
-        return res.status(400).json({ error: 'Invalid start index' });
-    }
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
     const limit = 50;
 
@@ -220,7 +186,6 @@ communityMapRouter.post('', [
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (slightly above 10 000 locations).'),
 ], async (req, res) => {
     const { id: player_id, name: rawName, author, description: rawDescription, mapData, category } = req.body; // include category
-    const ip = req.clientIp;
 
     const db = getDB();
 
@@ -233,6 +198,7 @@ communityMapRouter.post('', [
         return res.status(400).json({ error: 'All input fields are required.' });
     }
 
+    // Remove illegal link symbols
     let name = rawName.split("_").join(" ");
     name = name.split("/").join(" ");
     name = name.split("+").join(" ");
@@ -254,9 +220,7 @@ communityMapRouter.post('', [
             parseFloat(coord[1])
         ]);
 
-        if (!isValidMap({ locations })) {
-            return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
-        }
+        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
     } catch (error) {
         console.error('Error parsing JSON:', error);
         return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse.' });
@@ -268,9 +232,7 @@ communityMapRouter.post('', [
             'SELECT * FROM maps WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
             [name]
         );
-        if (duplicateMap.length > 0) {
-            return res.status(409).json({ error: 'Map with this name already exists.' });
-        }
+        if (duplicateMap.length > 0) return res.status(409).json({ error: 'Map with this name already exists.' });
 
         // Insert into maps table
         await db.promise().execute('INSERT INTO maps (name, author, description, favourite, map_data, category, author_id) VALUES (?, ?, ?, ?, ?, ?, ?)', [name, author, description, false, JSON.stringify({ locations }), category || null, player_id]);
@@ -288,23 +250,18 @@ communityMapRouter.post('', [
 // Update map
 communityMapRouter.put('', [
     failedSubmissionLimiter, authenticateTokenWithId,
-    body('name').isLength({ min: 3, max: 17 }).withMessage('Map name must be between 3 and 17 characters.'),
+    body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.'),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (slightly above 10 000 locations).'),
 ], async (req, res) => {
     const { id: player_id, name: rawName, mapData } = req.body; // include player_id
-    const ip = req.clientIp;
     let name = rawName;
 
     const db = getDB();
     const errors = validationResult(req);
 
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-    if (!player_id || !rawName || !mapData) {
-        return res.status(400).json({ error: 'All input fields are required.' });
-    }
+    if (!player_id || !rawName || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
 
     let parsedMapData;
     let locations; // here locations are converted to numbers in case they are strings
@@ -382,10 +339,7 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
     try {
         // Check if the map exists
         const [mapResults] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name]);
-
-        if (mapResults.length === 0) {
-            return res.status(404).json({ error: 'Map not found.' });
-        }
+        if (mapResults.length === 0) return res.status(404).json({ error: 'Map not found.' });
 
         const map = mapResults[0];
         const mapId = map.id;
@@ -420,10 +374,7 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     try {
         // Check if the map exists and retrieve the likes count
         const [mapResults] = await db.promise().execute('SELECT likes FROM maps WHERE LOWER(name) = ?', [name]);
-
-        if (mapResults.length === 0) {
-            return res.status(404).json({ error: 'Map not found.' });
-        }
+        if (mapResults.length === 0) return res.status(404).json({ error: 'Map not found.' });
 
         const likeAmount = mapResults[0].likes;
         let liked = false;
@@ -431,10 +382,7 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
         if (player_id) {
             // Check if the player has liked the map
             const [likeResults] = await db.promise().execute('SELECT 1 FROM map_likes WHERE map_id = (SELECT id FROM maps WHERE LOWER(name) = ?) AND player_id = ?', [name, player_id]);
-
-            if (likeResults.length > 0) {
-                liked = true;
-            }
+            if (likeResults.length > 0) liked = true;
         }
 
         return res.status(200).json({ likeAmount, liked });

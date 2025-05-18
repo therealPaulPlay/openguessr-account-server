@@ -51,13 +51,8 @@ function sendEventToClient(userId, eventData) {
     return false;
 }
 
-function getClients() {
-    return clients;
-}
-
 // Export the SSE functions
 module.exports = {
     initSSE,
-    sendEventToClient,
-    getClients
+    sendEventToClient
 };
