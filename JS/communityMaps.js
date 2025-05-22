@@ -8,7 +8,7 @@ const { getPublicObjectURL, spacesClient } = require('./spacesConnection.js');
 const { s3Config } = require("./config.js");
 const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
-// 1.1) Return the next 50 maps starting from a given index (without map data!)
+// Return the next 50 maps starting from a given index (without map data!)
 communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
     const db = getDB();
     const limit = 50;
@@ -37,7 +37,7 @@ communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
     });
 });
 
-// 1.2) Filter maps by category with pagination
+// Filter maps by category with pagination
 communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res) => {
     const db = getDB();
 
@@ -67,7 +67,42 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res)
     });
 });
 
-// 1.3) Search maps by query with pagination
+// Get maps created by a certain user (user id)
+communityMapRouter.get('/by-user/:id/:index', standardLimiter, (req, res) => {
+    const db = getDB();
+    const limit = 50;
+    const authorId = parseInt(req.params.id, 10);
+    const startIndex = parseInt(req.params.index, 10);
+
+    if (isNaN(authorId) || authorId < 0) return res.status(400).json({ error: 'Invalid author ID' });
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
+
+    // Filter by author_id and maintain the same ordering by likes
+    db.query(
+        'SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE author_id = ? ORDER BY likes DESC LIMIT ?, ?',
+        [authorId, startIndex, limit],
+        (err, results) => {
+            if (err) {
+                console.error('Error fetching maps by author:', err);
+                return res.status(500).json({ error: 'Failed to fetch maps.' });
+            }
+
+            const communityMaps = results.map(map => ({
+                name: map.name,
+                author: map.author,
+                authorId: map.author_id,
+                description: map.description,
+                favourite: !!map.favourite,
+                category: map.category,
+                likes: map.likes
+            }));
+
+            res.json({ communityMaps });
+        }
+    );
+});
+
+// Search maps by query with pagination
 communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const db = getDB();
 
@@ -97,7 +132,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     });
 });
 
-// 1.4) Return all favourite maps
+// Return all favourite maps
 communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
     const db = getDB();
 
@@ -121,7 +156,7 @@ communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
     });
 });
 
-// 2) Get the actual map data by the name of the map
+// Get the actual map data by the name of the map
 communityMapRouter.get('/:name', standardLimiter, async (req, res) => {
     const db = getDB();
     const name = req.params.name.toLowerCase().replaceAll("_", " ");
@@ -182,7 +217,7 @@ const isValidMap = (map) => {
     }
 };
 
-// 3) Endpoint to submit a new map
+// Endpoint to submit a new map
 communityMapRouter.post('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
     body('name').isLength({ min: 3, max: 17 }).withMessage('Map name must be between 3 and 17 characters.'),
@@ -350,7 +385,7 @@ communityMapRouter.put('/', [
     }
 });
 
-// 3.1) Delete map
+// Delete map
 communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const author_id = req.body.id;
@@ -390,7 +425,7 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, as
     }
 });
 
-// 3.2) Like or Dislike map
+// Like or Dislike map
 communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const player_id = req.body.id;
