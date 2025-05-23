@@ -5,6 +5,7 @@ const { standardLimiter, rankingLimiter, createCompetitionLimiter } = require(".
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const { body, validationResult } = require('express-validator');
+const { updateProfileData } = require('./profileDataHelper.js');
 
 // Map Validation function ----------------------------------------------------------------------------------
 
@@ -482,6 +483,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
                         console.error('Error submitting results:', err);
                         return res.status(500).json({ status: 500, error: 'Failed to submit results.' });
                     }
+                    updateProfileData(id, "competitions_entered", true, 1);
                     res.status(201).json({ status: 201, message: 'Results submitted successfully.' });
                 }
             );

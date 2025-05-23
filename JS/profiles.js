@@ -1,77 +1,34 @@
 const express = require('express');
 const profileRouter = express.Router();
-const  { standardLimiter } = require("./rateLimiters.js");
+const { standardLimiter } = require("./rateLimiters.js");
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
+const { updateProfileData } = require("./profileDataHelper.js");
 
-// Update Profile data
-profileRouter.put('/update', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const db = getDB();
-    const { id, profileData } = req.body;
+// Update individual profile data fields
+profileRouter.put('/update-replace', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id, type, value } = req.body;
+    if (!id || !type || value === undefined) return res.status(400).json({ error: 'User ID, column, and value are required.' });
 
-    if (!id || !profileData) {
-        return res.status(400).json({ error: 'User ID and profile data are required.' });
-    }
+    // Define allowed columns for this endpoint
+    const allowedColumns = ['flag', 'badge', 'pin', 'about', 'highest_country_streak'];
 
-    // Check if profileData is not greater than 3000 characters
-    if (profileData.length > 3000) {
-        return res.status(400).json({ error: 'Profile data must not exceed 3000 characters.' });
-    }
-
-    // Validate that profileData is JSON-formatted
-    let parsedProfileData;
-
-    try {
-        parsedProfileData = JSON.parse(profileData);
-    } catch (err) {
-        return res.status(400).json({ error: 'Profile data must be JSON-formatted.' });
-    }
-
-    try {
-        if ((parsedProfileData.badge && parsedProfileData.badge.includes("supporter")) || (parsedProfileData.pin && parsedProfileData.pin == "11")) {
-            // Check if badge and pin align with supporter value
-            const getSupporterLevel = 'SELECT supporter_level FROM users WHERE id = ?';
-            const supporterLevel = await new Promise((resolve, reject) => {
-                db.execute(getSupporterLevel, [id], (err, results) => {
-                    if (err) return reject(err);
-                    resolve(results[0]);
-                });
-            });
-
-            if (supporterLevel.supporter_level == 0) {
-                return res.status(400).json({ error: 'You need to be a supporter to equip these items.' });
-            }
-        }
-
-        if (parsedProfileData.badge && parsedProfileData.badge == "miscBadge1") {
-            if (id > 5) {
-                return res.status(400).json({ error: 'You need to be a developer to equip these items.' });
-            }
-        }
-    } catch (error) {
-        console.error("Error verifying profile data request: ", error);
-        return res.status(400).json({ error: 'Profile data verification checks failed.' });
-    }
-
-    try {
-        // Update query to change the profileData
-        let updateQuery = `
-            UPDATE users
-            SET profile_data = ?
-            WHERE id = ?
-        `;
-
-        await new Promise((resolve, reject) => {
-            db.execute(updateQuery, [profileData, id], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
-            });
+    if (!allowedColumns.includes(type)) {
+        return res.status(400).json({
+            error: `Invalid column: ${type}. Allowed columns: ${allowedColumns.join(', ')}`
         });
+    }
 
-        res.json({ message: 'Profile data updated successfully.' }); // with no assigned status, express assumes 200 OK
+    try {
+        // Update the field using the updateProfileData function
+        const result = await updateProfileData(id, type, false, value);
+        if (!result.success) return res.status(500).json({ error: 'Failed to update profile data: ' + result?.error });
+
+        res.json({ message: 'Profile data updated successfully.' });
+
     } catch (error) {
         console.error('Error updating profile data:', error);
-        res.status(500).json({ error: 'An error occurred while updating the profile data' });
+        res.status(500).json({ error: 'An error occurred while updating the profile data.' });
     }
 });
 
@@ -79,23 +36,36 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
     const db = getDB();
     const { id } = req.params;
 
-    if (!id) {
-        return res.status(400).json({ error: 'User ID is required.' });
-    }
+    if (!id) return res.status(400).json({ error: 'User ID is required.' });
 
     try {
-        // Query to get the user data for the given user ID
-        const userQuery = 'SELECT user_name, experience, elo, profile_data, created_at, supporter_level, supported_amount FROM users WHERE id = ?';
-        const userProfile = await new Promise((resolve, reject) => {
-            db.execute(userQuery, [id], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
-            });
-        });
+        // Query with LEFT JOIN to get user data and profile_data
+        const userQuery = `
+            SELECT 
+                u.user_name, 
+                u.experience, 
+                u.elo, 
+                u.created_at, 
+                u.supporter_level, 
+                u.supported_amount,
+                p.flag,
+                p.pin,
+                p.badge,
+                p.about,
+                p.duels_lost,
+                p.duels_won,
+                p.competitions_entered,
+                p.current_duel_win_streak,
+                p.highest_country_streak
+            FROM users u
+            LEFT JOIN profile_data p ON u.id = p.user_id
+            WHERE u.id = ?
+        `;
 
-        if (!userProfile) {
-            return res.status(404).json({ error: 'No profile found for the given ID.' });
-        }
+        const [rows] = await db.promise().execute(userQuery, [id]);
+        const userProfile = rows[0];
+
+        if (!userProfile) return res.status(404).json({ error: 'No profile found for the given ID.' });
 
         // Construct the response object
         const response = {
@@ -105,10 +75,19 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
             supporterLevel: userProfile.supporter_level,
             supportedAmount: userProfile.supported_amount,
             elo: userProfile.elo,
-            profileData: userProfile.profile_data
+            flag: userProfile.flag,
+            pin: userProfile.pin,
+            badge: userProfile.badge,
+            about: userProfile.about,
+            duelsLost: userProfile.duels_lost,
+            duelsWon: userProfile.duels_won,
+            competitionsEntered: userProfile.competitions_entered,
+            currentDuelWinStreak: userProfile.current_duel_win_streak,
+            highestCountryStreak: userProfile.highest_country_streak
         };
 
         res.json(response);
+
     } catch (error) {
         console.error('Error fetching profile data:', error);
         res.status(500).json({ error: 'An error occurred while fetching the profile data.' });

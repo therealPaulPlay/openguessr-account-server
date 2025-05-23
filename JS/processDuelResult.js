@@ -1,4 +1,5 @@
 const { getDB } = require("./dbConnection");
+const { updateProfileData } = require("./profileDataHelper");
 const { sendEventToClient } = require("./serverSentEvents");
 
 // Calculation ------------------------------------------------------------------------------------------------------------------------------------------------
@@ -89,6 +90,14 @@ async function processDuelResult(uuid, leavingUserId) {
                 'END WHERE id IN (?, ?)',
                 [winningPlayer.id, eloChange, losingPlayer.id, eloChange, winningPlayer.id, losingPlayer.id]
             );
+
+            // Update stats
+            updateProfileData(winningPlayer.id, "duels_won", true, 1);
+            updateProfileData(losingPlayer.id, "duels_lost", true, 1);
+
+            // Update win streak
+            updateProfileData(winningPlayer.id, "current_duel_win_streak", true, 1);
+            updateProfileData(losingPlayer.id, "current_duel_win_streak", false, 0);
 
             // Send WebSocket notifications
             const eloChanges = { [winningPlayer.id]: eloChange, [losingPlayer.id]: -eloChange };

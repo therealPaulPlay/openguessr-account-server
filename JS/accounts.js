@@ -16,44 +16,37 @@ const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u
 // Fetch User Details (bearer protected, this is for the user itself, not for others - use profile for others) ------------------------------------------------------------------------------
 accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
-
     try {
         const userId = req.params.id || 0;
-
-        // Query to fetch user details
+        // Query to fetch user details with profile_data
         let userQuery = `
-            SELECT user_name AS userName, experience, profile_data, supporter_level, supported_amount, new_requests, elo
-            FROM users
-            WHERE id = ?
+            SELECT 
+                u.user_name AS userName, 
+                u.experience, 
+                u.supporter_level, 
+                u.supported_amount, 
+                u.new_requests, 
+                u.elo,
+                p.*
+            FROM users u
+            LEFT JOIN profile_data p ON u.id = p.user_id
+            WHERE u.id = ?
         `;
 
-        const user = await new Promise((resolve, reject) => {
-            db.execute(userQuery, [userId], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
-            });
-        });
+        const [rows] = await db.promise().execute(userQuery, [userId]);
+        const user = rows[0];
 
         const now = new Date();
-
         // Update user experience and last experience update time in the database
         const activityQuery = `
-                UPDATE users 
-                SET last_activity = ?
-                WHERE id = ?
-            `;
-        await new Promise((resolve, reject) => {
-            db.execute(activityQuery, [now, userId], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
-            });
-        });
+            UPDATE users
+            SET last_activity = ?
+            WHERE id = ?
+        `;
+        await db.promise().execute(activityQuery, [now, userId]);
 
-        if (user) {
-            res.json({ user });
-        } else {
-            res.status(404).json({ error: 'User not found.' });
-        }
+        if (user) res.json({ user });
+        else res.status(404).json({ error: 'User not found.' });
     } catch (error) {
         console.error('Error fetching user details:', error);
         res.status(500).json({ error: 'An error occurred while fetching user details.' });
