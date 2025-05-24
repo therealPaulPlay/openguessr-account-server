@@ -5,12 +5,10 @@ const { sendEventToClient } = require("./serverSentEvents");
 // Calculation ------------------------------------------------------------------------------------------------------------------------------------------------
 const calculateEloChange = (winnerElo, loserElo) => {
     const K = 32;
-    const eloDiff = Math.abs(winnerElo - loserElo);
-    const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 400));
+    const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
 
-    // Ensure minimum gain of 1 unless difference is extreme (>1500)
-    if (eloDiff > 1500) return 0;
-    const change = Math.max(5, Math.min(30, Math.round(K * (1 - expectedScore))));
+    // Ensure minimum gain of 3
+    const change = Math.max(3, Math.min(30, Math.round(K * (1 - expectedScore))));
     return change;
 };
 
