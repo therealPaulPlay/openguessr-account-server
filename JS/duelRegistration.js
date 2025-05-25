@@ -39,7 +39,7 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
         );
 
         // Fetch the duel entry to check its current state.
-        const [rows] = await connection.query(
+        const [rows] = await connection.execute(
             'SELECT user1_id, user2_id FROM duel_entries WHERE uuid = ?',
             [uuid]
         );
@@ -60,18 +60,21 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
             throw new Error("Duel already full.");
         }
 
+        // Add user to ongoing duel – if they are not authenticated, this will throw an error!
+        addUserToOngoingDuel(id, uuid);
+
         // Wait 5 seconds for the second player, otherwise close
         if (isFirstPlayer) {
             setTimeout(async () => {
                 try {
-                    const [duel] = await pool.promise().query(
+                    const [duel] = await pool.promise().execute(
                         'SELECT * FROM duel_entries WHERE uuid = ? AND user2_id IS NULL',
                         [uuid]
                     );
 
                     // If second player did not register, send notification and delete entry
                     if (duel.length) {
-                        await pool.promise().query('DELETE FROM duel_entries WHERE uuid = ?', [uuid]);
+                        await pool.promise().execute('DELETE FROM duel_entries WHERE uuid = ?', [uuid]);
                         sendEventToClient(id, {
                             type: 'duel-registration-error',
                             message: 'Other player did not register for the duel.'
@@ -82,13 +85,13 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
                 }
             }, 5000);
         }
-        addUserToOngoingDuel(id, uuid);
+
         await connection.commit();
         res.status(201).json({ message: 'Duel registration successful.', isFirstPlayer });
     } catch (error) {
         if (connection) await connection.rollback();
         console.error('Error registering duel:', error);
-        res.status(500).json({ error: `Error registering a duel: ${error}` });
+        res.status(500).json({ error: `Error registering duel: ${error}` });
     } finally {
         if (connection) connection.release();
     }
@@ -109,7 +112,8 @@ duelRouter.post('/duel-result/:uuid', standardLimiter, authenticateTokenWithId, 
         connection = await pool.promise().getConnection();
         await connection.beginTransaction();
 
-        const [duels] = await connection.query(
+        // Select and LOCK row (using for update) to ensure that in the end, one of the two players sees both entries
+        const [duels] = await connection.execute(
             'SELECT * FROM duel_entries WHERE uuid = ? FOR UPDATE',
             [uuid]
         );
@@ -130,17 +134,11 @@ duelRouter.post('/duel-result/:uuid', standardLimiter, authenticateTokenWithId, 
 
         removeUserFromOngoingDuel(id); // Remove this player from ongoing duels
 
-        // Check if both players have submitted results
-        const [updatedDuelRows] = await connection.query(
-            'SELECT * FROM duel_entries WHERE uuid = ? FOR UPDATE',
-            [uuid]
-        );
-
         await connection.commit();
         connection.release();
 
         // If both results are in now, pick a winner
-        if (updatedDuelRows[0].user1_win !== null && updatedDuelRows[0].user2_win !== null) await processDuelResult(uuid);
+        if ((isUser1 && duels[0]?.user2_win !== null) || (isUser2 && duels[0]?.user1_win !== null)) await processDuelResult(uuid);
         res.status(200).json({ message: 'Result submitted successfully.' });
 
     } catch (error) {
@@ -148,7 +146,7 @@ duelRouter.post('/duel-result/:uuid', standardLimiter, authenticateTokenWithId, 
             await connection.rollback();
             connection.release();
         }
-        console.error('Error processing duel result:', error);
+        console.error('Error submitting duel result:', error);
         res.status(500).json({ error: 'Error occurred submitting duel result: ' + error });
     }
 });

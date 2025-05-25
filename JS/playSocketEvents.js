@@ -10,7 +10,7 @@ let playSocketServer;
 const clientIdDuelUuid = new Map(); // Client id -> Active duel uuid (active = no result submited yet)
 
 function attachPlaySocketEvents(server) {
-    playSocketServer = server; // assign server
+    playSocketServer = server; // Assign server
     server.onEvent("clientRegistered", (clientId, data) => {
         if (!data?.bearer) return;
         jwt.verify(data.bearer, SECRET_KEY, (err, decoded) => {
