@@ -56,7 +56,8 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
                 p.duels_won,
                 p.competitions_entered,
                 p.current_duel_win_streak,
-                p.highest_country_streak
+                p.highest_country_streak,
+                p.purchased_pins
             FROM users u
             LEFT JOIN profile_data p ON u.id = p.user_id
             WHERE u.id = ?
@@ -83,7 +84,8 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
             duelsWon: userProfile.duels_won,
             competitionsEntered: userProfile.competitions_entered,
             currentDuelWinStreak: userProfile.current_duel_win_streak,
-            highestCountryStreak: userProfile.highest_country_streak
+            highestCountryStreak: userProfile.highest_country_streak,
+            purchasedPins: userProfile.purchased_pins
         };
 
         res.json(response);

@@ -218,6 +218,13 @@ duelRouter.get('/duel-history', standardLimiter, async (req, res) => {
 cron.schedule('0 1 1 * *', async () => {
     try {
         const pool = getDB();
+
+        // Convert excess elo to tokens before resetting
+        await pool.promise().query(
+            'UPDATE users SET tokens = COALESCE(tokens, 0) + (elo - 2000) WHERE elo > 2000'
+        );
+
+        // Reset elo to 2000 for players above 2000
         await pool.promise().query('UPDATE users SET elo = 2000 WHERE elo > 2000');
 
         // Delete duel entries older than x days

@@ -27,6 +27,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
                 u.supported_amount, 
                 u.new_requests, 
                 u.elo,
+                u.tokens,
                 p.*
             FROM users u
             LEFT JOIN profile_data p ON u.id = p.user_id

@@ -20,6 +20,7 @@ const communityMapRouter = require("./JS/communityMaps.js");
 const competitionsRouter = require("./JS/competitions.js");
 const friendRouter = require("./JS/friends.js");
 const duelRouter = require('./JS/duelRegistration.js');
+const shopRouter = require('./JS/shop.js');
 // const mapLimitRouter = require('./JS/mapLimit.js');
 
 const { port } = require("./JS/config.js");
@@ -68,6 +69,7 @@ app.use("/maps", communityMapRouter);
 app.use("/competitions", competitionsRouter);
 app.use("/friends", friendRouter);
 app.use("/duels", duelRouter);
+app.use("/shop", shopRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the http server --------------------------------------------------------------------------------------
