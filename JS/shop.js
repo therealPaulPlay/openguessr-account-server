@@ -214,7 +214,7 @@ shopRouter.post('/purchase-bundle', standardLimiter, authenticateTokenWithId, as
 
 // Claim free tokens
 shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { userId } = req.body;
+    const { id: userId } = req.body;
 
     if (!userId) return res.status(400).json({ error: 'User ID is required.' });
 
@@ -230,7 +230,7 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
         const alreadyClaimed = profileRows.length > 0 && profileRows[0].free_tokens_claimed === 1;
         if (alreadyClaimed) return res.status(400).json({ error: 'Free tokens already claimed today.' });
 
-        // Add 15 tokens to user
+        // Add tokens to user
         await db.promise().execute(
             'UPDATE users SET tokens = COALESCE(tokens, 0) + 15 WHERE id = ?',
             [userId]
@@ -240,7 +240,7 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
         const result = await updateProfileData(userId, 'free_tokens_claimed', false, 1);
         if (!result.success) return res.status(500).json({ error: 'Failed to update claim status.' });
 
-        res.json({ message: 'Free tokens claimed successfully.' });
+        res.json({ message: 'Free tokens claimed successfully.', count: 15 });
 
     } catch (error) {
         console.error('Error claiming free tokens:', error);
