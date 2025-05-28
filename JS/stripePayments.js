@@ -59,7 +59,7 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
         let name = "Default";
         let image = "";
 
-        if (productId.includes("supporter")) {
+        if (productId.includes("supporter_tier")) {
             // Supporter tiers ----------------------------
             image = "https://openguessr.com/img/supporter_icon.png";
             name = "OpenGuessr Supporter";
@@ -72,7 +72,7 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
             price = SUPPORTER_PRICES[supporterTier - 1];
             if (user.supported_amount > 0) price = Math.max(price - user.supported_amount - 0.01, 0).toFixed(2);
 
-        } else if (productId.includes("token")) {
+        } else if (productId.includes("token_tier")) {
             // Token tiers --------------------------------
             const tokenImages = ["https://openguessr.com/img/token_stack_small.png", "https://openguessr.com/img/token_stack_medium.png", "https://openguessr.com/img/token_stack_large.png"];
             const tokenTier = Number(productId.replace("token_tier_", ""));
@@ -120,7 +120,7 @@ stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/
         }
 
         try {
-            if (productId.includes("supporter")) {
+            if (productId.includes("supporter_tier")) {
                 // Supporter callback --------------------------
                 const supporterTier = Number(productId.replace("supporter_tier_", ""));
 
@@ -144,7 +144,7 @@ stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/
                 const amountInDollars = amount_total / 100;
                 await db.promise().execute(statisticQuery, [month, year, amountInDollars, amountInDollars]);
 
-            } else if (productId.includes("token")) {
+            } else if (productId.includes("token_tier")) {
                 // Tokens callback ---------------------------
                 const tokenTier = Number(productId.replace("token_tier_", ""));
                 const tokenAdd = TOKEN_AMOUNTS[tokenTier - 1];
