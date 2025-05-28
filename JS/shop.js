@@ -63,12 +63,15 @@ createPinBundle();
 
 // Buy a pin
 shopRouter.post('/purchase-pin', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: userId, pinId } = req.body;
+    const { id: userId, pinId: rawPinId } = req.body;
 
-    if (!userId || !pinId) return res.status(400).json({ error: 'User ID and pin ID are required.' });
+    if (!userId || !rawPinId) return res.status(400).json({ error: 'User ID and pin ID are required.' });
 
     try {
         const db = getDB();
+
+        const pinId = parseInt(rawPinId);
+        if (isNaN(rawPinId)) return res.status(400).json({ error: 'Pin ID must be a number.' });
 
         // Get pin rarity from first digit
         const rarity = Math.floor(pinId / 100);
@@ -156,13 +159,15 @@ shopRouter.get('/bundle', async (req, res) => {
 
 // Purchase bundle
 shopRouter.post('/purchase-bundle', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: userId } = req.body;
+    const { id: userId, bundleItems } = req.body;
 
     if (!userId) return res.status(400).json({ error: 'User ID is required.' });
     if (!dailyPinBundle) return res.status(500).json({ error: 'No bundle available.' });
 
     try {
         const db = getDB();
+
+        if (JSON.stringify(dailyPinBundle.pins) != JSON.stringify(bundleItems)) return res.status(400).json({ error: 'This bundle is no longer available – please refresh your client.' });
 
         // Get user's tokens and purchased pins
         const [userRows] = await db.promise().execute(

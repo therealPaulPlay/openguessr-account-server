@@ -48,7 +48,6 @@ async function applyValidationChecks(db, userId, column, newValue) {
     // Check supporter-related items
     if ((column === 'badge' && newValue && newValue.includes("supporter")) ||
         (column === 'pin' && newValue == "11")) {
-
         const getSupporterLevel = 'SELECT supporter_level FROM users WHERE id = ?';
         const result = await db.promise().execute(getSupporterLevel, [userId]);
         if (!result[0] || !result[0][0] || result[0][0].supporter_level == 0) throw new Error('You need to be a supporter to equip these items.');
@@ -59,6 +58,16 @@ async function applyValidationChecks(db, userId, column, newValue) {
 
     // Check About length
     if (column === 'about' && newValue?.length > 3000) throw new Error('About section is too long!');
+
+    // Check if user owns the pin they're trying to set
+    if (column === 'pin' && Number(newValue) >= 100) {
+        const [rows] = await db.promise().execute(
+            'SELECT purchased_pins FROM profile_data WHERE user_id = ?',
+            [userId]
+        );
+        const purchasedPins = rows[0]?.purchased_pins;
+        if (!purchasedPins || !purchasedPins.includes(Number(newValue))) throw new Error('You do not own this pin.');
+    }
 }
 
 module.exports = { updateProfileData };
