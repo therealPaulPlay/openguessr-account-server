@@ -40,13 +40,16 @@ async function calculateSegments(targetSegments = 50) {
 }
 
 async function updateCache() {
+    console.log('Starting leaderboard cache update...');
     const db = getDB();
 
     try {
-        console.log('Starting leaderboard cache update...');
+        // Get advisory lock to prevent concurrent updates
+        const lockResult = await db.promise().execute('SELECT GET_LOCK(?, 0) as lock_acquired', ['leaderboard_update']);
+        if (!lockResult[0][0].lock_acquired) return console.log('Could not acquire lock for leaderboard update, skipping...');
+
         const segments = await calculateSegments();
 
-        // Use query() for transaction control statements!
         await db.promise().query('START TRANSACTION');
         await db.promise().query('TRUNCATE TABLE leaderboard_cache');
 
@@ -77,10 +80,20 @@ async function updateCache() {
 
         await db.promise().query('COMMIT');
         console.log('Leaderboard cache update completed successfully');
+
+        // Release the lock
+        await db.promise().execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
+
     } catch (error) {
         await db.promise().query('ROLLBACK');
         console.error('Error updating leaderboard cache:', error);
-        throw error;
+
+        try {
+            // Make sure to release lock even on error
+            await db.promise().execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
+        } catch (lockError) {
+            console.error('Error releasing lock:', lockError);
+        }
     }
 }
 
@@ -156,7 +169,6 @@ leaderboardRouter.get('/experience-user-section/:id', standardLimiter, async (re
             FROM leaderboard_cache
             WHERE ? > experience_lower_bound AND ? <= experience_upper_bound
         `, [user.experience, user.experience]);
-
         if (!currentBracket) return res.json([{ ...user, position: userPosition, id: userId }]);
 
         // Fetch the upper player within the bracket, ordered by experience (desc)
@@ -228,12 +240,10 @@ leaderboardRouter.get('/elo', standardLimiter, async (req, res) => {
     }
 });
 
-// Run Cached leaderboard update every 10 minutes (with 0 - 5 minutes offset)
-setTimeout(() => {
-    cron.schedule('*/10 * * * *', async () => {
-        console.log('Running leaderboard cache update...');
-        await updateCache();
-    });
-}, Math.floor(Math.random() * 5) * 60000);
+// Run Cached leaderboard update every 10 minutes
+cron.schedule('*/10 * * * *', async () => {
+    console.log('Running leaderboard cache update...');
+    await updateCache();
+});
 
 module.exports = leaderboardRouter;
