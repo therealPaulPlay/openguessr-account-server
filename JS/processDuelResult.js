@@ -8,7 +8,8 @@ const calculateEloChange = (winnerElo, loserElo) => {
     const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
 
     // Ensure minimum gain of 3
-    const change = Math.max(3, Math.min(30, Math.round(K * (1 - expectedScore))));
+    let change = Math.max(3, Math.min(30, Math.round(K * (1 - expectedScore))));
+    if (loserElo == 0) change = 0; // If the loser is already at 0 elo, the winner gains 0 (to prevent alt-accounts)
     return change;
 };
 
