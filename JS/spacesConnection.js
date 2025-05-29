@@ -13,7 +13,7 @@ const spacesClient = new S3Client({
 
 // Get file URL – direct URL for publicly readable objects
 async function getPublicObjectURL(key) {
-    return `https://${s3Config.bucketName}.fra1.cdn.digitaloceanspaces.com/${key}`;
+    return `https://${s3Config.bucketName}.fra1.digitaloceanspaces.com/${key}`;
   }
 
 module.exports = {
