@@ -253,6 +253,42 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
     }
 });
 
+// Claim free YouTube pin
+shopRouter.post('/claim-youtube-pin', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id: userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'User ID is required.' });
+
+    const pinId = 500; // Id of the YouTube pin
+
+    try {
+        const db = getDB();
+
+        // Get user's tokens and purchased pins
+        const [userRows] = await db.promise().execute(
+            'SELECT purchased_pins FROM profile_data WHERE id = ?',
+            [userId]
+        );
+        if (userRows.length === 0) return res.status(404).json({ error: 'User not found.' });
+
+        const user = userRows[0];
+        let purchasedPins = user.purchased_pins || [];
+        if (purchasedPins.includes(pinId)) return res.status(400).json({ error: 'Pin already claimed.' }); // Check if user already owns the pin
+
+        // Add pin to purchased pins array
+        purchasedPins.push(pinId);
+
+        // Update purchased pins
+        const result = await updateProfileData(userId, 'purchased_pins', false, JSON.stringify(purchasedPins));
+        if (!result.success) return res.status(500).json({ error: 'Failed to update purchased pins.' });
+
+        res.json({ message: 'Pin claimed successfully.' });
+
+    } catch (error) {
+        console.error('Error claiming pin:', error);
+        res.status(500).json({ error: 'An error occurred while claiming a pin.' });
+    }
+});
+
 // Create new bundle every day at 00:00
 cron.schedule('0 0 * * *', async () => {
     console.log("Creating new pin bundle...");
