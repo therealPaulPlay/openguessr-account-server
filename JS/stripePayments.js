@@ -42,8 +42,8 @@ async function createStripeSession(price, userId, productId, name, imageSrc) {
 }
 
 const SUPPORTER_PRICES = [2.99, 6.99, 14.99, 24.99];
-const TOKEN_PRICES = [2.99, 5.99, 11.99];
-const TOKEN_AMOUNTS = [550, 1350, 3150];
+const TOKEN_PRICES = [1.99, 2.99, 5.99];
+const TOKEN_AMOUNTS = [900, 1650, 3600];
 
 // Create Checkout Session
 stripeRouter.post('/create-checkout-session', standardLimiter, authenticateTokenWithId, async (req, res) => {

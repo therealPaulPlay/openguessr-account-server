@@ -237,7 +237,7 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
 
         // Add tokens to user
         await db.promise().execute(
-            'UPDATE users SET tokens = COALESCE(tokens, 0) + 15 WHERE id = ?',
+            'UPDATE users SET tokens = COALESCE(tokens, 0) + 20 WHERE id = ?',
             [userId]
         );
 
@@ -245,7 +245,7 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
         const result = await updateProfileData(userId, 'free_tokens_claimed', false, 1);
         if (!result.success) return res.status(500).json({ error: 'Failed to update claim status.' });
 
-        res.json({ message: 'Free tokens claimed successfully.', count: 15 });
+        res.json({ message: 'Free tokens claimed successfully.', count: 20 });
 
     } catch (error) {
         console.error('Error claiming free tokens:', error);
@@ -281,7 +281,7 @@ shopRouter.post('/claim-youtube-pin', standardLimiter, authenticateTokenWithId, 
         const result = await updateProfileData(userId, 'purchased_pins', false, JSON.stringify(purchasedPins));
         if (!result.success) return res.status(500).json({ error: 'Failed to update purchased pins.' });
 
-        res.json({ message: 'Pin claimed successfully.' });
+        res.json({ message: 'Pin claimed successfully.', pinId });
 
     } catch (error) {
         console.error('Error claiming pin:', error);
