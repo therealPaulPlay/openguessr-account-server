@@ -228,11 +228,12 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
 
         // Check if user has already claimed free tokens today
         const [profileRows] = await db.promise().execute(
-            'SELECT free_tokens_claimed FROM profile_data WHERE user_id = ?',
+            'SELECT u.id, p.free_tokens_claimed FROM users u LEFT JOIN profile_data p ON u.id = p.user_id WHERE u.id = ?',
             [userId]
         );
+        if (profileRows.length === 0) return res.status(404).json({ error: 'User not found.' });
 
-        const alreadyClaimed = profileRows.length > 0 && profileRows[0].free_tokens_claimed === 1;
+        const alreadyClaimed = profileRows[0]?.free_tokens_claimed === 1;
         if (alreadyClaimed) return res.status(400).json({ error: 'Free tokens already claimed today.' });
 
         // Add tokens to user
@@ -263,9 +264,9 @@ shopRouter.post('/claim-youtube-pin', standardLimiter, authenticateTokenWithId, 
     try {
         const db = getDB();
 
-        // Get user's tokens and purchased pins
+        // Get the user and the purchased_pins
         const [userRows] = await db.promise().execute(
-            'SELECT purchased_pins FROM profile_data WHERE id = ?',
+            'SELECT u.id, p.purchased_pins FROM users u LEFT JOIN profile_data p ON u.id = p.user_id WHERE u.id = ?',
             [userId]
         );
         if (userRows.length === 0) return res.status(404).json({ error: 'User not found.' });
