@@ -57,6 +57,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
 
 roomRouter.post('/join-duel/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
+    const { id: userId } = req.body;
     const index = parseInt(req.params.index, 10);
     const userElo = parseInt(req.query.elo, 10) || 1000; // Default to 1000 if not provided
     const wantSkillBased = req.query['skill-based'] === 'true'; // Only true if explicitly set to 'true'
@@ -73,27 +74,28 @@ roomRouter.post('/join-duel/:index', standardLimiter, authenticateTokenWithId, a
         const maxElo = breakpoints[divIndex + 1];
 
         let whereClause, queryParams;
+
         if (wantSkillBased) {
             // User wants skill-based: Only match with players in their ELO range
             whereClause = `WHERE user_elo >= ? AND user_elo < ?`;
             queryParams = [minElo, maxElo];
         } else {
             // User takes anyone: Match with non-skill-based players AND skill-based players in their range
-            whereClause = `WHERE skill_based = 0 OR skill_based IS NULL OR 
-                      (skill_based = 1 AND user_elo >= ? AND user_elo < ?)`;
+            whereClause = `WHERE skill_based = 0 OR skill_based IS NULL OR
+                     (skill_based = 1 AND user_elo >= ? AND user_elo < ?)`;
             queryParams = [minElo, maxElo];
         }
 
         const selectQuery = `
         SELECT code
         FROM room_code
-        ${whereClause}
+        ${whereClause} AND user_id != ?
         ORDER BY creation_date
         LIMIT 1 OFFSET ?
-      `;
+        `;
 
         const roomCode = await new Promise((resolve, reject) => {
-            queryParams.push(index); // Add index to the query parameters
+            queryParams.push(userId, index); // Add userId and index to the query parameters
             db.query(selectQuery, queryParams, (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]?.code || null);
