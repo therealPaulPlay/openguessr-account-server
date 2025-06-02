@@ -95,7 +95,7 @@ roomRouter.post('/join-duel/:index', standardLimiter, authenticateTokenWithId, a
         `;
 
         const roomCode = await new Promise((resolve, reject) => {
-            queryParams.push(userId, index); // Add userId and index to the query parameters
+            queryParams.push(Number(userId), index); // Add userId and index to the query parameters
             db.query(selectQuery, queryParams, (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]?.code || null);
