@@ -35,14 +35,21 @@ async function processDuelResult(uuid, leavingUserId) {
 
             if (!leavingUserId) {
                 if (duels[0].user1_win === duels[0].user2_win) {
-                    // Notify both players of the suspicious submission
-                    [duels[0].user1_id, duels[0].user2_id].forEach(playerId => {
-                        sendEventToClient(playerId, {
-                            type: 'duel-result-error',
-                            message: `Both players submitted the same result. Player 1's id: ${duels[0].user1_id}, Player 2's id: ${duels[0].user2_id}.`
+                    if (duels[0].user1_win) {
+                        // If both won, notify players of the suspicious submission
+                        [duels[0].user1_id, duels[0].user2_id].forEach(playerId => {
+                            sendEventToClient(playerId, {
+                                type: 'duel-result-error',
+                                message: `Both players submitted victory. Player 1's id: ${duels[0].user1_id}, Player 2's id: ${duels[0].user2_id}.`
+                            });
                         });
-                    });
-                    throw new Error(`Both players submitted the same result. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
+                        throw new Error(`Both players submitted victory. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
+                    } else {
+                        // if both players submitted defeat / false, that indicates a draw (keep it in log)
+                        await connection.query('UPDATE duel_entries SET processed = 1 WHERE uuid = ?', [uuid]);
+                        await connection.commit();
+                        return; // Exit, jump to finally block
+                    }
                 }
                 winner = duels[0].user1_win ? duels[0].user1_id : duels[0].user2_id;
                 loser = duels[0].user1_win ? duels[0].user2_id : duels[0].user1_id;
