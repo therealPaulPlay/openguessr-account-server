@@ -46,7 +46,19 @@ async function processDuelResult(uuid, leavingUserId) {
                         throw new Error(`Both players submitted victory. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
                     } else {
                         // if both players submitted defeat / false, that indicates a draw (keep it in log)
-                        await connection.query('UPDATE duel_entries SET processed = 1 WHERE uuid = ?', [uuid]);
+                        const [players] = await connection.query('SELECT id, user_name FROM users WHERE id IN (?, ?)', [duels[0].user1_id, duels[0].user2_id]);
+                        const user1Name = players.find(p => p.id === duels[0].user1_id)?.user_name || '';
+                        const user2Name = players.find(p => p.id === duels[0].user2_id)?.user_name || '';
+
+                        // Update duel entry with player names and mark as processed
+                        await connection.query(
+                            `UPDATE duel_entries SET 
+                                user1_name = ?,
+                                user2_name = ?,
+                                processed = 1
+                             WHERE uuid = ?`,
+                            [user1Name, user2Name, uuid]
+                        );
                         await connection.commit();
                         return; // Exit, jump to finally block
                     }
