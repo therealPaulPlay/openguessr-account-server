@@ -259,11 +259,11 @@ friendRouter.post('/remove', standardLimiter, authenticateTokenWithId, async (re
 
 // Invites ----------------------------------------------------------------------------------------------------
 friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: senderId, friend_id: recipientId, roomcode, isDuel } = req.body;
+    const { id: senderId, friend_id: recipientId, roomcode } = req.body;
 
     const db = getDB();
 
-    if (!senderId || !recipientId || !roomcode || isDuel == null) return res.status(400).json({ error: 'Sender ID, recipient ID, duel state and roomcode are required.' });
+    if (!senderId || !recipientId || !roomcode) return res.status(400).json({ error: 'Sender ID, recipient ID and roomcode are required.' });
 
     try {
         // Get sender name
@@ -279,8 +279,7 @@ friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, asyn
             type: 'room-invite',
             roomcode,
             from: senderId,
-            name: senderName,
-            duel: isDuel
+            name: senderName
         };
 
         if (sendEventToClient(recipientId, eventData)) {
