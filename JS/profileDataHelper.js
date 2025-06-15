@@ -12,7 +12,7 @@ async function updateProfileData(userId, column, increment = false, newValue) {
         const db = getDB();
 
         // Apply validation checks for specific columns/values
-        await applyValidationChecks(db, userId, column, newValue);
+        newValue = await applyValidationChecks(db, userId, column, newValue);
 
         let query, params;
 
@@ -56,8 +56,11 @@ async function applyValidationChecks(db, userId, column, newValue) {
     // Check developer badge
     if (column === 'badge' && newValue === "miscBadge1") if (userId > 5) throw new Error('You need to be a developer to equip these items.');
 
-    // Check About length
-    if (column === 'about' && newValue?.length > 3000) throw new Error('About section is too long!');
+    // Check about length
+    if (column === 'about') {
+        newValue = newValue?.trim() || "";
+        if (newValue?.length > 3000) throw new Error('About section is too long!');
+    }
 
     // Check if user owns the pin they're trying to set
     if (column === 'pin' && Number(newValue) >= 100) {
@@ -68,6 +71,8 @@ async function applyValidationChecks(db, userId, column, newValue) {
         const purchasedPins = rows[0]?.purchased_pins;
         if (!purchasedPins || !purchasedPins.includes(Number(newValue))) throw new Error('You do not own this pin.');
     }
+
+    return newValue;
 }
 
 module.exports = { updateProfileData };
