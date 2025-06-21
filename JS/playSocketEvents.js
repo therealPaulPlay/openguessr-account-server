@@ -27,9 +27,12 @@ function attachPlaySocketEvents(server) {
             const userId = authedMultiplayerClients.get(clientId);
             const duelUuid = clientIdDuelUuid.get(clientId);
 
-            // Remove from maps
+            // Only remove from userId map if this is the current client for this user
+            const currentClientForUser = authedMultiplayerUserId.get(userId);
+            if (currentClientForUser == clientId) authedMultiplayerUserId.delete(userId);
+
+            // Always remove from client maps
             authedMultiplayerClients.delete(clientId);
-            authedMultiplayerUserId.delete(userId);
             clientIdDuelUuid.delete(clientId);
 
             // Process the result if in ongoing duel > This will fail silently if already processed
