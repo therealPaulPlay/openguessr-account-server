@@ -35,18 +35,19 @@ profileRouter.put('/update-replace', standardLimiter, authenticateTokenWithId, a
 profileRouter.get('/:id', standardLimiter, async (req, res) => {
     const db = getDB();
     const { id } = req.params;
+    const requestorId = req.query.id; // Optional query parameter
 
     if (!id) return res.status(400).json({ error: 'User ID is required.' });
 
     try {
         // Query with LEFT JOIN to get user data and profile_data
         const userQuery = `
-            SELECT 
-                u.user_name, 
-                u.experience, 
-                u.elo, 
-                u.created_at, 
-                u.supporter_level, 
+            SELECT
+                u.user_name,
+                u.experience,
+                u.elo,
+                u.created_at,
+                u.supporter_level,
                 u.supported_amount,
                 p.flag,
                 p.pin,
@@ -68,6 +69,17 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
 
         if (!userProfile) return res.status(404).json({ error: 'No profile found for the given ID.' });
 
+        // Check friendship status if requestorId is provided
+        let areFriends = false;
+        if (requestorId) {
+            const friendQuery = `
+                SELECT 1 FROM friends 
+                WHERE user_id = ? AND friend_id = ?
+            `;
+            const [friendRows] = await db.promise().execute(friendQuery, [requestorId, id]);
+            areFriends = friendRows.length > 0;
+        }
+
         // Construct the response object
         const response = {
             username: userProfile.user_name,
@@ -88,8 +100,10 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
             purchasedPins: userProfile.purchased_pins
         };
 
-        res.json(response);
+        // Add isFriend only if requestorId was provided
+        if (requestorId) response.areFriends = areFriends;
 
+        res.json(response);
     } catch (error) {
         console.error('Error fetching profile data:', error);
         res.status(500).json({ error: 'An error occurred while fetching the profile data.' });
