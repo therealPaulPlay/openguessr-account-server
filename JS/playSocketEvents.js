@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const processDuelResult = require('./processDuelResult.js');
+const { fetchReportData } = require('./reportFetch.js');
 const SECRET_KEY = require("./config.js").jwtSecret;
 
 const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
@@ -11,15 +12,26 @@ const clientIdDuelUuid = new Map(); // Client id -> Active duel uuid (active = n
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // Assign server
+
     server.onEvent("clientRegistered", (clientId, data) => {
         if (!data?.bearer) return;
-        jwt.verify(data.bearer, SECRET_KEY, (err, decoded) => {
+        jwt.verify(data.bearer, SECRET_KEY, async (err, decoded) => {
             if (err) return console.error("Error decoding multiplayer auth token:", err);
             if (!decoded || !decoded.userId) return console.error("Multiplayer auth token lacks user id.");
+
+            // Check if user is banned
+            const banStatus = await fetchReportData("blacklist", "user", "user-" + decoded.userId);
+            if (banStatus?.listed) {
+                const entry = banStatus?.entry;
+                server.kick(clientId, `You are banned from multiplayer for "${entry?.reason}" until ${new Date(entry?.expires_at)?.toLocaleDateString() || "forever"}. Please
+                contact the moderators via Discord if you think this was a mistake.`);
+            }
+
             authedMultiplayerClients.set(clientId, Number(decoded.userId)); // Client id -> User id
             authedMultiplayerUserId.set(Number(decoded.userId), clientId); // User id -> Client id
         });
     });
+
     server.onEvent("clientDisconnected", async (clientId) => {
         if (authedMultiplayerClients.has(clientId)) {
 

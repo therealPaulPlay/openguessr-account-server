@@ -77,7 +77,7 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
                         await pool.promise().execute('DELETE FROM duel_entries WHERE uuid = ?', [uuid]);
                         sendEventToClient(id, {
                             type: 'duel-registration-error',
-                            message: 'Other player did not register for the duel.'
+                            message: 'Other player did not register for the duel. This match will not affect your elo and you can leave.'
                         });
                     }
                 } catch (err) {
@@ -91,7 +91,7 @@ duelRouter.post('/duel-register/:uuid', standardLimiter, authenticateTokenWithId
     } catch (error) {
         if (connection) await connection.rollback();
         console.error('Error registering duel:', error);
-        res.status(500).json({ error: `Error registering duel: ${error}` });
+        res.status(500).json({ error: `Error registering duel: ${error?.message}` });
     } finally {
         if (connection) connection.release();
     }
