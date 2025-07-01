@@ -318,38 +318,34 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
 competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const compId = req.params.id;
-        const { username, id, score } = req.body;
-        let supporter_level = req.body.supporter_level || 0;
+        const { id, score } = req.body;
         const db = getDB();
 
-        if (username == null || id == null || score == null || compId == null) {
-            return res.status(400).json({ status: 400, error: 'Username, user id, competition Id and score are required' });
+        if (id == null || score == null || compId == null) return res.status(400).json({ status: 400, error: 'User id, competition Id and score are required' });
+
+        const [userResults] = await db.promise().execute(
+            'SELECT user_name, supporter_level FROM users WHERE id = ?',
+            [id]
+        );
+
+        if (!userResults[0]) {
+            return res.status(404).json({ status: 404, error: 'User not found' });
         }
 
-        // Verify supporter level if claimed
-        if (supporter_level > 0) {
-            const [supporterResults] = await db.promise().execute(
-                'SELECT supporter_level FROM users WHERE id = ?',
-                [id]
-            );
+        const { user_name, supporter_level } = userResults[0];
 
-            if (!supporterResults[0] || supporterResults[0].supporter_level < supporter_level) {
-                return res.status(403).json({ status: 403, error: 'Invalid supporter level claimed.' });
-            }
-        }
-
+        // Check if user has already submitted for this competition
         const [entryCheck] = await db.promise().execute(
             'SELECT COUNT(*) AS count FROM competition_entries WHERE competition_id = ? AND user_id = ?',
             [compId, id]
         );
 
-        if (entryCheck[0].count > 0) {
-            return res.status(403).json({ status: 403, error: 'You have already submitted results for this competition.' });
-        }
+        if (entryCheck[0].count > 0) return res.status(403).json({ status: 403, error: 'You have already submitted results for this competition.' });
 
+        // Insert the competition entry with data from database
         await db.promise().execute(
             'INSERT INTO competition_entries (competition_id, user_id, username, score, supporter_level) VALUES (?, ?, ?, ?, ?)',
-            [compId, id, username, score, supporter_level]
+            [compId, id, user_name, score, supporter_level]
         );
 
         updateProfileData(id, "competitions_entered", true, 1);
