@@ -19,16 +19,16 @@ function attachPlaySocketEvents(server) {
             if (err) return console.error("Error decoding multiplayer auth token:", err);
             if (!decoded || !decoded.userId) return console.error("Multiplayer auth token lacks user id.");
 
-            // Check if user is banned
+            authedMultiplayerClients.set(clientId, Number(decoded.userId)); // Client id -> User id
+            authedMultiplayerUserId.set(Number(decoded.userId), clientId); // User id -> Client id
+
+            // Check if user is banned (Async – so do this AFTER the client registration!)
             const banStatus = await fetchReportData("blacklist", "user", "user-" + decoded.userId);
             if (banStatus?.listed) {
                 const entry = banStatus?.entry;
                 server.kick(clientId, `You are banned from multiplayer for "${entry?.reason}" until ${new Date(entry?.expires_at)?.toLocaleDateString() || "forever"}. Please
                 contact the moderators via Discord if you think this was a mistake.`);
             }
-
-            authedMultiplayerClients.set(clientId, Number(decoded.userId)); // Client id -> User id
-            authedMultiplayerUserId.set(Number(decoded.userId), clientId); // User id -> Client id
         });
     });
 
