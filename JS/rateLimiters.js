@@ -22,6 +22,13 @@ const loginLimiter = rateLimit({
     message: { error: 'Too many login requests from this IP, please try again after 30 seconds.' }
 });
 
+const nameChangeLimiter = rateLimit({
+    windowMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+    keyGenerator: (req) => req.clientIp,
+    max: 1, // Limit each IP to 3 requests per windowMs
+    message: { error: 'You can only change your username once per week.' }
+});
+
 const mapLoadLimiter = rateLimit({
     windowMs: 16 * 60 * 60 * 1000, // 16h
     keyGenerator: (req) => req.clientIp, // Use the correct IP and not the one of the proxy
@@ -85,4 +92,4 @@ const friendRequestLimiter = rateLimit({
     message: { error: 'You are sending too many friend requests.' }
 });
 
-module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter };
+module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter };

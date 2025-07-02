@@ -1,7 +1,7 @@
 const express = require('express');
 const accountRouter = express.Router();
 const jwt = require('jsonwebtoken');
-const { standardLimiter, registerLimiter, loginLimiter } = require("./rateLimiters.js");
+const { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter } = require("./rateLimiters.js");
 const { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const axios = require('axios');
@@ -75,9 +75,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
     const { id } = req.body;
     let { userName } = req.body;
 
-    if (!id || !userName) {
-        return res.status(400).json({ error: 'User ID and username are required.' });
-    }
+    if (!id || !userName) return res.status(400).json({ error: 'User ID and username are required.' });
 
     try {
         // Check if the username consists only of spaces
@@ -96,43 +94,44 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
             });
         });
 
-        if (existingUserNameUser) {
-            return res.status(400).json({ error: 'Username is already taken.' });
-        }
+        if (existingUserNameUser) return res.status(400).json({ error: 'Username is already taken.' });
 
-        // Update query to change the username
-        let updateQuery = `
+        // Apply rate limiting only after successful validation
+        nameChangeLimiter(req, res, async (err) => {
+            if (err) return res.status(429).json({ error: 'You can only change your username once per week.' });
+
+            // Update query to change the username
+            let updateQuery = `
             UPDATE users
             SET user_name = ?
             WHERE id = ?
         `;
 
-        await new Promise((resolve, reject) => {
-            db.execute(updateQuery, [userName, id], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
+            await new Promise((resolve, reject) => {
+                db.execute(updateQuery, [userName, id], (err, results) => {
+                    if (err) return reject(err);
+                    resolve(results);
+                });
             });
-        });
 
-        // Query to fetch updated user details
-        let userQuery = `
+            // Query to fetch updated user details
+            let userQuery = `
             SELECT user_name AS userName
             FROM users
             WHERE id = ?
         `;
 
-        const user = await new Promise((resolve, reject) => {
-            db.execute(userQuery, [id], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
+            const user = await new Promise((resolve, reject) => {
+                db.execute(userQuery, [id], (err, results) => {
+                    if (err) return reject(err);
+                    resolve(results[0]);
+                });
             });
+
+            if (user) res.json({ user });
+            else res.status(404).json({ error: 'User not found.' });
         });
 
-        if (user) {
-            res.json({ user });
-        } else {
-            res.status(404).json({ error: 'User not found.' });
-        }
     } catch (error) {
         console.error('Error updating username:', error);
         res.status(500).json({ error: 'An error occurred while updating the username.' });
