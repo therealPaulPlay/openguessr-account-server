@@ -6,6 +6,7 @@ const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
 const { body, validationResult } = require('express-validator');
 const { updateProfileData } = require('./profileDataHelper.js');
+const { fetchReportData } = require('./reportFetch.js');
 
 // Map Validation function
 const isValidMap = (map) => {
@@ -322,6 +323,9 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
         const db = getDB();
 
         if (id == null || score == null || compId == null) return res.status(400).json({ status: 400, error: 'User id, competition Id and score are required' });
+
+        const banStatus = await fetchReportData("blacklist", "user", "user-" + id);
+        if (banStatus?.listed) return res.status(403).json({ error: "You have been banned." });
 
         const [userResults] = await db.promise().execute(
             'SELECT user_name, supporter_level FROM users WHERE id = ?',
