@@ -69,6 +69,7 @@ function checkIfUserIsInRoom(roomId, userId) {
 function addUserToOngoingDuel(userId, uuid) {
     const clientId = authedMultiplayerUserId.get(Number(userId));
     if (!clientId) throw new Error("Your PlaySocket client is not authenticated!");
+    if (clientIdDuelUuid.get(clientId)) throw new Error("Your PlaySocket client is already in an ongoing duel!");
     clientIdDuelUuid.set(clientId, uuid);
 }
 
