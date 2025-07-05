@@ -33,6 +33,7 @@ async function createStripeSession(price, userId, productId, name, imageSrc) {
         metadata: {
             id: userId,
             productId: productId,
+            service: "OpenGuessr"
         },
         automatic_tax: {
             enabled: true,  // Enable automatic tax
@@ -112,6 +113,8 @@ stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/
         const { metadata, amount_total, id: purchaseId } = session; // Include session ID as purchase ID
         const { email } = session.customer_details; // Email
         const { id, productId } = metadata; // User id and product id
+
+        if (session.metadata?.service !== "OpenGuessr") return res.sendStatus(200); // Acknowledge & ignore – Ensures that events from other services don't result in errors
 
         try {
             await sendPurchaseConfirmationEmail(email, purchaseId, amount_total);
