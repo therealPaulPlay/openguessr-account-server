@@ -110,14 +110,14 @@ stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/
 
     if (event.type === 'checkout.session.completed') {
         const session = event.data.object;
-        const { metadata, amount_total, id: purchaseId } = session; // Include session ID as purchase ID
+        const { metadata, amount_total, id: sessionId } = session; // Include session ID as purchase ID
         const { email } = session.customer_details; // Email
         const { id, productId } = metadata; // User id and product id
 
         if (session.metadata?.service !== "OpenGuessr") return res.sendStatus(200); // Acknowledge & ignore – Ensures that events from other services don't result in errors
 
         try {
-            await sendPurchaseConfirmationEmail(email, purchaseId, amount_total);
+            await sendPurchaseConfirmationEmail(email, sessionId, amount_total);
         } catch (error) {
             console.error("Error occurred when sending email after purchase:", error);
         }
@@ -204,22 +204,22 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
 });
 
 // Send confirmation email
-async function sendPurchaseConfirmationEmail(clientEmail, purchaseId, amount) {
+async function sendPurchaseConfirmationEmail(clientEmail, sessionId, amount) {
     const mailOptions = {
         from: emailConfig.auth.user,
         to: clientEmail,
-        subject: 'OpenGuessr purchase confirmation',
+        subject: 'OpenGuessr purchase',
         text: `Hi!
 
-  Thank you for completing your purchase on OpenGuessr!
+Thank you for completing your purchase on OpenGuessr!
 
-  Purchase ID: ${purchaseId}
-  Amount: $${(amount / 100).toFixed(2)}
+Checkout session ID: ${sessionId}
+Amount: $${(amount / 100).toFixed(2)}
 
-  If you have any questions regarding the purchase, please do not hesitate to reach out through the contact form on https://paulplay.studio.
-  Make sure to also provide the Purchase ID. For tax information, please refer to https://paulplay.studio/imprint.
+If you have any questions regarding the purchase, please do not hesitate to reach out through the contact form on https://paulplay.studio.
+Make sure to also provide the Purchase ID. For tax information, please refer to https://paulplay.studio/imprint.
 
-  (This email was sent automatically, please do not reply directly)`
+(This email was sent automatically, please do not reply directly)`
     };
 
     await mailTransporter.sendMail(mailOptions);
