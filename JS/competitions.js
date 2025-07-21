@@ -418,30 +418,31 @@ competitionsRouter.put('/daily/daily-competition', standardLimiter, async (req, 
         const db = getDB();
 
         const query = `
-            SELECT c.*, IF(e.user_id IS NOT NULL, TRUE, FALSE) AS entered 
-            FROM competitions c
-            LEFT JOIN competition_entries e ON c.id = e.competition_id AND e.user_id = ?
-            WHERE c.name = 'Daily Competition' 
-            AND c.expired = FALSE 
-            AND c.author_id = 0
-            LIMIT 1
-        `;
+      SELECT c.*, IF(e.user_id IS NOT NULL, TRUE, FALSE) AS entered
+      FROM competitions c
+      LEFT JOIN competition_entries e ON c.id = e.competition_id AND e.user_id = ?
+      WHERE c.name = 'Daily Competition' AND c.author_id = 0
+      ORDER BY c.expired ASC, c.id DESC
+      LIMIT 2
+    `;
 
         let [results] = await db.promise().execute(query, [userId]);
 
-        if (results.length === 0) {
+        // If no current competition exists, create one
+        if (!results.some(r => !r.expired)) {
             console.log('No daily competition found, creating new one...');
             await createDailyCompetition();
             [results] = await db.promise().execute(query, [userId]);
 
-            if (results.length === 0) {
+            if (!results.some(r => !r.expired)) {
                 console.error('Failed to create or fetch daily competition');
                 return res.status(500).json({ status: 500, error: 'Failed to create daily competition.' });
             }
             console.log('Daily competition created and fetched successfully');
         }
 
-        res.json({ competitions: [formatCompetition(results[0])] });
+        res.json({ competitions: results.map(formatCompetition) });
+
     } catch (error) {
         console.error('Error with daily competition:', error);
         res.status(500).json({ status: 500, error: 'Failed to fetch daily competition.' });

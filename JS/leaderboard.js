@@ -198,27 +198,6 @@ leaderboardRouter.get('/experience-user-section/:id', standardLimiter, async (re
     }
 });
 
-// Supporter leaderboard
-leaderboardRouter.get('/experience-supporter', standardLimiter, async (req, res) => {
-    const db = getDB();
-
-    try {
-        const leaderboardQuery = `
-            SELECT user_name, experience, supporter_level, id, 
-                DENSE_RANK() OVER (ORDER BY experience DESC) as position
-            FROM users
-            WHERE supporter_level >= 1
-            ORDER BY experience DESC
-            LIMIT 100
-        `;
-        const [experienceLeaderboard] = await db.promise().execute(leaderboardQuery);
-        res.json(experienceLeaderboard);
-    } catch (err) {
-        console.error("Error fetching supporter leaderboard:", err);
-        res.status(500).json({ error: 'An error occurred while fetching the supporter leaderboard.' });
-    }
-});
-
 // Elo Leaderboard Top 100
 leaderboardRouter.get('/elo', standardLimiter, async (req, res) => {
     const db = getDB();
