@@ -115,7 +115,7 @@ function attachPlaySocketEvents(server) {
             const players = storage?.players;
             const player = players?.find(p => p[0] === clientId);
             if (player && typeof data === 'number') {
-                if (storage?.style == "duel" && storage?.currentRound >= 4) data *= 1.5; // Duel multiplier for last 2 rounds
+                if (storage?.style == "duel" && storage?.currentRound >= 4) data = Math.round(data * 1.5); // Duel multiplier for last 2 rounds
                 const newPlayer = [...player];
                 newPlayer[3] += data;
                 server.updateRoomStorage(roomId, "players", "array-update-matching", player, newPlayer);
