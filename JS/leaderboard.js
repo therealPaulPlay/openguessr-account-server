@@ -225,4 +225,25 @@ cron.schedule('*/10 * * * *', async () => {
     await updateCache();
 });
 
+// Monthly resets -----------------------------------------------------------------------------------
+cron.schedule('0 1 1 * *', async () => {
+    try {
+        const pool = getDB();
+
+        // Convert excess elo to tokens before resetting
+        await pool.promise().query(
+            'UPDATE users SET tokens = COALESCE(tokens, 0) + (elo - 2000) WHERE elo > 2000'
+        );
+
+        // Reset elo to 2000 for players above 2000
+        await pool.promise().query('UPDATE users SET elo = 2000 WHERE elo > 2000');
+
+        // Reset XP to 100M for players above 100M
+        await pool.promise().query('UPDATE users SET experience = 100000000 WHERE experience > 100000000');
+
+    } catch (error) {
+        console.error('Error during monthly leaderboard resets:', error);
+    }
+});
+
 module.exports = leaderboardRouter;

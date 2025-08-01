@@ -214,25 +214,17 @@ duelRouter.get('/duel-history', standardLimiter, async (req, res) => {
     }
 });
 
-// Reset Elo above 2000 to 2000 on the 1st of each month and delete old duel entries -----------------------------------------------------------------------
-cron.schedule('0 1 1 * *', async () => {
+// Delete old duel entries at the start of each month -----------------------------------------------------------------------
+cron.schedule('0 2 1 * *', async () => {
     try {
         const pool = getDB();
-
-        // Convert excess elo to tokens before resetting
-        await pool.promise().query(
-            'UPDATE users SET tokens = COALESCE(tokens, 0) + (elo - 2000) WHERE elo > 2000'
-        );
-
-        // Reset elo to 2000 for players above 2000
-        await pool.promise().query('UPDATE users SET elo = 2000 WHERE elo > 2000');
 
         // Delete duel entries older than x days
         await pool.promise().query(
             'DELETE FROM duel_entries WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)'
         );
     } catch (error) {
-        console.error('Error during monthly ELO reset and cleanup:', error);
+        console.error('Error during monthly duel entry cleanup:', error);
     }
 });
 
