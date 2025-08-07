@@ -238,8 +238,8 @@ cron.schedule('0 1 1 * *', async () => {
         // Reset elo to 2000 for players above 2000
         await pool.promise().query('UPDATE users SET elo = 2000 WHERE elo > 2000');
 
-        // Reset XP to 100M for players above 100M
-        await pool.promise().query('UPDATE users SET experience = 100000000 WHERE experience > 100000000');
+        // Halve XP over 100M for players above 100M XP
+        await pool.promise().query('UPDATE users SET experience = 100000000 + (experience - 100000000) / 2 WHERE experience > 100000000');
 
     } catch (error) {
         console.error('Error during monthly leaderboard resets:', error);

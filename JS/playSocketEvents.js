@@ -210,11 +210,12 @@ function attachPlaySocketEvents(server) {
             server.updateRoomStorage(roomId, "confirmedArray", "array-add-unique", clientId);
 
             // Time reduced overlay
-            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length == 1) {
+            const remainingTimerTime = server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp); // In ms
+            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length === 1 && remainingTimerTime > 3000) {
                 server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
-                if ((server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp)) > 15 * 1000) {
+                if (remainingTimerTime > 15000) {
                     server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
-                    roomTimer.adjust(roomId, 15 * 1000);
+                    roomTimer.adjust(roomId, 15000);
                 }
                 setTimeout(() => {
                     server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false); // Wait shortly, hide overlay
@@ -271,6 +272,7 @@ function attachPlaySocketEvents(server) {
 
     function endRound(roomId) {
         server.updateRoomStorage(roomId, "timerStart", "set", null);
+        server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
 
         // If any players have no guess submitted, add 0, 0 as the guess
         const players = server.getRoomStorage(roomId)?.players;
