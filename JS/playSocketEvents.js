@@ -230,9 +230,9 @@ function attachPlaySocketEvents(server) {
 
         if (name === 'rematch') {
             if (clientId !== server.getRooms[roomId]?.host) return; // Only allow host to rematch
-            if (server.getRoomStorage(roomId).currentRound === server.getRoomStorage(roomId).roundAmount) {
-                server.updateRoomStorage(roomId, "firstRoundPlayed", "set", false);
+            if (server.getRoomStorage(roomId).gameEnded) {
                 server.updateRoomStorage(roomId, "gameEnded", "set", false);
+                server.updateRoomStorage(roomId, "firstRoundPlayed", "set", false);
                 server.updateRoomStorage(roomId, "currentRound", "set", 0);
 
                 // Reset scores
