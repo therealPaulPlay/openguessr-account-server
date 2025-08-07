@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const processDuelResult = require('./processDuelResult.js');
 const { fetchReportData } = require('./reportFetch.js');
 const { getDB } = require('./dbConnection.js');
+const { roomTimer } = require('./roomTimer.js');
 const SECRET_KEY = require("./config.js").jwtSecret;
 
 const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
@@ -66,16 +67,68 @@ function attachPlaySocketEvents(server) {
             if (player) {
                 server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
                 server.updateRoomStorage(roomId, "chats", "array-add", `System: ${player?.[1] || "Unknown"} left.`);
+                server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
             }
         }
     });
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update }) => {
         if (update.key === 'players') return false; // Block client's 'players' updates
+
+        // Block room configuration updates
+        if (update.key === "roundAmount" || update.key === "style" || update.key === "roundLength" || update.key === "restriction") return false;
+        if (update.key === "category") return false;
+        if (update.key === "duelUuid") return false;
+
+        // Block server-side-only game control updates
+        if (update.key === "countdownActive") return false;
+        if (update.key === "currentRound") return false;
+        if (update.key === "firstRoundPlayed") return false;
+        if (update.key === "gameStarted") return false;
+        if (update.key === "gameEnded") return false;
+        if (update.key === "timeReducedOverlay") return false;
+        if (update.key === "guessLocationsArray") return false;
+        if (update.key === "highestSupporterLevel") return false;
+        if (update.key === "confirmedArray") return false;
+        if (update.key === "timerStart") return false;
+        if (update.key === "overlay") return false;
+
+        // Restrict updates
+        if (update.key === "chats" && (update.operation.data.type !== "array-add" || !update.operation.data.value?.startsWith(server.getRoomStorage(roomId).players?.find((e) => e[0] === clientId)?.[1]))) return false;
+        if (update.key === "showResult" && (update.operation.data.type !== "set" || update.operation.data.value !== false)) return false;
+    });
+
+    server.onEvent("storageUpdated", ({ clientId, roomId, update, storage }) => {
+        if (update.key === "showResult" && update.operation.data.value === false) {
+            server.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
+            server.updateRoomStorage(roomId, "overlay", "set", true);
+        }
     });
 
     server.onEvent("roomCreationRequested", ({ clientId, roomId, initialStorage }) => {
-        if (initialStorage.players) initialStorage.players = []; // Ensure initial players array is empty
+        if (typeof initialStorage.roundAmount !== "number" || initialStorage.roundAmount < 2 || initialStorage.roundAmount > 10) initialStorage.roundAmount = 3;
+        if (typeof initialStorage.roundLength !== "number" || initialStorage.roundLength < 10 || initialStorage.roundLength > 300) initialStorage.roundLength = 60;
+        if (typeof initialStorage.teamAmount !== "number" || initialStorage.teamAmount > 10 || initialStorage.teamAmount < 0) initialStorage.teamAmount = 1;
+        if (!["standard", "duel"].includes(initialStorage.style)) initialStorage.style = "standard";
+        if (typeof initialStorage.highestSupporterLevel !== "number" || initialStorage.highestSupporterLevel > 4 || initialStorage.highestSupporterLevel < 0) initialStorage.highestSupporterLevel = 0;
+        if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(initialStorage.restriction)) initialStorage.restriction = "standard";
+        if (typeof initialStorage.category !== "string") initialStorage.category = "standard";
+        initialStorage.players = []; // Ensure initial players array is empty
+        initialStorage.currentRound = 0;
+        initialStorage.location = [35.7072457, 139.863412]; // Default panorama to prevent blackscreen
+        initialStorage.guessLocationsArray = []; // Guesses from players (with location data)
+        initialStorage.confirmedArray = []; // Client IDs that have confirmed their guess
+        initialStorage.duelUuid = crypto.randomUUID();
+        initialStorage.firstRoundPlayed = false; // Resets with rematch
+        initialStorage.chats = [];
+        initialStorage.overlay = true;
+        initialStorage.timeReducedOverlay = false; // Duel "Opponent has guessed" overlay
+        initialStorage.showResult = false;
+        initialStorage.gameStarted = false; // Stays always true after the initial start
+        initialStorage.gameEnded = false;
+        initialStorage.countdownActive = false;
+        initialStorage.timerStart = false;
+
         return initialStorage;
     });
 
@@ -83,34 +136,28 @@ function attachPlaySocketEvents(server) {
     server.onEvent("requestReceived", async ({ roomId, clientId, name, data }) => {
         if (!roomId) return;
 
-        if (name === 'playersAdd') {
+        if (name === 'addPlayer') {
             const userId = authedMultiplayerClients.get(clientId);
             const players = server.getRoomStorage(roomId)?.players || [];
+            const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
             if (players.find(p => p[0] === clientId)) return; // Already exists
 
             let playerData;
             if (userId) {
                 const user = await getUser(userId);
                 if (!user) return;
-                const teamNumber = data.teamAmount <= 1 ? 1 : ((players.length % data.teamAmount) + 1);
-                playerData = [clientId, user.user_name, user.elo, 0, teamNumber, userId, user.badge];
+                const teamNumber = teamAmount <= 1 ? 1 : ((players.length % teamAmount) + 1);
+                playerData = [clientId, user.user_name, user.elo, 0, teamNumber, userId, user.badge, user.pin, user.supporter_level];
             } else {
-                const teamNumber = data.teamAmount <= 1 ? 1 : ((players.length % data.teamAmount) + 1);
-                playerData = [clientId, data.guestName || "(No name)", 0, 0, teamNumber, null, null];
+                const teamNumber = teamAmount <= 1 ? 1 : ((players.length % teamAmount) + 1);
+                playerData = [clientId, data.guestName || "(No name)", 0, 0, teamNumber, null, null, 0, 0];
             }
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             server.updateRoomStorage(roomId, "chats", "array-add", `System: ${playerData[1] || "Unknown"} joined.`);
+            server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
         }
 
-        if (name === 'playersResetScores') {
-            const players = server.getRoomStorage(roomId)?.players;
-            if (players) {
-                const resetPlayers = players.map(p => [...p.slice(0, 3), 0, ...p.slice(4)]);
-                server.updateRoomStorage(roomId, "players", "set", resetPlayers);
-            }
-        }
-
-        if (name === 'playersAddScore') {
+        if (name === 'addToScore') {
             const storage = server.getRoomStorage(roomId);
             const players = storage?.players;
             const player = players?.find(p => p[0] === clientId);
@@ -122,7 +169,7 @@ function attachPlaySocketEvents(server) {
             }
         }
 
-        if (name === 'playersUpdateTeam') {
+        if (name === 'updateTeam') {
             const players = server.getRoomStorage(roomId)?.players;
             const player = players?.find(p => p[0] === data.playerClientId);
             if (player && typeof data.newTeamIndex === 'number') {
@@ -131,13 +178,117 @@ function attachPlaySocketEvents(server) {
                 server.updateRoomStorage(roomId, "players", "array-update-matching", player, newPlayer);
             }
         }
+
+        if (name === 'startRound') {
+            if (clientId !== server.getRooms[roomId]?.host) return; // Only allow host to start round
+            if (data.lat != null && data.lon != null && !roomTimer.isRunning(roomId) && !server.getRoomStorage(roomId).showResult && !server.getRoomStorage(roomId).gameEnded && !server.getRoomStorage(roomId).countdownActive) {
+                server.updateRoomStorage(roomId, "location", "set", [data.lat, data.lon]);
+                server.updateRoomStorage(roomId, "countdownActive", "set", true);
+                server.updateRoomStorage(roomId, "currentRound", "set", (server.getRoomStorage(roomId).currentRound || 0) + 1);
+                server.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${server.getRoomStorage(roomId).currentRound}.`);
+                server.updateRoomStorage(roomId, "gameStarted", "set", true); // True once the first round has started (won't reset on rematch)
+
+                // Await countdown, start timer
+                await new Promise((res) => setTimeout(res, 4000));
+                server.updateRoomStorage(roomId, "countdownActive", "set", false);
+                server.updateRoomStorage(roomId, "overlay", "set", false);
+                if (!server.getRoomStorage(roomId).firstRoundPlayed) server.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);
+
+                // Timer information for clients
+                server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: server.getRoomStorage(roomId).roundLength });
+
+                // Server-side timer (+1s delayed to ensure all clients have their timers finished)
+                roomTimer.set(roomId, server.getRoomStorage(roomId).roundLength * 1000, () => {
+                    endRound(roomId);
+                });
+            }
+        }
+
+        if (name === 'confirmGuess') {
+            server.updateRoomStorage(roomId, "confirmedArray", "array-add-unique", clientId);
+
+            // Time reduced overlay
+            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length == 1) {
+                server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
+                if ((server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp)) > 15 * 1000) {
+                    server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
+                    roomTimer.adjust(roomId, 15 * 1000);
+                }
+                setTimeout(() => {
+                    server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false); // Wait shortly, hide overlay
+                }, 2000);
+            }
+
+            // Check if all guesses are in (which immediately ends the round)
+            if (server.getRoomStorage(roomId)?.confirmedArray?.length >= server.getRoomStorage(roomId)?.players?.length && !server.getRoomStorage(roomId)?.showResult) {
+                roomTimer.stop(roomId);
+                endRound(roomId);
+            }
+        }
+
+        if (name === 'rematch') {
+            if (clientId !== server.getRooms[roomId]?.host) return; // Only allow host to rematch
+            if (server.getRoomStorage(roomId).currentRound === server.getRoomStorage(roomId).roundAmount) {
+                server.updateRoomStorage(roomId, "firstRoundPlayed", "set", false);
+                server.updateRoomStorage(roomId, "gameEnded", "set", false);
+                server.updateRoomStorage(roomId, "currentRound", "set", 0);
+
+                // Reset scores
+                const players = server.getRoomStorage(roomId)?.players;
+                if (players) {
+                    const resetPlayers = players.map(p => [...p.slice(0, 3), 0, ...p.slice(4)]);
+                    server.updateRoomStorage(roomId, "players", "set", resetPlayers);
+                }
+            }
+        }
+
+        if (name === 'addGuessMarker') {
+            if (typeof data.lat === "number" && typeof data.lon === "number") {
+                const existingMarkerElement = server.getRoomStorage(roomId)?.guessLocationsArray?.find((e) => e.id === clientId);
+                if (existingMarkerElement) server.updateRoomStorage(roomId, "guessLocationsArray", "array-remove-matching", existingMarkerElement)
+                const player = server.getRoomStorage(roomId).players?.find((e) => e[0] === clientId);
+                if (player) server.updateRoomStorage(roomId, "guessLocationsArray", "array-add-unique", { id: clientId, lat: data.lat, lon: data.lon, username: player[1], pin: player[7], team: player[4] });
+            }
+        }
     });
+
+    server.onEvent("roomDestroyed", (roomId) => {
+        roomTimer.stop(roomId);
+    });
+
+    function determineHighestSupporterLevel(roomId) {
+        const players = server.getRoomStorage(roomId)?.players;
+        let highestSupporterLevel = 0;
+
+        players?.forEach((e) => {
+            const supporterLevel = e[8];
+            if (supporterLevel > highestSupporterLevel) highestSupporterLevel = supporterLevel;
+        });
+        return highestSupporterLevel;
+    }
+
+    function endRound(roomId) {
+        server.updateRoomStorage(roomId, "timerStart", "set", null);
+
+        // If any players have no guess submitted, add 0, 0 as the guess
+        const players = server.getRoomStorage(roomId)?.players;
+        const guessArray = server.getRoomStorage(roomId)?.guessLocationsArray;
+        players?.forEach((p) => {
+            const correspondingGuess = guessArray?.find((g) => (g.id === p[0]));
+            if (!correspondingGuess) guessArray.push({ id: p[0], lat: 0, lon: 0, username: p[1], pin: p[7], team: p[4] });
+        });
+        server.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
+
+        server.updateRoomStorage(roomId, "showResult", "set", true);
+        server.updateRoomStorage(roomId, "confirmedArray", "set", []);
+        if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) server.updateRoomStorage(roomId, "gameEnded", "set", true);
+    }
 }
 
 async function getUser(userId) {
     const db = getDB();
     const [rows] = await db.promise().execute(`
-        SELECT u.user_name, u.elo, p.badge 
+        SELECT u.user_name, u.elo, u.supporter_level, p.badge, p.pin
         FROM users u LEFT JOIN profile_data p ON u.id = p.user_id 
         WHERE u.id = ?`, [userId]);
     return rows[0];
