@@ -188,19 +188,21 @@ function attachPlaySocketEvents(server) {
                 server.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${server.getRoomStorage(roomId).currentRound}.`);
                 server.updateRoomStorage(roomId, "gameStarted", "set", true); // True once the first round has started (won't reset on rematch)
 
-                // Await countdown, start timer
-                await new Promise((res) => setTimeout(res, 4000));
-                server.updateRoomStorage(roomId, "countdownActive", "set", false);
-                server.updateRoomStorage(roomId, "overlay", "set", false);
-                if (!server.getRoomStorage(roomId).firstRoundPlayed) server.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);
+                // After countdown, start timer
+                setTimeout(() => {
+                    if (!server.getRoomStorage(roomId)) return; // If the room no longer exists, return
+                    server.updateRoomStorage(roomId, "countdownActive", "set", false);
+                    server.updateRoomStorage(roomId, "overlay", "set", false);
+                    if (!server.getRoomStorage(roomId).firstRoundPlayed) server.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);
 
-                // Timer information for clients
-                server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: server.getRoomStorage(roomId).roundLength });
+                    // Timer information for clients
+                    server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: server.getRoomStorage(roomId).roundLength });
 
-                // Server-side timer (+1s delayed to ensure all clients have their timers finished)
-                roomTimer.set(roomId, server.getRoomStorage(roomId).roundLength * 1000, () => {
-                    endRound(roomId);
-                });
+                    // Server-side timer (+1s delayed to ensure all clients have their timers finished)
+                    roomTimer.set(roomId, server.getRoomStorage(roomId).roundLength * 1000, () => {
+                        endRound(roomId);
+                    });
+                }, 4000);
             }
         }
 
