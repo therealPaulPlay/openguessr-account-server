@@ -1,17 +1,14 @@
 const jwt = require('jsonwebtoken');
-const processDuelResult = require('./processDuelResult.js');
 const { fetchReportData } = require('./reportFetch.js');
 const { getDB } = require('./dbConnection.js');
 const { roomTimer } = require('./roomTimer.js');
+const saveDuelResult = require('./processDuelResult.js');
 const SECRET_KEY = require("./config.js").jwtSecret;
 
 const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
 const authedMultiplayerUserId = new Map(); // User id -> client id
 
 let playSocketServer;
-
-// Duel rooms
-const clientIdDuelUuid = new Map(); // Client id -> Active duel uuid (active = no result submited yet)
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // Assign server
@@ -44,9 +41,8 @@ function attachPlaySocketEvents(server) {
 
     server.onEvent("clientDisconnected", async (clientId, roomId) => {
         if (authedMultiplayerClients.has(clientId)) {
-            // Get user id and check if the user was in an ongoing duel (means they have not submitted a result)
+            // Get user id
             const userId = authedMultiplayerClients.get(clientId);
-            const duelUuid = clientIdDuelUuid.get(clientId);
 
             // Only remove from userId map if this is the current client for this user
             const currentClientForUser = authedMultiplayerUserId.get(userId);
@@ -54,10 +50,16 @@ function attachPlaySocketEvents(server) {
 
             // Always remove from client maps
             authedMultiplayerClients.delete(clientId);
-            clientIdDuelUuid.delete(clientId);
 
-            // Process the result if in ongoing duel > This will fail silently if already processed
-            if (duelUuid && userId != null) await processDuelResult(duelUuid, userId);
+            // Process the result if in ongoing duel
+            if (userId && roomId && !server.getRoomStorage(roomId).gameEnded && server.getRoomStorage(roomId).gameStarted && server.getRoomStorage(roomId).divisionRoom) {
+                const players = server.getRoomStorage(roomId).players;
+                if (players.length) {
+                    const otherPlayer = players.find((p) => p[0] !== clientId);
+                    const otherPlayerUserId = otherPlayer?.[5];
+                    if (otherPlayerUserId != null) saveDuelResult(server.getRoomStorage(roomId).duelUuid, otherPlayerUserId, userId);
+                }
+            }
         }
 
         // Remove disconnected player from room storage
@@ -72,6 +74,10 @@ function attachPlaySocketEvents(server) {
         }
     });
 
+    server.onEvent("clientJoinRequested", (clientId, roomId) => {
+        if (server.getRoomStorage(roomId)?.divisionRoom && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in a division game.";
+    });
+
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update }) => {
         if (update.key === 'players') return false; // Block client's 'players' updates
 
@@ -79,6 +85,7 @@ function attachPlaySocketEvents(server) {
         if (update.key === "roundAmount" || update.key === "style" || update.key === "roundLength" || update.key === "restriction") return false;
         if (update.key === "category") return false;
         if (update.key === "duelUuid") return false;
+        if (update.key === "divisionRoom") return false;
 
         // Block server-side-only game control updates
         if (update.key === "countdownActive") return false;
@@ -140,9 +147,10 @@ function attachPlaySocketEvents(server) {
             const userId = authedMultiplayerClients.get(clientId);
             const players = server.getRoomStorage(roomId)?.players || [];
             const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
-            if (players.find(p => p[0] === clientId)) return; // Already exists
+            if (players.find(p => p[0] === clientId)) return; // First check if already exists
 
             let playerData;
+
             if (userId) {
                 const user = await getUser(userId);
                 if (!user) return;
@@ -152,6 +160,7 @@ function attachPlaySocketEvents(server) {
                 const teamNumber = teamAmount <= 1 ? 1 : ((players.length % teamAmount) + 1);
                 playerData = [clientId, data.guestName || "(No name)", 0, 0, teamNumber, null, null, 0, 0];
             }
+            if (players.find(p => p[0] === clientId)) return; // Second check if already exists to prevent race conditions
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             server.updateRoomStorage(roomId, "chats", "array-add", `System: ${playerData[1] || "Unknown"} joined.`);
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
@@ -230,8 +239,8 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'rematch') {
-            if (clientId !== server.getRooms[roomId]?.host) return; // Only allow host to rematch
-            if (server.getRoomStorage(roomId).gameEnded) {
+            if (clientId !== server.getRooms[roomId]?.host || server.getRoomStorage(roomId)?.divisionRoom) return; // Only allow host to rematch & prevent rematch in division games
+            if (server.getRoomStorage(roomId)?.gameEnded) {
                 server.updateRoomStorage(roomId, "gameEnded", "set", false);
                 server.updateRoomStorage(roomId, "firstRoundPlayed", "set", false);
                 server.updateRoomStorage(roomId, "currentRound", "set", 0);
@@ -285,7 +294,20 @@ function attachPlaySocketEvents(server) {
 
         server.updateRoomStorage(roomId, "showResult", "set", true);
         server.updateRoomStorage(roomId, "confirmedArray", "set", []);
-        if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) server.updateRoomStorage(roomId, "gameEnded", "set", true);
+
+        // Check if the game is over
+        if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) {
+            server.updateRoomStorage(roomId, "gameEnded", "set", true);
+
+            // If duel, evaluate result
+            if (server.getRoomStorage(roomId)?.divisionRoom) {
+                const sortedPlayers = players?.sort((a, b) => b[3] - a[3]);
+                const winner = sortedPlayers?.[0];
+                const loser = sortedPlayers?.[1];
+                const isDraw = winner?.[3] == loser?.[3]; // Check if scores are identical
+                if (winner && loser) saveDuelResult(server.getRoomStorage(roomId)?.duelUuid, winner?.[5], loser?.[5], isDraw);
+            }
+        }
     }
 }
 
@@ -298,7 +320,7 @@ async function getUser(userId) {
     return rows[0];
 }
 
-// This only works if the user is authenticated (checked in room submissions)
+// This only works if the user is AUTHENTICATED too
 function checkIfUserIsInRoom(roomId, userId) {
     // Check if room exists and get participants
     const roomParticipants = playSocketServer?.getRooms?.[roomId]?.participants;
@@ -310,18 +332,11 @@ function checkIfUserIsInRoom(roomId, userId) {
     return roomParticipants.includes(clientIdForUserId); // True or false
 }
 
-// Add user id to duel room map (in registration)
-function addUserToOngoingDuel(userId, uuid) {
-    const clientId = authedMultiplayerUserId.get(Number(userId));
-    if (!clientId) throw new Error("Your PlaySocket client is not authenticated!");
-    if (clientIdDuelUuid.get(clientId)) throw new Error("Your PlaySocket client is already in an ongoing duel!");
-    clientIdDuelUuid.set(clientId, uuid);
+function validateRoomSettings(roomId) {
+    if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
+    if (playSocketServer.getRooms[roomId?.maxSize !== 2]) return false;
+    return true;
 }
 
-// If they have sent in their result, they should be removed from here
-function removeUserFromOngoingDuel(userId) {
-    const clientId = authedMultiplayerUserId.get(Number(userId));
-    clientIdDuelUuid.delete(clientId);
-}
-
-module.exports = { attachPlaySocketEvents, checkIfUserIsInRoom, addUserToOngoingDuel, removeUserFromOngoingDuel };
+module.exports = { attachPlaySocketEvents, checkIfUserIsInRoom, validateRoomSettings };

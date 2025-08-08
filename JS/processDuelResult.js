@@ -2,20 +2,22 @@ const { getDB } = require("./dbConnection");
 const { updateProfileData } = require("./profileDataHelper");
 const { sendEventToClient } = require("./serverSentEvents");
 
-// Calculation ------------------------------------------------------------------------------------------------------------------------------------------------
+// Calculation function
 const calculateEloChange = (winnerElo, loserElo) => {
     const K = 32;
     const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
 
     // Ensure minimum gain of 3
     let change = Math.max(3, Math.min(30, Math.round(K * (1 - expectedScore))));
-    if (loserElo == 0) change = 0; // If the loser is already at 0 elo, the winner gains 0 (to prevent alt-accounts)
+    if (loserElo == 0) change = 0; // Prevent alt-account farming
     return change;
 };
 
-// Helper function to process duel results --------------------------------------------------------------------------------------------------------------------
-async function processDuelResult(uuid, leavingUserId) {
-    leavingUserId = Number(leavingUserId);
+// Save duel result with winner/loser IDs
+async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
+    winnerId = Number(winnerId);
+    loserId = Number(loserId);
+
     const db = getDB();
     let connection;
 
@@ -23,119 +25,85 @@ async function processDuelResult(uuid, leavingUserId) {
         connection = await db.promise().getConnection();
         await connection.beginTransaction();
 
-        // Only allow processing duels that aren't already processed and haven't been deleted
-        const [duels] = await connection.query(
-            'SELECT * FROM duel_entries WHERE uuid = ? AND processed = 0 FOR UPDATE',
-            [uuid]
+        // Get players and their elo
+        const [players] = await connection.query(
+            'SELECT id, user_name, elo FROM users WHERE id IN (?, ?) FOR UPDATE',
+            [winnerId, loserId]
         );
+        if (players.length !== 2) throw new Error('One or both users not found!');
 
-        if (duels.length) {
-            let winner;
-            let loser;
+        const player1 = players.find(p => Number(p.id) === winnerId);
+        const player2 = players.find(p => Number(p.id) === loserId);
 
-            if (!leavingUserId) {
-                if (duels[0].user1_win === duels[0].user2_win) {
-                    if (duels[0].user1_win) {
-                        // If both won, notify players of the suspicious submission
-                        [duels[0].user1_id, duels[0].user2_id].forEach(playerId => {
-                            sendEventToClient(playerId, {
-                                type: 'duel-result-error',
-                                message: `Both players submitted victory. Player 1's id: ${duels[0].user1_id}, Player 2's id: ${duels[0].user2_id}.`
-                            });
-                        });
-                        throw new Error(`Both players submitted victory. Player 1: ${duels[0].user1_id}, Player 2: ${duels[0].user2_id}`);
-                    } else {
-                        // if both players submitted defeat / false, that indicates a draw (keep it in log)
-                        const [players] = await connection.query('SELECT id, user_name FROM users WHERE id IN (?, ?)', [duels[0].user1_id, duels[0].user2_id]);
-                        const user1Name = players.find(p => p.id === duels[0].user1_id)?.user_name || '';
-                        const user2Name = players.find(p => p.id === duels[0].user2_id)?.user_name || '';
-
-                        // Update duel entry with player names and mark as processed
-                        await connection.query(
-                            `UPDATE duel_entries SET 
-                                user1_name = ?,
-                                user2_name = ?,
-                                processed = 1
-                             WHERE uuid = ?`,
-                            [user1Name, user2Name, uuid]
-                        );
-                        await connection.commit();
-                        return; // Exit, jump to finally block
-                    }
-                }
-                winner = duels[0].user1_win ? duels[0].user1_id : duels[0].user2_id;
-                loser = duels[0].user1_win ? duels[0].user2_id : duels[0].user1_id;
-            } else {
-                // If leaver is provided, they'll be counted as the loser
-                winner = duels[0].user1_id != leavingUserId ? duels[0].user1_id : duels[0].user2_id;
-                loser = duels[0].user1_id == leavingUserId ? duels[0].user1_id : duels[0].user2_id;
-                const isUser1 = winner == duels[0].user1_id;
-
-                // Assign the winner status to the remaining player
-                await connection.query(`UPDATE duel_entries SET ${isUser1 ? 'user1_win' : 'user2_win'} = 1 WHERE uuid = ?`, [uuid]);
-            }
-
-            // Get players and their elo
-            const [players] = await connection.query(
-                'SELECT id, user_name, elo FROM users WHERE id IN (?, ?) FOR UPDATE',
-                [winner, loser]
-            );
-            if (players.length !== 2) throw new Error('One or both users not found!');
-
-            const winningPlayer = players.find(p => Number(p.id) === Number(winner));
-            const losingPlayer = players.find(p => Number(p.id) === Number(loser));
-            const eloChange = calculateEloChange(winningPlayer.elo, losingPlayer.elo);
-
-            // Update duel entry with names using the uuid, and set processed = 1 (true)
+        if (draw) {
+            // Insert draw result into history
             await connection.query(
-                `UPDATE duel_entries SET 
-                user1_name = CASE WHEN user1_id = ? THEN ? ELSE ? END,
-                user2_name = CASE WHEN user2_id = ? THEN ? ELSE ? END,
-                processed = 1
-                WHERE uuid = ?`,
+                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win, processed)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
                 [
-                    winningPlayer.id, winningPlayer.user_name, losingPlayer.user_name,  // For user1_name
-                    winningPlayer.id, winningPlayer.user_name, losingPlayer.user_name,  // For user2_name
-                    uuid
+                    uuid,
+                    winnerId, loserId,
+                    player1.user_name, player2.user_name,
+                    0, 0, // both false for draw
+                    1 // processed true
                 ]
             );
 
-            // Update users' ELO (after setting processed)
+            // Reset win streaks for both players
+            updateProfileData(winnerId, "current_duel_win_streak", false, 0);
+            updateProfileData(loserId, "current_duel_win_streak", false, 0);
+
+            await connection.commit();
+
+        } else {
+            const winningPlayer = player1;
+            const losingPlayer = player2;
+            const eloChange = calculateEloChange(winningPlayer.elo, losingPlayer.elo);
+
+            // Insert win/loss result into history
+            await connection.query(
+                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win, processed)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+                [
+                    uuid,
+                    winnerId, loserId,
+                    winningPlayer.user_name, losingPlayer.user_name,
+                    1, 0, // winner wins, loser loses
+                    1 // processed true
+                ]
+            );
+
+            // Update users' ELO
             await connection.query(
                 'UPDATE users SET elo = CASE ' +
                 'WHEN id = ? THEN elo + ? ' +
                 'WHEN id = ? THEN GREATEST(0, elo - ?) ' +
                 'END WHERE id IN (?, ?)',
-                [winningPlayer.id, eloChange, losingPlayer.id, eloChange, winningPlayer.id, losingPlayer.id]
+                [winnerId, eloChange, loserId, eloChange, winnerId, loserId]
             );
 
             // Update stats
-            updateProfileData(winningPlayer.id, "duels_won", true, 1);
-            updateProfileData(losingPlayer.id, "duels_lost", true, 1);
+            updateProfileData(winnerId, "duels_won", true, 1);
+            updateProfileData(loserId, "duels_lost", true, 1);
 
             // Update win streak
-            updateProfileData(winningPlayer.id, "current_duel_win_streak", true, 1);
-            updateProfileData(losingPlayer.id, "current_duel_win_streak", false, 0);
+            updateProfileData(winnerId, "current_duel_win_streak", true, 1);
+            updateProfileData(loserId, "current_duel_win_streak", false, 0);
+
+            await connection.commit();
 
             // Send WebSocket notifications
-            const eloChanges = { [winningPlayer.id]: eloChange, [losingPlayer.id]: -eloChange };
-            const resultMessage = { type: 'duel-result', eloChanges, winnerId: winningPlayer.id };
-            [winningPlayer.id, losingPlayer.id].forEach(playerId => { sendEventToClient(playerId, resultMessage); });
+            const eloChanges = { [winnerId]: eloChange, [loserId]: -eloChange };
+            const resultMessage = { type: 'duel-result', eloChanges, winnerId };
+            [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
         }
-
-        await connection.commit();
 
     } catch (error) {
         if (connection) await connection.rollback();
-        console.error('Error processing duel result:', error);
-        try {
-            await db.promise().query('DELETE FROM duel_entries WHERE uuid = ?', [uuid]);
-        } catch (error) {
-            console.error("Error deleting broken duel entry:", error);
-        }
+        console.error('Error saving duel result:', error);
     } finally {
         if (connection) connection.release();
     }
 }
 
-module.exports = processDuelResult;
+module.exports = saveDuelResult;
