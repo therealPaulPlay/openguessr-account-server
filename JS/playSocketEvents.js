@@ -320,8 +320,7 @@ async function getUser(userId) {
     return rows[0];
 }
 
-// This only works if the user is AUTHENTICATED too
-function checkIfUserIsInRoom(roomId, userId) {
+function checkIfUserIsAuthedAndInRoom(roomId, userId) {
     // Check if room exists and get participants
     const roomParticipants = playSocketServer?.getRooms?.[roomId]?.participants;
     if (!roomParticipants) return false;
@@ -339,4 +338,4 @@ function validateRoomSettings(roomId) {
     return true;
 }
 
-module.exports = { attachPlaySocketEvents, checkIfUserIsInRoom, validateRoomSettings };
+module.exports = { attachPlaySocketEvents, checkIfUserIsAuthedAndInRoom, validateRoomSettings };

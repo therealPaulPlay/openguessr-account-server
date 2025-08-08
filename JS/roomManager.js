@@ -3,7 +3,7 @@ const roomRouter = express.Router();
 const { standardLimiter } = require("./rateLimiters.js");
 const { authenticateTokenWithId } = require("./authUtils.js");
 const { getDB } = require("./dbConnection.js");
-const { checkIfUserIsInRoom, validateRoomSettings } = require('./playSocketEvents.js');
+const { checkIfUserIsAuthedAndInRoom, validateRoomSettings } = require('./playSocketEvents.js');
 
 // Post endpoint: /accounts/rooms/host-duel/:code
 roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
@@ -16,7 +16,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
     }
 
     try {
-        if (!checkIfUserIsInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
+        if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
         if (!validateRoomSettings(code)) return res.status(400).json({ error: 'This room is not a division room.' });
 
         // Delete any existing room with this user ID
@@ -164,7 +164,7 @@ roomRouter.post('/open-room/:code', standardLimiter, authenticateTokenWithId, as
     }
 
     try {
-        if (!checkIfUserIsInRoom(code, id)) return res.status(400).json({ error: 'Room does not exist or you are not part of it.' });
+        if (!checkIfUserIsAuthedAndInRoom(code, id)) return res.status(400).json({ error: 'Room does not exist or you are not part of it.' });
 
         // Check for existing room code and update if found
         const upsertQuery = `
