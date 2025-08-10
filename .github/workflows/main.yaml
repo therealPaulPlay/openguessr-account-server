@@ -1,4 +1,4 @@
-name: Deploy Account Backend Node Server
+name: Deploy node server
 
 on:
   push:
@@ -25,21 +25,21 @@ jobs:
             echo "${{ secrets.ENV_FILE }}" > .env
 
             # Pull latest changes from Git
-            git checkout ${{ secrets.MAIN_BRANCH }}
+            git checkout main
             git pull
 
             # Build Docker image
-            docker build -t openguessraccountserver .
+            docker build -t openguessr-account-server .
 
-            # Check if container openguessraccountserver exists
-            if ! docker ps -a --format '{{.Names}}' | grep -q "^openguessraccountserver$"; then
-              echo "Container openguessraccountserver does not exist, creating..."
-              docker run -d -p 3005:3005 --network host --restart unless-stopped --name openguessraccountserver openguessraccountserver
+            # Check if container openguessr-account-server exists
+            if ! docker ps -a --format '{{.Names}}' | grep -q "^openguessr-account-server$"; then
+              echo "Container openguessr-account-server does not exist, creating..."
+              docker run -d -p 3005:3005 --network host --restart unless-stopped --name openguessr-account-server openguessr-account-server
             else
-              echo "Container openguessraccountserver exists, stopping and removing..."
-              docker stop openguessraccountserver || true
-              docker rm openguessraccountserver || true
-              docker run -d -p 3005:3005 --network host --restart unless-stopped --name openguessraccountserver openguessraccountserver
+              echo "Container openguessr-account-server exists, stopping and removing..."
+              docker stop openguessr-account-server || true
+              docker rm openguessr-account-server || true
+              docker run -d -p 3005:3005 --network host --restart unless-stopped --name openguessr-account-server openguessr-account-server
             fi
           EOF
 
