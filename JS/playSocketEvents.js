@@ -40,36 +40,37 @@ function attachPlaySocketEvents(server) {
     });
 
     server.onEvent("clientDisconnected", async (clientId, roomId) => {
+        if (roomId) {
+            const players = server.getRoomStorage(roomId)?.players;
+            const player = players?.find(p => p[0] === clientId);
+            if (player) {
+                // Remove disconnected player from room storage
+                server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
+                server.updateRoomStorage(roomId, "chats", "array-add", `System: ${player?.[1] || "Unknown"} left.`);
+                server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
+            }
+        }
+
         if (authedMultiplayerClients.has(clientId)) {
-            // Get user id
             const userId = authedMultiplayerClients.get(clientId);
 
-            // Only remove from userId map if this is the current client for this user
+            // Only remove from user ID -> client ID map if this is the current/latest client from this user
             const currentClientForUser = authedMultiplayerUserId.get(userId);
             if (currentClientForUser == clientId) authedMultiplayerUserId.delete(userId);
 
-            // Always remove from client maps
+            // Always remove from client -> user ID maps
             authedMultiplayerClients.delete(clientId);
 
             // Process the result if in ongoing duel
             if (userId && roomId && !server.getRoomStorage(roomId).gameEnded && server.getRoomStorage(roomId).gameStarted && server.getRoomStorage(roomId).divisionRoom) {
                 const players = server.getRoomStorage(roomId).players;
-                if (players.length) {
-                    const otherPlayer = players.find((p) => p[0] !== clientId);
-                    const otherPlayerUserId = otherPlayer?.[5];
+                
+                // If one other player is still in the room, that means this client left first and should lose!
+                if (players.length === 1) {
+                    const otherPlayer = players[0];
+                    const otherPlayerUserId = otherPlayer[5];
                     if (otherPlayerUserId != null) saveDuelResult(server.getRoomStorage(roomId).duelUuid, otherPlayerUserId, userId);
                 }
-            }
-        }
-
-        // Remove disconnected player from room storage
-        if (roomId) {
-            const players = server.getRoomStorage(roomId)?.players;
-            const player = players?.find(p => p[0] === clientId);
-            if (player) {
-                server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-                server.updateRoomStorage(roomId, "chats", "array-add", `System: ${player?.[1] || "Unknown"} left.`);
-                server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
             }
         }
     });

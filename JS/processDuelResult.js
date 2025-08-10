@@ -25,6 +25,10 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
         connection = await db.promise().getConnection();
         await connection.beginTransaction();
 
+        // Check if duel already exists
+        const [existing] = await connection.query('SELECT uuid FROM duel_entries WHERE uuid = ?', [uuid]);
+        if (existing.length > 0) throw new Error(`Duel ${uuid} already saved!`);
+
         // Get players and their elo
         const [players] = await connection.query(
             'SELECT id, user_name, elo FROM users WHERE id IN (?, ?) FOR UPDATE',
@@ -38,14 +42,13 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
         if (draw) {
             // Insert draw result into history
             await connection.query(
-                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win, processed)
+                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
                 [
                     uuid,
                     winnerId, loserId,
                     player1.user_name, player2.user_name,
-                    0, 0, // both false for draw
-                    1 // processed true
+                    0, 0 // both false for draw
                 ]
             );
 
@@ -55,6 +58,12 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
             await connection.commit();
 
+            // Send WebSocket notifications (no ELO changes)
+            const resultMessage = { type: 'duel-result', eloChanges: {}, winnerId: null };
+            [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
+
+            console.log(`Duel ${uuid} saved: ${player1.user_name} vs ${player2.user_name} ended in a draw`);
+
         } else {
             const winningPlayer = player1;
             const losingPlayer = player2;
@@ -62,14 +71,13 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
             // Insert win/loss result into history
             await connection.query(
-                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win, processed)
+                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win)
                  VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
                 [
                     uuid,
                     winnerId, loserId,
                     winningPlayer.user_name, losingPlayer.user_name,
-                    1, 0, // winner wins, loser loses
-                    1 // processed true
+                    1, 0 // winner wins, loser loses
                 ]
             );
 

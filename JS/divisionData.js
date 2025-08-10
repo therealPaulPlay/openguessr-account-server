@@ -24,7 +24,6 @@ divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
           user2_win,
           created_at
         FROM duel_entries
-        WHERE processed = 1
       `;
 
         const queryParams = [];
