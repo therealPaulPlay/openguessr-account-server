@@ -14,23 +14,23 @@ divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
 
     try {
         let query = `
-        SELECT
-          uuid,
-          user1_id,
-          user2_id,
-          user1_name,
-          user2_name,
-          user1_win,
-          user2_win,
-          created_at
-        FROM duel_entries
-      `;
+            SELECT
+                uuid,
+                user1_id,
+                user2_id,
+                user1_name,
+                user2_name,
+                user1_win,
+                user2_win,
+                created_at
+            FROM duel_entries
+        `;
 
         const queryParams = [];
 
         // Add ID filter if provided
         if (userId) {
-            query += ` AND (user1_id = ? OR user2_id = ?)`;
+            query += ` WHERE (user1_id = ? OR user2_id = ?)`;
             queryParams.push(userId, userId);
         }
 
