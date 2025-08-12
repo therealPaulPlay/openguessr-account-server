@@ -5,13 +5,18 @@ const { sendEventToClient } = require("./serverSentEvents");
 // Calculation function
 const calculateEloChange = (winnerElo, loserElo) => {
     const K = 32;
-    const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
+    const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
 
     // Ensure minimum gain of 3
     let change = Math.max(3, Math.min(30, Math.round(K * (1 - expectedScore))));
     if (loserElo == 0) change = 0; // Prevent alt-account farming
     return change;
 };
+
+// Get random token amount (5-10)
+function randomTokenGain() {
+    return 5 + Math.round(Math.random() * 5);
+}
 
 // Save duel result with winner/loser IDs
 async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
@@ -68,6 +73,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
             const winningPlayer = player1;
             const losingPlayer = player2;
             const eloChange = calculateEloChange(winningPlayer.elo, losingPlayer.elo);
+            const tokenGain = randomTokenGain();
 
             // Insert win/loss result into history
             await connection.query(
@@ -81,13 +87,19 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
                 ]
             );
 
-            // Update users' ELO
+            // Update users' ELO and tokens
             await connection.query(
-                'UPDATE users SET elo = CASE ' +
-                'WHEN id = ? THEN elo + ? ' +
-                'WHEN id = ? THEN GREATEST(0, elo - ?) ' +
-                'END WHERE id IN (?, ?)',
-                [winnerId, eloChange, loserId, eloChange, winnerId, loserId]
+                `UPDATE users SET 
+                 elo = CASE 
+                     WHEN id = ? THEN elo + ? 
+                     WHEN id = ? THEN GREATEST(0, elo - ?) 
+                 END, 
+                 tokens = CASE 
+                     WHEN id = ? THEN tokens + ? 
+                     ELSE tokens 
+                 END 
+                 WHERE id IN (?, ?)`,
+                [winnerId, eloChange, loserId, eloChange, winnerId, tokenGain, winnerId, loserId]
             );
 
             // Update stats
@@ -102,7 +114,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
             // Send WebSocket notifications
             const eloChanges = { [winnerId]: eloChange, [loserId]: -eloChange };
-            const resultMessage = { type: 'duel-result', eloChanges, winnerId };
+            const resultMessage = { type: 'duel-result', eloChanges, winnerId, tokenGain };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
         }
 

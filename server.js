@@ -1,9 +1,7 @@
 require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser');
 const requestIp = require('request-ip');
 const cors = require('cors');
-const xss = require('xss-clean');
 const http = require('http');
 const PlaySocketServer = require('playsocketjs/server');
 const { attachPlaySocketEvents } = require('./JS/playSocketEvents.js');
@@ -41,15 +39,11 @@ app.use(cors(corsOptions));
 
 // Global Middleware -------------------------------------------------------------------------------------
 app.use((req, res, next) => {
-    if (req.originalUrl === '/stripe/webhook') {
-        next(); // Skip body-parser for Stripe webhook
-    } else {
-        bodyParser.json({ limit: "1mb" })(req, res, next); // Use body-parser for all other routes
-    }
+    if (req.originalUrl === '/stripe/webhook') express.raw({ type: 'application/json' })(req, res, next);
+    else express.json({ limit: "1mb" })(req, res, next); // Automatically parse incoming JSON bodies
 });
 
 app.use(requestIp.mw()); // Apply the requestIp middleware to get the actual ip and not the ip of the proxy
-app.use(xss()); // Prevent xss attacks
 
 // MySQL Database Connection -----------------------------------------------------------------------------
 connectDB();

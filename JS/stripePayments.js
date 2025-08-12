@@ -93,7 +93,7 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
 });
 
 // Webhook
-stripeRouter.post('/webhook', standardLimiter, express.raw({ type: 'application/json' }), async (req, res) => {
+stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
     const db = getDB();
     let event;
 
