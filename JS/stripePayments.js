@@ -42,7 +42,7 @@ async function createStripeSession(price, userId, productId, name, imageSrc) {
     return session;
 }
 
-const SUPPORTER_PRICES = [2.99, 6.99, 14.99, 24.99];
+const SUPPORTER_PRICES = [3.99, 6.99, 19.99];
 const TOKEN_PRICES = [1.99, 2.99, 5.99];
 const TOKEN_AMOUNTS = [900, 1650, 3600];
 
