@@ -1,15 +1,15 @@
-const express = require('express');
+import express from 'express';
 const accountRouter = express.Router();
-const jwt = require('jsonwebtoken');
-const { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter } = require("./rateLimiters.js");
-const { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const axios = require('axios');
-const RESET_KEY = require("./config.js").jwtResetSecret;
-const mailTransporter = require("./mailer.js");
-const validateCaptcha = require('./captchaMiddleware');
-const { emailConfig } = require('./config.js');
-const { fetchReportData } = require('./reportFetch.js');
+import jwt from 'jsonwebtoken';
+import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter } from "./rateLimiters.js";
+import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import axios from 'axios';
+import { jwtResetSecret as RESET_KEY } from "./config.js";
+import mailTransporter from "./mailer.js";
+import validateCaptcha from './captchaMiddleware.js';
+import { emailConfig } from './config.js';
+import { fetchReportData } from './reportFetch.js';
 
 // Regular expression to allow alphanumeric characters, emojis, spaces, and standard symbols
 const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{20D0}-\u{20FF}\u{2B50}\u{2B55}]+$/u;
@@ -548,4 +548,4 @@ accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWi
     }
 });
 
-module.exports = accountRouter;
+export default accountRouter;

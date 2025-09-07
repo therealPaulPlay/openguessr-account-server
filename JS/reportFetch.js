@@ -1,5 +1,5 @@
-const axios = require("axios");
-const { reportSecret, reportAppId } = require('./config.js');
+import axios from "axios";
+import { reportSecret, reportAppId } from './config.js';
 
 
 async function fetchReportData(table = "blacklist", type, referenceId) {
@@ -21,4 +21,4 @@ async function fetchReportData(table = "blacklist", type, referenceId) {
     }
 }
 
-module.exports = { fetchReportData };
+export { fetchReportData };

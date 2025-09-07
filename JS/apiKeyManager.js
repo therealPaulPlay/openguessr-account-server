@@ -1,10 +1,10 @@
-const { ApiKeysClient } = require('@google-cloud/apikeys').v2;
+import { ApiKeysClient } from '@google-cloud/apikeys';
 
 // Direct path to the service account key file
 const keyPath = "./openguessr-429713-beb2e39c60d5.json";
 
 // Instantiate the client with the credentials
-const client = new ApiKeysClient({ keyFilename: keyPath });
+const client = new ApiKeysClient.v2({ keyFilename: keyPath });
 
 const PROJECT_ID = 'openguessr-429713';
 const PARENT = `projects/${PROJECT_ID}/locations/global`;
@@ -296,7 +296,7 @@ function startKeyCycle() {
 }
 
 // Export the function to get the current API key
-module.exports = { getApiKey };
+export { getApiKey };
 
 // Initialize keys when the module is loaded
 

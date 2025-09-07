@@ -1,4 +1,4 @@
-const rateLimit = require('express-rate-limit');
+import rateLimit from 'express-rate-limit';
 
 // req.clientIp is being set by the request-ip middleware that's being applied in server.js
 const standardLimiter = rateLimit({
@@ -92,4 +92,4 @@ const friendRequestLimiter = rateLimit({
     message: { error: 'You are sending too many friend requests.' }
 });
 
-module.exports = { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter };
+export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter };

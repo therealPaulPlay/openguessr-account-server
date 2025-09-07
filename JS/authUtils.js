@@ -1,6 +1,6 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const SECRET_KEY = require("./config.js").jwtSecret;
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import { jwtSecret as SECRET_KEY } from "./config.js";
 
 // Password checks against hash ---------------------------------------------------------------------------------------------------------
 
@@ -80,4 +80,4 @@ function authenticateTokenWithId(req, res, next) {
     }
 }
 
-module.exports = { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken };
+export { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken };

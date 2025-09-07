@@ -1,12 +1,12 @@
-const express = require('express');
+import express from 'express';
 const mapLimitRouter = express.Router();
-const { mapLoadLimiter, supporterMapLoadLimiter } = require("./rateLimiters.js");
-const jwt = require('jsonwebtoken');
-const { getDB } = require("./dbConnection.js");
-const SECRET_KEY = require("./config.js").jwtSecret;
-const cron = require('node-cron');
-const { getApiKey } = require('./apiKeyManager.js');
-const validateCaptcha = require('./captchaMiddleware');
+import { mapLoadLimiter, supporterMapLoadLimiter } from "./rateLimiters.js";
+import jwt from 'jsonwebtoken';
+import { getDB } from "./dbConnection.js";
+import { jwtSecret as SECRET_KEY } from "./config.js";
+import cron from 'node-cron';
+import { getApiKey } from './apiKeyManager.js';
+import validateCaptcha from './captchaMiddleware.js';
 
 // Function to check the rate limit
 function checkRateLimit(req, res) {
@@ -153,7 +153,7 @@ mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
     }
 });
 
-module.exports = mapLimitRouter;
+export default mapLimitRouter;
 
 // Schedule the job to run every day at 1 AM to remove old statistic entries
 

@@ -1,9 +1,10 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter, friendRequestLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { sendEventToClient } from "./serverSentEvents.js";
+import { getDB } from "./dbConnection.js";
+
 const friendRouter = express.Router();
-const { standardLimiter, friendRequestLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { sendEventToClient } = require("./serverSentEvents.js");
-const { getDB } = require("./dbConnection.js");
 
 // Send a friend request
 friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async (req, res) => {
@@ -360,4 +361,4 @@ friendRouter.post('/decline-invite', standardLimiter, authenticateTokenWithId, a
     }
 });
 
-module.exports = friendRouter;
+export default friendRouter;

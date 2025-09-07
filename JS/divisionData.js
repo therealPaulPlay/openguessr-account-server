@@ -1,8 +1,9 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { getDB } from "./dbConnection.js";
+import cron from "node-cron";
+
 const divisionDataRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { getDB } = require("./dbConnection.js");
-const cron = require("node-cron");
 
 // Get duel history ----------------------------------------------------------------------------------------------------------------------------------------------------
 divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
@@ -78,4 +79,4 @@ cron.schedule('0 2 1 * *', async () => {
     }
 });
 
-module.exports = divisionDataRouter;
+export default divisionDataRouter;

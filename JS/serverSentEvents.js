@@ -52,7 +52,4 @@ function sendEventToClient(userId, eventData) {
 }
 
 // Export the SSE functions
-module.exports = {
-    initSSE,
-    sendEventToClient
-};
+export { initSSE, sendEventToClient };

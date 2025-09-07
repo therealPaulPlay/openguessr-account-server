@@ -1,9 +1,10 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import { checkIfUserIsAuthedAndInRoom, validateRoomSettings } from './playSocketEvents.js';
+
 const roomRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const { checkIfUserIsAuthedAndInRoom, validateRoomSettings } = require('./playSocketEvents.js');
 
 // Post endpoint: /accounts/rooms/host-duel/:code
 roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
@@ -276,4 +277,4 @@ setTimeout(() => {
     }, CLEANUP_INTERVAL);
 }, 1000 * 5 * Math.floor(Math.random())); // Delay the start by 0 - 5 seconds - if multiple servers are running, this doesn't execute at the same time. 
 
-module.exports = roomRouter;
+export default roomRouter;

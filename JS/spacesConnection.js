@@ -1,5 +1,5 @@
-const { S3Client } = require('@aws-sdk/client-s3');
-const { s3Config } = require("./config.js");
+import { S3Client } from '@aws-sdk/client-s3';
+import { s3Config } from "./config.js";
 
 // Spaces connection
 const spacesClient = new S3Client({
@@ -16,7 +16,7 @@ async function getPublicObjectURL(key) {
     return `https://${s3Config.bucketName}.fra1.digitaloceanspaces.com/${key}`;
   }
 
-module.exports = {
+export {
     spacesClient,
     getPublicObjectURL
 };

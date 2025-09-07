@@ -1,5 +1,5 @@
-const mysql = require('mysql2');
-const { dbConfig } = require("./config.js");
+import mysql from 'mysql2';
+import { dbConfig } from "./config.js";
 
 const RETRY_INTERVAL = 5000;
 let pool;
@@ -43,4 +43,4 @@ function connectDB() {
     });
 }
 
-module.exports = { getDB, connectDB };
+export { getDB, connectDB };

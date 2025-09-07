@@ -1,7 +1,8 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { getDB } from "./dbConnection.js";
+
 const creatorRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { getDB } = require("./dbConnection.js");
 
 creatorRouter.post('/creator-link-statistic', standardLimiter, async (req, res) => {
     try {
@@ -36,4 +37,4 @@ creatorRouter.post('/creator-link-statistic', standardLimiter, async (req, res) 
     }
 });
 
-module.exports = creatorRouter;
+export default creatorRouter;

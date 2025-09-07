@@ -1,4 +1,4 @@
-const { getDB } = require("./dbConnection.js");
+import { getDB } from "./dbConnection.js";
 
 // Update or increment profile values
 async function updateProfileData(userId, column, increment = false, newValue) {
@@ -75,4 +75,4 @@ async function applyValidationChecks(db, userId, column, newValue) {
     return newValue;
 }
 
-module.exports = { updateProfileData };
+export { updateProfileData };

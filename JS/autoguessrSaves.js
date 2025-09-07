@@ -1,9 +1,10 @@
-const express = require('express');
-const autoguessrRouter = express.Router();
-const { standardLimiter } = require('./rateLimiters.js');
-const { authenticateTokenWithId } = require('./authUtils.js');
-const { getDB } = require('./dbConnection.js');
+import express from 'express';
+import { standardLimiter } from './rateLimiters.js';
+import { authenticateTokenWithId } from './authUtils.js';
+import { getDB } from './dbConnection.js';
 // This router is used for AutoGuessr game saves. Autoguessr is a separate game, but part of the OpenGuessr system.
+
+const autoguessrRouter = express.Router();
 
 // Save a new JSON for a given user
 autoguessrRouter.post('/save', standardLimiter, authenticateTokenWithId, async (req, res) => {
@@ -82,4 +83,4 @@ autoguessrRouter.get('/get-save/:id', standardLimiter, async (req, res) => {
     }
 });
 
-module.exports = autoguessrRouter;
+export default autoguessrRouter;

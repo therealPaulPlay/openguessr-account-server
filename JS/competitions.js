@@ -1,12 +1,12 @@
-const fs = require('fs');
-const express = require('express');
+import fs from 'fs';
+import express from 'express';
 const competitionsRouter = express.Router();
-const { standardLimiter, rankingLimiter, createCompetitionLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const { body, validationResult } = require('express-validator');
-const { updateProfileData } = require('./profileDataHelper.js');
-const { fetchReportData } = require('./reportFetch.js');
+import { standardLimiter, rankingLimiter, createCompetitionLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import { body, validationResult } from 'express-validator';
+import { updateProfileData } from './profileDataHelper.js';
+import { fetchReportData } from './reportFetch.js';
 
 // Map Validation function
 const isValidMap = (map) => {
@@ -281,7 +281,7 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
             return res.status(400).json({ status: 400, errors: errors.array() });
         }
 
-        const { name, author, id, restriction, duration, roundLength, description, rawLocations, private } = req.body;
+        const { name, author, id, restriction, duration, roundLength, description, rawLocations, private: isPrivate } = req.body;
 
         const parsedMapData = JSON.parse(rawLocations);
         const locations = parsedMapData.locations.map(coord => [parseFloat(coord[0]), parseFloat(coord[1])]);
@@ -298,7 +298,7 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
         const db = getDB();
         const [result] = await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [name, author, id, restriction, duration, roundLength, description, locationAmount, JSON.stringify({ locations }), private]
+            [name, author, id, restriction, duration, roundLength, description, locationAmount, JSON.stringify({ locations }), isPrivate]
         );
 
         res.status(201).json({
@@ -476,4 +476,4 @@ competitionsRouter.post('/ranking', rankingLimiter, authenticateTokenWithId, asy
     }
 });
 
-module.exports = competitionsRouter;
+export default competitionsRouter;

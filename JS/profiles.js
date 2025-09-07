@@ -1,9 +1,10 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import { updateProfileData } from "./profileDataHelper.js";
+
 const profileRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const { updateProfileData } = require("./profileDataHelper.js");
 
 // Update individual profile data fields
 profileRouter.put('/update-replace', standardLimiter, authenticateTokenWithId, async (req, res) => {
@@ -110,4 +111,4 @@ profileRouter.get('/:id', standardLimiter, async (req, res) => {
     }
 });
 
-module.exports = profileRouter;
+export default profileRouter;

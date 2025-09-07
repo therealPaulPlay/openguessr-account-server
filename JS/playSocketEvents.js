@@ -1,9 +1,9 @@
-const jwt = require('jsonwebtoken');
-const { fetchReportData } = require('./reportFetch.js');
-const { getDB } = require('./dbConnection.js');
-const { roomTimer } = require('./roomTimer.js');
-const saveDuelResult = require('./processDuelResult.js');
-const SECRET_KEY = require("./config.js").jwtSecret;
+import jwt from 'jsonwebtoken';
+import { fetchReportData } from './reportFetch.js';
+import { getDB } from './dbConnection.js';
+import { roomTimer } from './roomTimer.js';
+import saveDuelResult from './processDuelResult.js';
+import { jwtSecret as SECRET_KEY } from "./config.js";
 
 const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
 const authedMultiplayerUserId = new Map(); // User id -> client id
@@ -349,4 +349,4 @@ function validateRoomSettings(roomId) {
     return true;
 }
 
-module.exports = { attachPlaySocketEvents, checkIfUserIsAuthedAndInRoom, validateRoomSettings };
+export { attachPlaySocketEvents, checkIfUserIsAuthedAndInRoom, validateRoomSettings };

@@ -1,29 +1,29 @@
-require('dotenv').config();
-const express = require('express');
-const requestIp = require('request-ip');
-const cors = require('cors');
-const http = require('http');
-const PlaySocketServer = require('playsocketjs/server');
-const { attachPlaySocketEvents } = require('./JS/playSocketEvents.js');
-const { connectDB } = require("./JS/dbConnection.js");
+import 'dotenv/config';
+import express from 'express';
+import requestIp from 'request-ip';
+import cors from 'cors';
+import http from 'node:http';
+import PlaySocketServer from 'playsocketjs/server';
+import { attachPlaySocketEvents } from './JS/playSocketEvents.js';
+import { connectDB } from "./JS/dbConnection.js";
 
-const roomRouter = require("./JS/roomManager.js");
-const stripeRouter = require('./JS/stripePayments.js');
-const leaderboardRouter = require('./JS/leaderboard.js');
-const accountRouter = require("./JS/accounts.js");
-const profileRoutes = require("./JS/profiles.js");
-const creatorRouter = require("./JS/creatorStatistic.js");
-const autoguessrRouter = require("./JS/autoguessrSaves.js");
-const communityMapRouter = require("./JS/communityMaps.js");
-const competitionsRouter = require("./JS/competitions.js");
-const friendRouter = require("./JS/friends.js");
-const divisionDataRouter = require('./JS/divisionData.js');
-const shopRouter = require('./JS/shop.js');
+import roomRouter from "./JS/roomManager.js";
+import stripeRouter from './JS/stripePayments.js';
+import leaderboardRouter from './JS/leaderboard.js';
+import accountRouter from "./JS/accounts.js";
+import profileRoutes from "./JS/profiles.js";
+import creatorRouter from "./JS/creatorStatistic.js";
+import autoguessrRouter from "./JS/autoguessrSaves.js";
+import communityMapRouter from "./JS/communityMaps.js";
+import competitionsRouter from "./JS/competitions.js";
+import friendRouter from "./JS/friends.js";
+import divisionDataRouter from './JS/divisionData.js';
+import shopRouter from './JS/shop.js';
 // const mapLimitRouter = require('./JS/mapLimit.js');
 
-const { port } = require("./JS/config.js");
-const { corsOptions } = require("./JS/config.js");
-const { initSSE } = require('./JS/serverSentEvents.js');
+import { port } from "./JS/config.js";
+import { corsOptions } from "./JS/config.js";
+import { initSSE } from './JS/serverSentEvents.js';
 
 // Initialize the server ---------------------------------------------------------------------------------
 const app = express();

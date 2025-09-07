@@ -1,10 +1,10 @@
-const express = require('express');
+import express from 'express';
 const shopRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { getDB } = require("./dbConnection.js");
-const cron = require('node-cron');
-const { updateProfileData } = require('./profileDataHelper.js');
-const { authenticateTokenWithId } = require('./authUtils.js');
+import { standardLimiter } from "./rateLimiters.js";
+import { getDB } from "./dbConnection.js";
+import cron from 'node-cron';
+import { updateProfileData } from './profileDataHelper.js';
+import { authenticateTokenWithId } from './authUtils.js';
 
 // Pins are referenced by their id with the first digit being the rarity – e.g. 100 is the first common pin, 202 is the third rare pin
 const pins = {
@@ -307,4 +307,4 @@ cron.schedule('0 0 * * *', async () => {
     }
 });
 
-module.exports = shopRouter;
+export default shopRouter;

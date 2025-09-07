@@ -1,6 +1,6 @@
-const axios = require('axios');
-const { randomUUID } = require('crypto');
-const { turnstileSecret } = require("./config.js");
+import axios from 'axios';
+import { randomUUID } from 'crypto';
+import { turnstileSecret } from "./config.js";
 
 // Validate captcha with Cloudflare Turnstile
 const validateCaptcha = async (req, res, next) => {
@@ -28,4 +28,4 @@ const validateCaptcha = async (req, res, next) => {
     }
 };
 
-module.exports = validateCaptcha;
+export default validateCaptcha;

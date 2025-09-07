@@ -1,6 +1,6 @@
-const { getDB } = require("./dbConnection");
-const { updateProfileData } = require("./profileDataHelper");
-const { sendEventToClient } = require("./serverSentEvents");
+import { getDB } from "./dbConnection.js";
+import { updateProfileData } from "./profileDataHelper.js";
+import { sendEventToClient } from "./serverSentEvents.js";
 
 // Calculation function
 const calculateEloChange = (winnerElo, loserElo) => {
@@ -126,4 +126,4 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
     }
 }
 
-module.exports = saveDuelResult;
+export default saveDuelResult;

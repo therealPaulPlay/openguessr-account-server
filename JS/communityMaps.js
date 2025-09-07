@@ -1,12 +1,13 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter, failedSubmissionLimiter, successfulSubmissionLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import { body, validationResult } from 'express-validator';
+import { getPublicObjectURL, spacesClient } from './spacesConnection.js';
+import { s3Config } from "./config.js";
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
 const communityMapRouter = express.Router();
-const { standardLimiter, failedSubmissionLimiter, successfulSubmissionLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const { body, validationResult } = require('express-validator');
-const { getPublicObjectURL, spacesClient } = require('./spacesConnection.js');
-const { s3Config } = require("./config.js");
-const { PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 // Return the next 50 maps starting from a given index (without map data!)
 communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
@@ -487,4 +488,4 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     }
 });
 
-module.exports = communityMapRouter;
+export default communityMapRouter;

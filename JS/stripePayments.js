@@ -1,14 +1,16 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { authenticateTokenWithId } from "./authUtils.js";
+import { getDB } from "./dbConnection.js";
+import mailTransporter from "./mailer.js";
+import Stripe from 'stripe';
+import { stripeKey, stripeWebhookSecret, emailConfig } from "./config.js";
+
 const stripeRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { authenticateTokenWithId } = require("./authUtils.js");
-const { getDB } = require("./dbConnection.js");
-const mailTransporter = require("./mailer.js");
-const { stripeKey, stripeWebhookSecret, emailConfig } = require("./config.js");
 
 const testKey = "rk_test_51Ple5q1DTHjmMID9EMOkN5YcL81awit40q34fdsEWcdzkjO5vIfY3l89KxzzHVtIxARucrnsvaH7gYhwFHIHlKk900nYpXCPI2"; // Not a prod key, just for testing!
 
-const stripe = require('stripe')(stripeKey);
+const stripe = new Stripe(stripeKey);
 
 // Create stripe session (helper function)
 async function createStripeSession(price, userId, productId, name, imageSrc) {
@@ -225,4 +227,4 @@ Make sure to also provide the Purchase ID. For tax information, please refer to 
     await mailTransporter.sendMail(mailOptions);
 }
 
-module.exports = stripeRouter;
+export default stripeRouter;

@@ -1,8 +1,9 @@
-const express = require('express');
+import express from 'express';
+import { standardLimiter } from "./rateLimiters.js";
+import { getDB } from "./dbConnection.js";
+import cron from 'node-cron';
+
 const leaderboardRouter = express.Router();
-const { standardLimiter } = require("./rateLimiters.js");
-const { getDB } = require("./dbConnection.js");
-const cron = require('node-cron');
 
 // Helper functions for cache
 async function calculateSegments(targetSegments = 50) {
@@ -246,4 +247,4 @@ cron.schedule('0 1 1 * *', async () => {
     }
 });
 
-module.exports = leaderboardRouter;
+export default leaderboardRouter;

@@ -34,4 +34,4 @@ const roomTimer = {
     }
 };
 
-module.exports = { roomTimer };
+export { roomTimer };
