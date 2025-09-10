@@ -83,7 +83,7 @@ function attachPlaySocketEvents(server) {
         if (server.getRoomStorage(roomId)?.divisionRoom && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in a division game.";
     });
 
-    server.onEvent("storageUpdateRequested", ({ clientId, roomId, update }) => {
+    server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
         if (update.key === 'players') return false; // Block client's 'players' updates
 
         // Block room configuration updates
@@ -111,15 +111,21 @@ function attachPlaySocketEvents(server) {
         // Restrict updates
         if (update.key === "chats" && (update.operation.data.type !== "array-add" || !update.operation.data.value?.startsWith(server.getRoomStorage(roomId).players?.find((e) => e[0] === clientId)?.[1]))) return false;
         if (update.key === "showResult" && (update.operation.data.type !== "set" || update.operation.data.value !== false)) return false;
-    });
 
-    server.onEvent("storageUpdated", ({ clientId, roomId, update, storage }) => {
-        if (update.key === "showResult" && update.operation.data.value === false) {
+        // React to update before it has happened & ensure showResult was previously true (and not alr false)
+        if (update.key === "showResult" && update.operation.data.value === false && storage.showResult === true) {
             server.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
             server.updateRoomStorage(roomId, "overlay", "set", true);
 
+            // If the game has not ended, continue with next round
+            if (!storage.gameEnded) {
+                setTimeout(() => {
+                    startRound(roomId);
+                }, storage.currentRound === 0 ? 0 : 1500);
+            }
+
             // Check if this is a division room that has ended and hasn't been processed yet
-            if (storage.divisionRoom && storage.gameEnded && !storage.duelProcessed) {
+            if (storage.gameEnded && storage.divisionRoom && !storage.duelProcessed) {
                 const players = storage.players;
                 const sortedPlayers = players?.sort((a, b) => b[3] - a[3]);
                 const winner = sortedPlayers?.[0];
@@ -131,12 +137,6 @@ function attachPlaySocketEvents(server) {
                     server.updateRoomStorage(roomId, "duelProcessed", "set", true);
                     saveDuelResult(storage.duelUuid, winner[5], loser[5], isDraw);
                 }
-            }
-
-            if (!storage.gameEnded) {
-                setTimeout(() => {
-                    startRound(roomId);
-                }, storage.currentRound === 0 ? 0 : 1500);
             }
         }
     });

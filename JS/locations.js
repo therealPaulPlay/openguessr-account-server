@@ -114,6 +114,7 @@ locationRouter.put('/:mapName', async (req, res) => {
 cron.schedule('0 */6 * * *', () => {
     mapCache = {};
     keyLocationsCache = {};
+    console.log("Successfully cleared map locations cache.");
 });
 
 export { locationRouter, getLocations, removeMapFromCache };
