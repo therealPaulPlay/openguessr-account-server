@@ -238,8 +238,14 @@ function attachPlaySocketEvents(server) {
                     server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
                     roomTimer.adjust(roomId, 15000);
                 }
+
+                // Wait shortly, hide overlay
                 setTimeout(() => {
-                    server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false); // Wait shortly, hide overlay
+                    try {
+                        server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
+                    } catch (error) {
+                        console.error(`Error hiding timeReducedOverlay:`, error);
+                    }
                 }, 2000);
             }
 
@@ -295,52 +301,64 @@ function attachPlaySocketEvents(server) {
     }
 
     async function startRound(roomId) {
-        const mapCategory = server.getRoomStorage(roomId).category;
-        const data = await getLocations(mapCategory, 1, roomId); // Use room ID for key that ensures no duplicates
-        const location = data?.locations?.[0];
-        const bounds = data?.bounds;
+        try {
+            const mapCategory = server.getRoomStorage(roomId).category;
+            const data = await getLocations(mapCategory, 1, roomId); // Use room ID for key that ensures no duplicates
+            const location = data?.locations?.[0];
+            const bounds = data?.bounds;
 
-        server.updateRoomStorage(roomId, "mapBounds", "set", bounds); // Set this before location!
-        server.updateRoomStorage(roomId, "location", "set", location);
-        server.updateRoomStorage(roomId, "countdownActive", "set", true);
-        server.updateRoomStorage(roomId, "currentRound", "set", (server.getRoomStorage(roomId).currentRound || 0) + 1);
-        server.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${server.getRoomStorage(roomId).currentRound}.`);
+            server.updateRoomStorage(roomId, "mapBounds", "set", bounds); // Set this before location!
+            server.updateRoomStorage(roomId, "location", "set", location);
+            server.updateRoomStorage(roomId, "countdownActive", "set", true);
+            server.updateRoomStorage(roomId, "currentRound", "set", (server.getRoomStorage(roomId).currentRound || 0) + 1);
+            server.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${server.getRoomStorage(roomId).currentRound}.`);
+        } catch (error) {
+            console.error("Error starting round", error);
+        }
 
         // After countdown, start timer
         setTimeout(() => {
-            if (!server.getRoomStorage(roomId)) return; // If the room no longer exists, return
-            server.updateRoomStorage(roomId, "countdownActive", "set", false);
-            server.updateRoomStorage(roomId, "overlay", "set", false);
-            if (!server.getRoomStorage(roomId).firstRoundPlayed) server.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);
+            try {
+                if (!server.getRooms[roomId]) return; // If the room no longer exists, return
+                server.updateRoomStorage(roomId, "countdownActive", "set", false);
+                server.updateRoomStorage(roomId, "overlay", "set", false);
+                if (!server.getRoomStorage(roomId).firstRoundPlayed) server.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);
 
-            // Timer information for clients
-            server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: server.getRoomStorage(roomId).roundLength });
+                // Timer information for clients
+                server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: server.getRoomStorage(roomId).roundLength });
 
-            // Server-side timer (+1s delayed to ensure all clients have their timers finished)
-            roomTimer.set(roomId, server.getRoomStorage(roomId).roundLength * 1000, () => {
-                endRound(roomId);
-            });
+                // Server-side timer (+1s delayed to ensure all clients have their timers finished)
+                roomTimer.set(roomId, server.getRoomStorage(roomId).roundLength * 1000, () => {
+                    endRound(roomId);
+                });
+            } catch (error) {
+                console.error("Error in timeout within round start:", error);
+            }
         }, 4000);
     }
 
     function endRound(roomId) {
-        server.updateRoomStorage(roomId, "timerStart", "set", null);
-        server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
+        try {
+            server.updateRoomStorage(roomId, "timerStart", "set", null);
+            server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
 
-        // If any players have no guess submitted, add 0, 0 as the guess
-        const players = server.getRoomStorage(roomId)?.players;
-        const guessArray = server.getRoomStorage(roomId)?.guessLocationsArray;
-        players?.forEach((p) => {
-            const correspondingGuess = guessArray?.find((g) => (g.id === p[0]));
-            if (!correspondingGuess) guessArray.push({ id: p[0], lat: 0, lon: 0, username: p[1], pin: p[7], team: p[4] });
-        });
-        server.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
+            // If any players have no guess submitted, add 0, 0 as the guess
+            const players = server.getRoomStorage(roomId)?.players;
+            const guessArray = server.getRoomStorage(roomId)?.guessLocationsArray;
+            players?.forEach((p) => {
+                const correspondingGuess = guessArray?.find((g) => (g.id === p[0]));
+                if (!correspondingGuess) guessArray.push({ id: p[0], lat: 0, lon: 0, username: p[1], pin: p[7], team: p[4] });
+            });
+            server.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
 
-        server.updateRoomStorage(roomId, "showResult", "set", true);
-        server.updateRoomStorage(roomId, "confirmedArray", "set", []);
+            server.updateRoomStorage(roomId, "showResult", "set", true);
+            server.updateRoomStorage(roomId, "confirmedArray", "set", []);
 
-        // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
-        if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) server.updateRoomStorage(roomId, "gameEnded", "set", true);
+            // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
+            if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) server.updateRoomStorage(roomId, "gameEnded", "set", true);
+        } catch (error) {
+            console.error("Error ending round:", error);
+        }
     }
 }
 
