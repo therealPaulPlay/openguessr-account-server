@@ -1,12 +1,13 @@
 import fs from 'fs';
 import express from 'express';
-const competitionsRouter = express.Router();
 import { standardLimiter, rankingLimiter, createCompetitionLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { body, validationResult } from 'express-validator';
 import { updateProfileData } from './profileDataHelper.js';
 import { fetchReportData } from './reportFetch.js';
+
+const competitionsRouter = express.Router();
 
 // Map Validation function
 const isValidMap = (map) => {

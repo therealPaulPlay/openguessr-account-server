@@ -6,6 +6,7 @@ import { body, validationResult } from 'express-validator';
 import { getPublicObjectURL, spacesClient } from './spacesConnection.js';
 import { s3Config } from "./config.js";
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { removeMapFromCache } from './locations.js';
 
 const communityMapRouter = express.Router();
 
@@ -166,7 +167,6 @@ communityMapRouter.get('/:name', standardLimiter, async (req, res) => {
         const [results] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name]);
         if (results.length === 0) return res.status(404).json({ error: 'Map not found.' });
         const { id, name: mapName, author, author_id: authorId, description, storage_key, favourite, category, likes } = results[0];
-        if (!storage_key) res.status(400).json({ error: 'This map does not yet have a storage key assigned.' });
 
         let mapDataUrl = await getPublicObjectURL(storage_key);
 
@@ -330,15 +330,13 @@ communityMapRouter.put('/', [
     body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.'),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
-    const { id: player_id, name: rawName, mapData } = req.body;
-    let name = rawName;
+    const { id: player_id, name, mapData } = req.body;
 
     const db = getDB();
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-
-    if (!player_id || !rawName || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
+    if (!player_id || !name || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
 
     let parsedMapData;
     let locations; // here locations are converted to numbers in case they are strings
@@ -361,7 +359,6 @@ communityMapRouter.put('/', [
     try {
         // Check if the map exists and if the requesting user is the owner
         const [map] = await db.promise().execute('SELECT id, storage_key FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name.toLowerCase(), player_id]);
-
         if (map.length === 0) return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
 
         const mapDataJson = JSON.stringify({ locations });
@@ -378,6 +375,9 @@ communityMapRouter.put('/', [
                 ACL: 'public-read', // Make publicly readable
             })
         );
+
+        // Remove from cache so that the new version will be pulled
+        removeMapFromCache("community_" + name.toLowerCase());
 
         res.status(200).json({ message: 'Map updated successfully!' });
     } catch (err) {

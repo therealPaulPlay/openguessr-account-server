@@ -19,7 +19,8 @@ import competitionsRouter from "./JS/competitions.js";
 import friendRouter from "./JS/friends.js";
 import divisionDataRouter from './JS/divisionData.js';
 import shopRouter from './JS/shop.js';
-// const mapLimitRouter = require('./JS/mapLimit.js');
+import { locationRouter } from './JS/locations.js';
+// import mapLimitRouter from './JS/mapLimit.js';
 
 import { port } from "./JS/config.js";
 import { corsOptions } from "./JS/config.js";
@@ -64,6 +65,7 @@ app.use("/competitions", competitionsRouter);
 app.use("/friends", friendRouter);
 app.use("/divisions", divisionDataRouter);
 app.use("/shop", shopRouter);
+app.use("/locations", locationRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the http server --------------------------------------------------------------------------------------

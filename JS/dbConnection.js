@@ -14,13 +14,13 @@ function createDBPool() {
     });
 }
 
-function getDB() {
+export function getDB() {
     // Return the pool instance instead of a single connection
     if (!pool) console.error("Database pool is not initialized. Did you forget to call connectDB?");
     return pool;
 }
 
-function connectDB() {
+export function connectDB() {
     pool = createDBPool(); // Create the pool
 
     // Test the connection when starting the pool
@@ -42,5 +42,3 @@ function connectDB() {
         setTimeout(connectDB, RETRY_INTERVAL); // Attempt to recreate the pool on error
     });
 }
-
-export { getDB, connectDB };
