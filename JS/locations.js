@@ -20,20 +20,22 @@ async function getMap(name) {
         // Community map check
         const db = getDB();
         const isCommunityMap = name.includes("community_");
-        let communityStorageKey;
+
+        let storageKey;
 
         // If it's a community map, get the map file key
         if (isCommunityMap) {
             const [results] = await db.promise().execute('SELECT * FROM maps WHERE LOWER(name) = ?', [name.replace("community_", "")]);
             if (results.length === 0) throw new Error("Map not found!");
-            communityStorageKey = results[0]?.storage_key;
+            storageKey = results[0]?.storage_key;
+        } else {
+            storageKey = "openguessr-official-maps/" + name + ".json";
         }
 
         // Get from S3
-        const storageKey = "openguessr-official-maps/" + name + ".json";
         const response = await spacesClient.send(new GetObjectCommand({
             Bucket: s3Config.bucketName,
-            Key: isCommunityMap ? communityStorageKey : storageKey
+            Key: storageKey
         }));
         const jsonString = await response.Body.transformToString();
         const mapData = JSON.parse(jsonString);
@@ -103,7 +105,7 @@ locationRouter.put('/:mapName', async (req, res) => {
 
         res.json(data);
     } catch (error) {
-        console.error("Error sending out locations:", error);
+        console.error(`Error sending out ${amount} locations for map ${mapName}:`, error);
         res.status(500).json({ error: "Error sending out locations: " + error.message });
     }
 });
