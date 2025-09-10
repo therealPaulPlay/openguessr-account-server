@@ -313,7 +313,7 @@ function attachPlaySocketEvents(server) {
             server.updateRoomStorage(roomId, "currentRound", "set", (server.getRoomStorage(roomId).currentRound || 0) + 1);
             server.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${server.getRoomStorage(roomId).currentRound}.`);
         } catch (error) {
-            console.error("Error starting round", error);
+            console.error("Error starting round:", error);
         }
 
         // After countdown, start timer
