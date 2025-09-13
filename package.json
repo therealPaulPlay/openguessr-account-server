@@ -10,6 +10,7 @@
     "express": "^4.19.2",
     "express-rate-limit": "^7.4.0",
     "express-validator": "^7.2.1",
+    "fast-profanity-filter": "^0.0.5",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.10.3",
     "node-cron": "^3.0.3",

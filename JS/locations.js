@@ -105,7 +105,7 @@ locationRouter.put('/:mapName', async (req, res) => {
 
         res.json(data);
     } catch (error) {
-        console.error(`Error sending out locations (${amount}) for map "${mapName}":`, error);
+        console.error(`Error sending out locations (${amount}) for map "${mapName}":`, error.message);
         res.status(500).json({ error: "Error sending out locations: " + error.message });
     }
 });

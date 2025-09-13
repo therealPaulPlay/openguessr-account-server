@@ -7,6 +7,7 @@ import { getPublicObjectURL, spacesClient } from './spacesConnection.js';
 import { s3Config } from "./config.js";
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { removeMapFromCache } from './locations.js';
+import { check } from 'fast-profanity-filter';
 
 const communityMapRouter = express.Router();
 
@@ -221,53 +222,59 @@ const isValidMap = (map) => {
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
-    body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.'),
-    body('author').isLength({ max: 255 }).withMessage('Author name cannot exceed 255 characters.'),
-    body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.'),
+    body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
+        if (!check(value)) throw new Error('Map name contains inappropriate words.');
+        return true;
+    }),
+    body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
+        if (!check(value)) throw new Error('Map description contains inappropriate words.');
+        return true;
+    }),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
-    const { id: player_id, name: rawName, author, description: rawDescription, mapData, category } = req.body;
+    const { id: player_id, name: rawName, description: rawDescription, mapData, category } = req.body;
 
     const db = getDB();
 
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
-
-    if (!player_id || !rawName || !author || !rawDescription || !mapData) {
-        return res.status(400).json({ error: 'All input fields are required.' });
-    }
-
-    // Remove illegal link symbols
-    let name = rawName.split("_").join(" ");
-    name = name.split("/").join(" ");
-    name = name.split("+").join(" ");
-    name = name.split("&").join(" ");
-    name = name.split("#").join(" ");
-    name = name.split("?").join(" ");
-    name = name.replace(/\s+/g, " ").trim();
-
-    let description = rawDescription.trim();
-    description = /[.?!]$/.test(description) ? description : `${description}.`;
-
-    let parsedMapData;
-    let locations; // here locations are converted to numbers in case they are strings
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!player_id || !rawName || !rawDescription || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
 
     try {
-        parsedMapData = JSON.parse(mapData);
-        locations = parsedMapData.locations.map(coord => [
-            parseFloat(coord[0]),
-            parseFloat(coord[1])
-        ]);
+        // Fetch the user to get the actual username
+        const [userResults] = await db.promise().execute('SELECT user_name FROM users WHERE id = ?', [player_id]);
+        if (userResults.length === 0) return res.status(404).json({ error: 'User not found.' });
 
-        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
-    } catch (error) {
-        console.error('Error parsing JSON:', error);
-        return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse.' });
-    }
+        const author = userResults[0].user_name;
 
-    try {
+        // Remove illegal link symbols
+        let name = rawName.split("_").join(" ");
+        name = name.split("/").join(" ");
+        name = name.split("+").join(" ");
+        name = name.split("&").join(" ");
+        name = name.split("#").join(" ");
+        name = name.split("?").join(" ");
+        name = name.replace(/\s+/g, " ").trim();
+
+        let description = rawDescription.trim();
+        description = /[.?!]$/.test(description) ? description : `${description}.`;
+
+        let parsedMapData;
+        let locations; // here locations are converted to numbers in case they are strings
+
+        try {
+            parsedMapData = JSON.parse(mapData);
+            locations = parsedMapData.locations.map(coord => [
+                parseFloat(coord[0]),
+                parseFloat(coord[1])
+            ]);
+
+            if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
+        } catch (error) {
+            console.error('Error parsing JSON:', error);
+            return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse.' });
+        }
+
         // Check for duplicate map names
         const [duplicateMap] = await db.promise().execute(
             'SELECT * FROM maps WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
@@ -275,7 +282,7 @@ communityMapRouter.post('/', [
         );
         if (duplicateMap.length > 0) return res.status(409).json({ error: 'Map with this name already exists.' });
 
-        // Check rate limit BEFORE uploading or saving to database – this only counts for successful submissions that made it so far
+        // Check rate limit BEFORE uploading or saving to database – this only counts for successful submissions that made it so far
         await new Promise((resolve, reject) => {
             successfulSubmissionLimiter(req, res, (err) => {
                 if (err) reject(err);
@@ -327,7 +334,6 @@ communityMapRouter.post('/', [
 // Update map
 communityMapRouter.put('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
-    body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.'),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
     const { id: player_id, name, mapData } = req.body;
@@ -336,7 +342,7 @@ communityMapRouter.put('/', [
     const errors = validationResult(req);
 
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    if (!player_id || !name || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
+    if (!player_id || !name || !mapData) return res.status(400).json({ error: 'Name, player ID and data is required.' });
 
     let parsedMapData;
     let locations; // here locations are converted to numbers in case they are strings

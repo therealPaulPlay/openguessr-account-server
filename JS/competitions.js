@@ -6,6 +6,7 @@ import { getDB } from "./dbConnection.js";
 import { body, validationResult } from 'express-validator';
 import { updateProfileData } from './profileDataHelper.js';
 import { fetchReportData } from './reportFetch.js';
+import { check } from 'fast-profanity-filter';
 
 const competitionsRouter = express.Router();
 
@@ -267,12 +268,17 @@ competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId
 
 // Create competition
 competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWithId, [
-    body('name').isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.'),
-    body('author').isLength({ max: 255 }).withMessage('Author name must be up to 255 characters.'),
+    body('name').isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.').custom((value) => {
+        if (!check(value)) throw new Error('Competition name contains inappropriate words.');
+        return true;
+    }),
     body('restriction').isLength({ max: 1000 }).withMessage('Restriction data cannot exceed 1000 characters.'),
     body('duration').isInt({ min: 600, max: 604800 }).withMessage('Duration must be between 10 minutes and 7 days.'),
     body('roundLength').isInt({ min: 3, max: 300 }).withMessage('Round length must be between 3 seconds and 5 minutes.'),
-    body('description').isLength({ min: 15, max: 70 }).withMessage('Description must be between 15 and 70 characters.'),
+    body('description').isLength({ min: 15, max: 70 }).withMessage('Description must be between 15 and 70 characters.').custom((value) => {
+        if (!check(value)) throw new Error('Competition description contains inappropriate words.');
+        return true;
+    }),
     body('locations').isLength({ max: 10000 }).withMessage('Location data cannot exceed 10,000 characters.'),
     body('private').isBoolean().withMessage('Private must be a boolean.'),
 ], async (req, res) => {
@@ -282,21 +288,23 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
             return res.status(400).json({ status: 400, errors: errors.array() });
         }
 
-        const { name, author, id, restriction, duration, roundLength, description, rawLocations, private: isPrivate } = req.body;
+        const { name, id, restriction, duration, roundLength, description, rawLocations, private: isPrivate } = req.body;
+
+        const db = getDB();
+
+        // Fetch the user to get the actual username
+        const [userResults] = await db.promise().execute('SELECT user_name FROM users WHERE id = ?', [id]);
+        if (userResults.length === 0) return res.status(404).json({ status: 404, error: 'User not found.' });
+
+        const author = userResults[0].user_name;
 
         const parsedMapData = JSON.parse(rawLocations);
         const locations = parsedMapData.locations.map(coord => [parseFloat(coord[0]), parseFloat(coord[1])]);
         const locationAmount = locations.length;
 
-        if (!isValidMap({ locations })) {
-            return res.status(400).json({ status: 400, error: 'Invalid map data. Must contain valid coordinates.' });
-        }
+        if (!isValidMap({ locations })) return res.status(400).json({ status: 400, error: 'Invalid map data. Must contain valid coordinates.' });
+        if (locationAmount < 1 || locationAmount > 20) return res.status(400).json({ status: 400, error: `Location count must be between 1 and 20. Currently it is ${locationAmount}.` });
 
-        if (locationAmount < 1 || locationAmount > 20) {
-            return res.status(400).json({ status: 400, error: `Location count must be between 1 and 20. Currently it is ${locationAmount}.` });
-        }
-
-        const db = getDB();
         const [result] = await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [name, author, id, restriction, duration, roundLength, description, locationAmount, JSON.stringify({ locations }), isPrivate]

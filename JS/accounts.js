@@ -10,6 +10,7 @@ import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
 import { emailConfig } from './config.js';
 import { fetchReportData } from './reportFetch.js';
+import { check } from 'fast-profanity-filter';
 
 // Regular expression to allow alphanumeric characters, emojis, spaces, and standard symbols
 const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{20D0}-\u{20FF}\u{2B50}\u{2B55}]+$/u;
@@ -22,7 +23,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
         // Query to fetch user details with profile_data
         let userQuery = `
             SELECT 
-                u.user_name AS userName, 
+                u.user_name AS username, 
                 u.experience, 
                 u.supporter_level, 
                 u.supported_amount, 
@@ -73,22 +74,21 @@ accountRouter.get('/check-warnlist/:id', standardLimiter, async (req, res) => {
 accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { id } = req.body;
-    let { userName } = req.body;
+    let { username } = req.body;
 
-    if (!id || !userName) return res.status(400).json({ error: 'User ID and username are required.' });
+    if (!id || !username) return res.status(400).json({ error: 'User ID and username are required.' });
 
     try {
         // Check if the username consists only of spaces
-        userName = userName.trim();
+        username = username.trim();
 
-        if (!validUsernameRegex.test(userName) || userName.length === 0) {
-            return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
-        }
+        if (!validUsernameRegex.test(username) || username.length === 0)  return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        if (!check(username)) return res.status(400).json({ error: 'Username may not contain profanity.' });
 
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
-            db.execute(userNameExistsQuery, [userName], (err, results) => {
+            db.execute(userNameExistsQuery, [username], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -108,7 +108,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         `;
 
             await new Promise((resolve, reject) => {
-                db.execute(updateQuery, [userName, id], (err, results) => {
+                db.execute(updateQuery, [username, id], (err, results) => {
                     if (err) return reject(err);
                     resolve(results);
                 });
@@ -116,7 +116,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
 
             // Query to fetch updated user details
             let userQuery = `
-            SELECT user_name AS userName
+            SELECT user_name AS username
             FROM users
             WHERE id = ?
         `;
@@ -143,21 +143,20 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
 // Register Endpoint
 accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, res) => {
     const db = getDB();
-    let { userName, email, password } = req.body;
+    let { username, email, password } = req.body;
     const userIp = req.clientIp;
 
-    if (!userName || !email || !password) {
+    if (!username || !email || !password) {
         return res.status(400).json({ error: 'Username, email, and password are required.' });
     }
 
     try {
-        userName = userName.trim(); // remove whitespaces from username
+        username = username.trim(); // remove whitespaces from username
         email = email.trim().toLowerCase(); // remove whitespaces from email and make it lowercase
 
         // Check if the username consists only of spaces
-        if (!validUsernameRegex.test(userName) || userName.length === 0) {
-            return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
-        }
+        if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        if (!check(username)) return res.status(400).json({ error: 'Username should not contain profanity.' });
 
         // Check if email already exists
         const emailExistsQuery = 'SELECT id FROM users WHERE email = ?';
@@ -168,22 +167,17 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
             });
         });
 
-        if (existingEmailUser) {
-            return res.status(409).json({ error: 'Email is already in use.' });
-        }
+        if (existingEmailUser) return res.status(409).json({ error: 'Email is already in use.' });
 
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
-            db.execute(userNameExistsQuery, [userName], (err, results) => {
+            db.execute(userNameExistsQuery, [username], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
         });
-
-        if (existingUserNameUser) {
-            return res.status(409).json({ error: 'Username is already taken.' });
-        }
+        if (existingUserNameUser) return res.status(409).json({ error: 'Username is already taken.' });
 
         // Generate hashed password
         const hashedPassword = await getEncodedPassword(password);
@@ -194,7 +188,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         // Insert new user into the database
         const insertUserQuery = 'INSERT INTO users (user_name, email, password, ip_address, created_at) VALUES (?, ?, ?, ?, ?)';
         const newUser = await new Promise((resolve, reject) => {
-            db.execute(insertUserQuery, [userName, email, hashedPassword, userIp, now], (err, results) => {
+            db.execute(insertUserQuery, [username, email, hashedPassword, userIp, now], (err, results) => {
                 if (err) return reject(err);
                 resolve(results.insertId);
             });
@@ -243,7 +237,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
             message: 'Login successful',
             token: bearerToken,
             id: user.id,
-            userName: user.user_name,
+            username: user.user_name,
             experience: user.experience
         });
 
