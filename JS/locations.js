@@ -76,7 +76,7 @@ async function getLocations(mapName, amount, key) {
     const bounds = map?.bounds;
 
     // Previous indexes
-    if (locationsLength * 0.75 > keyCache.prevIndexes.length) keyCache.prevIndexes = []; // In case e.g. the map was changed and the prevIndexes are too many, reset them
+    if (locationsLength * 0.65 < keyCache.prevIndexes.length)  keyCache.prevIndexes = []; // In case e.g. the map file was changed and the prevIndexes are too many, reset them
     const previousIndexes = keyCache.prevIndexes;
 
     const randomLocationIndexes = Array.from({ length: amount }, () => {
