@@ -51,6 +51,7 @@ export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 export const reportSecret = process.env.REPORT_SECRET;
 export const reportAppId = process.env.REPORT_APP_ID;
+export const reportWebhookSecret = process.env.REPORT_WEBHOOK_SECRET;
 
 export const s3Config = {
     accessKeyId: process.env.SPACES_ACCESS_KEY_ID,

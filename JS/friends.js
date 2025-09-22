@@ -1,7 +1,7 @@
 import express from 'express';
 import { standardLimiter, friendRequestLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
-import { sendEventToClient } from "./serverSentEvents.js";
+import { getSseClients, sendEventToClient } from "./serverSentEvents.js";
 import { getDB } from "./dbConnection.js";
 
 const friendRouter = express.Router();
@@ -113,7 +113,6 @@ friendRouter.post('/accept', standardLimiter, authenticateTokenWithId, async (re
 // Get all friends of a user
 friendRouter.post('/friends', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: userId } = req.body;
-
     if (!userId) {
         return res.status(400).json({ error: 'User ID is required.' });
     }
@@ -121,23 +120,31 @@ friendRouter.post('/friends', standardLimiter, authenticateTokenWithId, async (r
     try {
         const db = getDB();
         const getFriendsQuery = `
-            SELECT 
-                users.id, 
-                users.user_name, 
-                users.last_activity,
-                -- Determine if the user is online or not
-                CASE 
-                    WHEN TIMESTAMPDIFF(MINUTE, users.last_activity, NOW()) < 10 THEN true 
-                    ELSE false 
-                END AS online
+            SELECT
+                users.id,
+                users.user_name
             FROM friends
             JOIN users ON friends.friend_id = users.id
             WHERE friends.user_id = ?
-            ORDER BY online DESC, users.user_name ASC;
+            ORDER BY users.user_name ASC;
         `;
-        const [friends] = await db.promise().query(getFriendsQuery, [userId]);
 
-        res.status(200).json({ friends });
+        const [friends] = await db.promise().query(getFriendsQuery, [userId]);
+        const activeClients = getSseClients();
+
+        // Add online status based on SSE connection and sort
+        const friendsWithOnlineStatus = friends.map(friend => ({
+            ...friend,
+            online: activeClients.hasOwnProperty(friend.id)
+        }));
+
+        // Sort by online status (online first), then by username
+        friendsWithOnlineStatus.sort((a, b) => {
+            if (a.online !== b.online) return b.online - a.online; // Online users first
+            return a.user_name.localeCompare(b.user_name); // Then alphabetical
+        });
+
+        res.status(200).json({ friends: friendsWithOnlineStatus });
     } catch (error) {
         console.error('Error fetching friends:', error);
         res.status(500).json({ error: 'An error occurred while fetching friends.' });

@@ -20,7 +20,6 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
     const db = getDB();
     try {
         const userId = req.params.id || 0;
-        // Query to fetch user details with profile_data
         let userQuery = `
             SELECT 
                 u.user_name AS username, 
@@ -38,15 +37,6 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
 
         const [rows] = await db.promise().execute(userQuery, [userId]);
         const user = rows[0];
-
-        const now = new Date();
-        // Update user experience and last experience update time in the database
-        const activityQuery = `
-            UPDATE users
-            SET last_activity = ?
-            WHERE id = ?
-        `;
-        await db.promise().execute(activityQuery, [now, userId]);
 
         if (user) res.json({ user });
         else res.status(404).json({ error: 'User not found.' });
@@ -83,7 +73,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         username = username.trim();
 
         if (!validUsernameRegex.test(username) || username.length === 0)  return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
-        if (!check(username)) return res.status(400).json({ error: 'Username may not contain profanity.' });
+        if (!check(username)) return res.status(400).json({ error: 'Username must not contain profanity.' });
 
         // Check if username already exists
         const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';

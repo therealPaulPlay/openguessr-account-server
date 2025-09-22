@@ -64,10 +64,9 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
             await connection.commit();
 
             // Send WebSocket notifications (no ELO changes)
-            const resultMessage = { type: 'duel-result', eloChanges: {}, winnerId: null };
+            const resultMessage = { type: 'duel-result', eloChanges: null, winnerId: null, tokenGain: null };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
 
-            console.log(`Duel ${uuid} saved: ${player1.user_name} vs ${player2.user_name} ended in a draw`);
 
         } else {
             const winningPlayer = player1;
@@ -113,7 +112,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
             await connection.commit();
 
             // Send WebSocket notifications
-            const eloChanges = { [winnerId]: eloChange, [loserId]: -eloChange };
+            const eloChanges = { winnerId: eloChange, loserId: -eloChange };
             const resultMessage = { type: 'duel-result', eloChanges, winnerId, tokenGain };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
         }

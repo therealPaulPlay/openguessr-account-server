@@ -1,8 +1,13 @@
 // SSE clients store
 const clients = {};
 
+// Get clients
+export function getSseClients() {
+    return clients;
+}
+
 // SSE setup function
-function initSSE(app) {
+export function initSSE(app) {
     // Middleware to handle SSE connections
     app.get('/events', (req, res) => {
         const userId = req.query.userId;
@@ -42,7 +47,7 @@ function initSSE(app) {
 
 
 // Helper function to send events to a specific client
-function sendEventToClient(userId, eventData) {
+export function sendEventToClient(userId, eventData) {
     const client = clients[userId];
     if (client) {
         client.write(`data: ${JSON.stringify(eventData)}\n\n`);
@@ -51,5 +56,11 @@ function sendEventToClient(userId, eventData) {
     return false;
 }
 
-// Export the SSE functions
-export { initSSE, sendEventToClient };
+// Helper function to broadcast events to all connected clients
+export function broadcastEvent(eventData) {
+    Object.keys(clients).forEach(userId => {
+        try {
+            clients[userId].write(`data: ${JSON.stringify(eventData)}\n\n`);
+        } catch (error) { }
+    });
+}
