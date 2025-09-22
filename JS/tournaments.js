@@ -261,6 +261,8 @@ async function startTournament(tournamentId, map) {
     }
 }
 
+let initialTournamentCheck = true;
+
 async function checkAndStartTournaments() {
     try {
         const db = getDB();
@@ -286,6 +288,22 @@ async function checkAndStartTournaments() {
             `DELETE FROM tournaments WHERE start_date < ?`,
             [oneWeekAgoUTC]
         );
+
+        // On initial check after server restart, clean up interrupted tournaments
+        if (initialTournamentCheck) {
+            const [interruptedTournaments] = await db.promise().execute(
+                `SELECT id FROM tournaments WHERE status IN ('starting', 'ongoing')`
+            );
+
+            if (interruptedTournaments.length > 0) {
+                await db.promise().execute(
+                    `UPDATE tournaments SET status = 'finished' WHERE status IN ('starting', 'ongoing')`
+                );
+                console.log(`Cleaned up ${interruptedTournaments.length} interrupted tournament(s) after server restart.`);
+            }
+
+            initialTournamentCheck = false;
+        }
 
         console.log("Checked and started eligible tournaments.");
     } catch (error) {
