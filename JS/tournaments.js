@@ -15,7 +15,7 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
 
         // Check if new weekly tournament exists
         const [weeklyTournament] = await db.promise().execute(
-            `SELECT 1 FROM tournaments WHERE name = 'Weekly Tournament' AND start_date > NOW() LIMIT 1`
+            `SELECT 1 FROM tournaments WHERE name = 'Weekly Tournament' AND status IN ('upcoming', 'starting', 'ongoing') LIMIT 1`
         );
 
         // If no weekly tournament exists yet, create
@@ -301,7 +301,14 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
     try {
         if (tournamentId == null) throw new Error("Tournament ID is not set!");
         const playerArray = playSocketServer.getRoomStorage(roomId)?.players;
-        const playerArrayWithoutSpectators = playerArray.filter((p) => p.spectator == false);
+        const playerArrayWithoutSpectators = playerArray?.filter((p) => p.spectator == false);
+
+        // If room is empty (e.g. all non-spectator participants left) close as a failsave
+        if (!playerArrayWithoutSpectators?.length) {
+            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: No active tournament participants – room closing in 1 minute.`);
+            endTournament(tournamentId, roomId);
+            return;
+        }
 
         // Sort by score
         const sortedPlayers = playerArrayWithoutSpectators.sort((a, b) => b.score - a.score);
@@ -337,14 +344,9 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
                 sendEventToClient(i.userId, { type: 'tournament-winner-announced', winnerName: winner.username });
             });
 
-            // Close room in 30 seconds
-            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Tournament over – room closing in 30s.`);
-            setTimeout(() => {
-                playSocketServer.destroyRoom(roomId);
-            }, 30 * 1000);
-
-            // Set tournament to finished
-            await updateTournament(tournamentId, 'finished', winner.userId, winner.username, null);
+            // Schedule room close
+            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Tournament over – room closing in 1 minute.`);
+            endTournament(tournamentId, roomId, winner.userId, winner.username);
 
             // Give winner the prize
             const db = getDB();
@@ -377,12 +379,26 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
             sendEventToClient(winner.userId, { type: 'tournament-won', tokenGain, supporterTier });
         } else {
             // Start a new match
-            rematch(roomId);
+            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Next match starting in 10s.`);
+            setTimeout(() => {
+                rematch(roomId);
+            }, 10000);
         }
 
     } catch (error) {
         console.error("Error processing tournament match results:", error);
     }
+}
+
+async function endTournament(tournamentId, roomId, winnerId = null, winnerName = null) {
+    await updateTournament(tournamentId, 'finished', winnerId, winnerName, null);
+    setTimeout(() => {
+        try {
+            playSocketServer.destroyRoom(roomId);
+        } catch (error) {
+            console.error("Failed to destroy tournament room:", error);
+        }
+    }, 60 * 1000);
 }
 
 // matchData format: { ascendedPlayers: [{ username, userId, score }], eliminatedPlayers: [{ username, userId, score }] }

@@ -305,31 +305,6 @@ function attachPlaySocketEvents(server) {
         });
         return highestSupporterLevel;
     }
-
-    function endRound(roomId) {
-        try {
-            server.updateRoomStorage(roomId, "timerStart", "set", null);
-            server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
-
-            // If any players have no guess submitted, add 0, 0 as the guess
-            const players = server.getRoomStorage(roomId)?.players;
-            const guessArray = server.getRoomStorage(roomId)?.guessLocationsArray;
-            players?.forEach((p) => {
-                const correspondingGuess = guessArray?.find((g) => (g.id === p.clientId));
-                if (!correspondingGuess) guessArray.push({ id: p.clientId, lat: 0, lon: 0, username: p.username, pin: p.pin, team: p.teamIndex });
-            });
-            server.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
-
-            server.updateRoomStorage(roomId, "showResult", "set", true);
-            server.updateRoomStorage(roomId, "confirmedArray", "set", []);
-
-            // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
-            if (server.getRoomStorage(roomId)?.roundAmount === server.getRoomStorage(roomId)?.currentRound) server.updateRoomStorage(roomId, "gameEnded", "set", true);
-
-        } catch (error) {
-            console.error("Error ending round:", error);
-        }
-    }
 }
 
 export function rematch(roomId) {
@@ -356,6 +331,31 @@ export function rematch(roomId) {
 export async function startRoom(roomId) {
     playSocketServer.updateRoomStorage(roomId, "gameStarted", "set", true);
     startRound(roomId);
+}
+
+function endRound(roomId) {
+    try {
+        playSocketServer.updateRoomStorage(roomId, "timerStart", "set", null);
+        playSocketServer.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
+
+        // If any players have no guess submitted, add 0, 0 as the guess
+        const players = playSocketServer.getRoomStorage(roomId)?.players;
+        const guessArray = playSocketServer.getRoomStorage(roomId)?.guessLocationsArray;
+        players?.forEach((p) => {
+            const correspondingGuess = guessArray?.find((g) => (g.id === p.clientId));
+            if (!correspondingGuess) guessArray.push({ id: p.clientId, lat: 0, lon: 0, username: p.username, pin: p.pin, team: p.teamIndex });
+        });
+        playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
+
+        playSocketServer.updateRoomStorage(roomId, "showResult", "set", true);
+        playSocketServer.updateRoomStorage(roomId, "confirmedArray", "set", []);
+
+        // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
+        if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
+
+    } catch (error) {
+        console.error("Error ending round:", error);
+    }
 }
 
 async function startRound(roomId) {

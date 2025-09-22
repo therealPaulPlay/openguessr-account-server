@@ -52,7 +52,7 @@ initSSE(app);
 
 // Routes ------------------------------------------------------------------------------------------------
 app.use("/accounts/profile", profileRoutes);
-app.use("/accounts/rooms", roomRouter);
+app.use("/rooms", roomRouter);
 app.use("/stripe", stripeRouter);
 app.use("/accounts", accountRouter);
 app.use("/leaderboard", leaderboardRouter);
