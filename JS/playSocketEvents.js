@@ -209,7 +209,7 @@ function attachPlaySocketEvents(server) {
             const player = players?.find(p => p.clientId === data.playerClientId);
             if (player && typeof data.newTeamIndex === 'number') {
                 const newPlayer = { ...player };
-                newPlayer.teamIndex = data.newTeamIndex; // Update team at position 4
+                newPlayer.teamIndex = data.newTeamIndex;
                 server.updateRoomStorage(roomId, "players", "array-update-matching", player, newPlayer);
             }
         }
