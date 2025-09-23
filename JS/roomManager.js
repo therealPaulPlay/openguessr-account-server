@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { authedMultiplayerUserId, checkIfUserIsAuthedAndInRoom, playSocketServer, validateRoomSettings } from './playSocketEvents.js';
+import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateRoomSettings } from './playSocketEvents.js';
 import crypto from 'crypto';
 import { reportWebhookSecret } from './config.js';
 
@@ -252,13 +252,9 @@ roomRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
     try {
         if (verifyWebhook(req.body, signature, reportWebhookSecret)) {
             const { type, data = {} } = req.body;
-            console.log("Webhook received");
-            console.log(type);
-            console.log(data);
-            if (type == "blacklist-entry-added" || type == "blacklist-entry-added-manually") {
-                const userId = data.referenceId.replace("user-", "");
-                const clientId = authedMultiplayerUserId.get(userId);
-                console.log(clientId);
+            if (type === "blacklist-entry-added" || type === "blacklist-entry-added-manually") {
+                const userId = Number(data.referenceId?.replace("user-", ""));
+                const clientId = authedMultiplayerUserIds.get(userId);
                 if (clientId) playSocketServer?.kick(clientId, "Banned.");
             }
 

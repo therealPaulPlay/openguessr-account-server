@@ -19,7 +19,7 @@ export async function initPlaySocket(httpServer) {
 }
 
 const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
-export const authedMultiplayerUserId = new Map(); // User id -> client id
+export const authedMultiplayerUserIds = new Map(); // User id -> client id
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // Assign server
@@ -43,7 +43,7 @@ function attachPlaySocketEvents(server) {
 
             // Store auth mapping after successful validation
             authedMultiplayerClients.set(clientId, userId); // Client id -> User id
-            authedMultiplayerUserId.set(userId, clientId); // User id -> Client id
+            authedMultiplayerUserIds.set(userId, clientId); // User id -> Client id
 
         } catch (error) {
             return "An error occured decoding your authentication token.";
@@ -66,8 +66,8 @@ function attachPlaySocketEvents(server) {
             const userId = authedMultiplayerClients.get(clientId);
 
             // Only remove from user ID -> client ID map if this is the current/latest client from this user
-            const currentClientForUser = authedMultiplayerUserId.get(userId);
-            if (currentClientForUser == clientId) authedMultiplayerUserId.delete(userId);
+            const currentClientForUser = authedMultiplayerUserIds.get(userId);
+            if (currentClientForUser == clientId) authedMultiplayerUserIds.delete(userId);
 
             // Always remove from client -> user ID maps
             authedMultiplayerClients.delete(clientId);
@@ -421,7 +421,7 @@ export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
     if (!roomParticipants) return false;
 
     // Get client id for the provided user id
-    let clientIdForUserId = authedMultiplayerUserId.get(Number(userId));
+    let clientIdForUserId = authedMultiplayerUserIds.get(Number(userId));
     if (clientIdForUserId == null) return false;
     return roomParticipants.includes(clientIdForUserId); // True or false
 }
