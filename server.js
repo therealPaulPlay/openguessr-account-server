@@ -3,8 +3,7 @@ import express from 'express';
 import requestIp from 'request-ip';
 import cors from 'cors';
 import http from 'node:http';
-import PlaySocketServer from 'playsocketjs/server';
-import { attachPlaySocketEvents } from './JS/playSocketEvents.js';
+import { initPlaySocket, playSocketServer } from './JS/playSocketEvents.js';
 import { connectDB } from "./JS/dbConnection.js";
 
 import roomRouter from "./JS/roomManager.js";
@@ -19,7 +18,8 @@ import competitionsRouter from "./JS/competitions.js";
 import friendRouter from "./JS/friends.js";
 import divisionDataRouter from './JS/divisionData.js';
 import shopRouter from './JS/shop.js';
-import { locationRouter } from './JS/locations.js';
+import locationRouter from './JS/locations.js';
+import tournamentRouter from './JS/tournaments.js';
 // import mapLimitRouter from './JS/mapLimit.js';
 
 import { port } from "./JS/config.js";
@@ -29,11 +29,9 @@ import { initSSE } from './JS/serverSentEvents.js';
 // Initialize the server ---------------------------------------------------------------------------------
 const app = express();
 const server = http.createServer(app);
-const playSocketServer = new PlaySocketServer({
-    server,
-    path: '/socket'
-});
-attachPlaySocketEvents(playSocketServer);
+
+// Multiplayer WebSocket system
+initPlaySocket(server);
 
 // CORS configuration ------------------------------------------------------------------------------------
 app.use(cors(corsOptions));
@@ -54,7 +52,7 @@ initSSE(app);
 
 // Routes ------------------------------------------------------------------------------------------------
 app.use("/accounts/profile", profileRoutes);
-app.use("/accounts/rooms", roomRouter);
+app.use("/rooms", roomRouter);
 app.use("/stripe", stripeRouter);
 app.use("/accounts", accountRouter);
 app.use("/leaderboard", leaderboardRouter);
@@ -66,6 +64,7 @@ app.use("/friends", friendRouter);
 app.use("/divisions", divisionDataRouter);
 app.use("/shop", shopRouter);
 app.use("/locations", locationRouter);
+app.use("/tournaments", tournamentRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the http server --------------------------------------------------------------------------------------

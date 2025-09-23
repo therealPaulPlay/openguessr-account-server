@@ -2,7 +2,7 @@ import axios from "axios";
 import { reportSecret, reportAppId } from './config.js';
 
 
-async function fetchReportData(table = "blacklist", type, referenceId) {
+export async function fetchReportData(table = "blacklist", type, referenceId) {
     try {
         const response = await axios.put("https://api.openreport.dev/report/get-entry", {
             appId: reportAppId,
@@ -20,5 +20,3 @@ async function fetchReportData(table = "blacklist", type, referenceId) {
         return { listed: false };
     }
 }
-
-export { fetchReportData };

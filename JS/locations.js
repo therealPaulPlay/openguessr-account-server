@@ -54,14 +54,14 @@ async function getMap(name) {
     }
 }
 
-function removeMapFromCache(name) {
+export function removeMapFromCache(name) {
     delete mapCache[name];
 }
 
 let keyLocationsCache = {};
 
 // Key is a unique identifier for this user, room etc. to avoid duplicates
-async function getLocations(mapName, amount, key) {
+export async function getLocations(mapName, amount, key) {
     let keyCache = keyLocationsCache[key];
 
     // If this is a different map or no entry exists, reset / initialize
@@ -117,4 +117,4 @@ cron.schedule('0 */6 * * *', () => {
     console.log("Successfully cleared map locations cache.");
 });
 
-export { locationRouter, getLocations, removeMapFromCache };
+export default locationRouter;

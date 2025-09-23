@@ -2,7 +2,9 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { checkIfUserIsAuthedAndInRoom, validateRoomSettings } from './playSocketEvents.js';
+import { authedMultiplayerUserId, checkIfUserIsAuthedAndInRoom, playSocketServer, validateRoomSettings } from './playSocketEvents.js';
+import crypto from 'crypto';
+import { reportWebhookSecret } from './config.js';
 
 const roomRouter = express.Router();
 
@@ -242,6 +244,41 @@ roomRouter.delete('/open-room/:code', standardLimiter, authenticateTokenWithId, 
         res.status(500).json({ error: 'An error occurred while deleting the open room.' });
     }
 });
+
+// Webhook for OpenReport – kick banned players out of multiplayer immediately
+roomRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
+    const signature = req.headers['x-webhook-signature'];
+
+    try {
+        if (verifyWebhook(req.body, signature, reportWebhookSecret)) {
+            const { type, data = {} } = req.body;
+            if (type == "blacklist-entry-added" || type == "blacklist-entry-added-manually") {
+                const userId = data.referenceId.replace("user-", "");
+                const clientId = authedMultiplayerUserId.get(userId);
+                if (clientId) playSocketServer?.kick(clientId, "Banned.");
+            }
+
+            res.sendStatus(200);
+        } else res.sendStatus(401);
+
+    } catch (error) {
+        console.error("Error in OpenReport webhook:", error);
+        res.status(500).json({ error: "An internal server error occured processing the OpenReport webhook." });
+    }
+});
+
+function verifyWebhook(payload, signature, secret) {
+    const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(JSON.stringify(payload))
+        .digest('hex');
+
+    const receivedSignature = signature.replace('sha256=', '');
+    return crypto.timingSafeEqual(
+        Buffer.from(expectedSignature, 'hex'),
+        Buffer.from(receivedSignature, 'hex')
+    );
+}
 
 // Cleanup ---------------------------------------------------------------------------------------------------------------------------------
 // Periodic cleanup function to delete room codes older than 10 seconds

@@ -43,34 +43,36 @@ async function calculateSegments(targetSegments = 50) {
 async function updateCache() {
     console.log('Starting leaderboard cache update...');
     const db = getDB();
+    let connection;
 
     try {
+        connection = await db.promise().getConnection();
+
         // Get advisory lock to prevent concurrent updates
-        const lockResult = await db.promise().execute('SELECT GET_LOCK(?, 0) as lock_acquired', ['leaderboard_update']);
-        if (!lockResult[0][0].lock_acquired) return console.log('Could not acquire lock for leaderboard update, skipping...');
+        const lockResult = await connection.execute('SELECT GET_LOCK(?, 0) as lock_acquired', ['leaderboard_update']);
+        if (!lockResult[0][0].lock_acquired) throw new Error('Could not acquire lock for leaderboard update');
 
         const segments = await calculateSegments();
 
-        await db.promise().query('START TRANSACTION');
-        await db.promise().query('TRUNCATE TABLE leaderboard_cache');
+        await connection.beginTransaction();
+        await connection.query('TRUNCATE TABLE leaderboard_cache');
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
             const query = `
-                INSERT INTO leaderboard_cache 
-                (leaderboard_rank, experience_lower_bound, experience_upper_bound, 
+                INSERT INTO leaderboard_cache
+                (leaderboard_rank, experience_lower_bound, experience_upper_bound,
                  players_in_range, max_experience_in_range)
-                SELECT 
-                    ?, 
+                SELECT
+                    ?,
                     ?,
                     ?,
                     COUNT(*),
                     IFNULL(MAX(experience), 0)
-                FROM users 
+                FROM users
                 WHERE experience > ? AND experience <= ?
             `;
-
-            await db.promise().execute(query, [
+            await connection.execute(query, [
                 i + 1,
                 segment.lower,
                 segment.upper,
@@ -79,22 +81,24 @@ async function updateCache() {
             ]);
         }
 
-        await db.promise().query('COMMIT');
+        await connection.commit();
         console.log('Leaderboard cache update completed successfully');
 
         // Release the lock
-        await db.promise().execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
+        await connection.execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
 
     } catch (error) {
-        await db.promise().query('ROLLBACK');
+        if (connection) await connection.rollback();
         console.error('Error updating leaderboard cache:', error);
 
         try {
             // Make sure to release lock even on error
-            await db.promise().execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
+            if (connection) await connection.execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
         } catch (lockError) {
             console.error('Error releasing lock:', lockError);
         }
+    } finally {
+        if (connection) connection.release();
     }
 }
 
