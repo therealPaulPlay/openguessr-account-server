@@ -138,8 +138,8 @@ function attachPlaySocketEvents(server) {
         if (typeof initialStorage.highestSupporterLevel !== "number" || initialStorage.highestSupporterLevel > 4 || initialStorage.highestSupporterLevel < 0) initialStorage.highestSupporterLevel = 0;
         if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(initialStorage.restriction)) initialStorage.restriction = "standard";
         if (typeof initialStorage.category !== "string") initialStorage.category = "standard";
-        if (typeof initialStorage.divisionRoom !== "boolean" || clientId !== "server") initialStorage.divisionRoom = false;
-        if (typeof initialStorage.tournamentRoom !== "boolean" || clientId !== "server") initialStorage.tournamentRoom = false;
+        if (typeof initialStorage.divisionRoom !== "boolean") initialStorage.divisionRoom = false;
+        if (clientId !== "server") initialStorage.tournamentRoom = false;
         if (clientId !== "server") initialStorage.tournamentId = null;
         initialStorage.players = []; // Ensure initial players array is empty
         initialStorage.currentRound = 0;
