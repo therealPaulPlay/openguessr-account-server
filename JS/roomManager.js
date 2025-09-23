@@ -252,14 +252,22 @@ roomRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
     try {
         if (verifyWebhook(req.body, signature, reportWebhookSecret)) {
             const { type, data = {} } = req.body;
+            console.log("Webhook received");
+            console.log(type);
+            console.log(data);
             if (type == "blacklist-entry-added" || type == "blacklist-entry-added-manually") {
                 const userId = data.referenceId.replace("user-", "");
                 const clientId = authedMultiplayerUserId.get(userId);
+                console.log(clientId);
                 if (clientId) playSocketServer?.kick(clientId, "Banned.");
             }
 
             res.sendStatus(200);
-        } else res.sendStatus(401);
+        } else {
+            console.error("OpenReport webhook verification failed.");
+            console.log(signature);
+            res.sendStatus(401);
+        }
 
     } catch (error) {
         console.error("Error in OpenReport webhook:", error);
