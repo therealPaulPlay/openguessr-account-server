@@ -72,7 +72,7 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         // Check if the username consists only of spaces
         username = username.trim();
 
-        if (!validUsernameRegex.test(username) || username.length === 0)  return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
         if (!check(username)) return res.status(400).json({ error: 'Username must not contain profanity.' });
 
         // Check if username already exists
@@ -512,10 +512,9 @@ accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWi
 
         // Update user experience and last experience update time in the database
         const updateQuery = `
-            UPDATE users 
-            SET experience = ?, 
-                last_experience_update = UTC_TIMESTAMP(), 
-                last_activity = UTC_TIMESTAMP()
+            UPDATE users
+            SET experience = ?,
+                last_experience_update = UTC_TIMESTAMP()
             WHERE id = ?
         `;
         await new Promise((resolve, reject) => {
