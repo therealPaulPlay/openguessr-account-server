@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateRoomSettings } from './playSocketEvents.js';
+import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDuelRoom } from './playSocketEvents.js';
 import crypto from 'crypto';
 import { reportWebhookSecret } from './config.js';
 
@@ -20,7 +20,7 @@ roomRouter.post('/host-duel/:code', standardLimiter, authenticateTokenWithId, as
 
     try {
         if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
-        if (!validateRoomSettings(code)) return res.status(400).json({ error: 'This room is not a division room.' });
+        if (!validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a division room.' });
 
         // Delete any existing room with this user ID
         const deleteExistingRoomQuery = 'DELETE FROM room_code WHERE user_id = ?';

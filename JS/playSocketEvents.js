@@ -426,7 +426,7 @@ export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
     return roomParticipants.includes(clientIdForUserId); // True or false
 }
 
-export function validateRoomSettings(roomId) {
+export function validateDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
     return true;
