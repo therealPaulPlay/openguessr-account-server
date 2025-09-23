@@ -259,9 +259,8 @@ roomRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
             }
 
             res.sendStatus(200);
-        } else {
-            res.sendStatus(401);
-        }
+        } else res.sendStatus(401);
+
     } catch (error) {
         console.error("Error in OpenReport webhook:", error);
         res.status(500).json({ error: "An internal server error occured processing the OpenReport webhook." });

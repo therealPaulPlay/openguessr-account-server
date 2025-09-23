@@ -127,36 +127,7 @@ function attachPlaySocketEvents(server) {
         if (update.key === "showResult" && (update.operation.data.type !== "set" || update.operation.data.value !== false)) return false;
 
         // React to update before it has happened & ensure showResult was previously true (and not already false)
-        if (update.key === "showResult" && update.operation.data.value === false && storage.showResult === true) {
-            server.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
-            server.updateRoomStorage(roomId, "overlay", "set", true);
-
-            // Check if this is a division room that has ended and hasn't been processed yet
-            if (storage.gameEnded) {
-                if (storage.divisionRoom && !storage.duelProcessed) {
-                    const players = storage.players;
-                    const sortedPlayers = players?.sort((a, b) => b.score - a.score);
-                    const winner = sortedPlayers?.[0];
-                    const loser = sortedPlayers?.[1];
-                    const isDraw = winner?.score == loser?.score;
-
-                    if (winner && loser) {
-                        // Mark as processed immediately to prevent duplicate processing
-                        server.updateRoomStorage(roomId, "duelProcessed", "set", true);
-                        saveDuelResult(storage.duelUuid, winner.userId, loser.userId, isDraw);
-                    }
-                }
-
-                // Tournament match evaluation
-                if (storage.tournamentRoom) processTournamentMatchResults(roomId, storage.tournamentId);
-
-            } else {
-                // If the game has not ended, continue with next round
-                setTimeout(() => {
-                    startRound(roomId);
-                }, storage.currentRound === 0 ? 0 : 1500);
-            }
-        }
+        if (update.key === "showResult" && update.operation.data.value === false && storage.showResult === true) goToNextRound(roomId);
     });
 
     server.onEvent("roomCreationRequested", ({ clientId, initialStorage }) => {
@@ -333,6 +304,40 @@ export async function startRoom(roomId) {
     startRound(roomId);
 }
 
+function goToNextRound(roomId) {
+    try {
+        playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
+        playSocketServer.updateRoomStorage(roomId, "overlay", "set", true);
+
+        // Check if this is a division room that has ended and hasn't been processed yet
+        if (playSocketServer.getRoomStorage(roomId)?.gameEnded) {
+            if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && !playSocketServer.getRoomStorage(roomId)?.duelProcessed) {
+                const players = playSocketServer.getRoomStorage(roomId)?.players;
+                const sortedPlayers = players?.sort((a, b) => b.score - a.score);
+                const winner = sortedPlayers?.[0];
+                const loser = sortedPlayers?.[1];
+                const isDraw = winner?.score == loser?.score;
+
+                if (winner && loser) {
+                    playSocketServer.updateRoomStorage(roomId, "duelProcessed", "set", true);
+                    saveDuelResult(playSocketServer.getRoomStorage(roomId)?.duelUuid, winner.userId, loser.userId, isDraw);
+                }
+            }
+
+            // Tournament match evaluation
+            if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) processTournamentMatchResults(roomId, playSocketServer.getRoomStorage(roomId)?.tournamentId);
+
+        } else {
+            // If the game has not ended, continue with next round
+            setTimeout(() => {
+                startRound(roomId);
+            }, playSocketServer.getRoomStorage(roomId)?.currentRound === 0 ? 0 : 1500);
+        }
+    } catch (error) {
+        console.error("Error going to the next round:", error);
+    }
+}
+
 function endRound(roomId) {
     try {
         playSocketServer.updateRoomStorage(roomId, "timerStart", "set", null);
@@ -352,6 +357,12 @@ function endRound(roomId) {
 
         // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
         if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
+        if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) setTimeout(() => {
+            if (playSocketServer.getRoomStorage(roomId)?.showResult) {
+                playSocketServer.updateRoomStorage(roomId, "showResult", "set", false);
+                goToNextRound(roomId)  // For tournaments, auto-skip result after 10s
+            }
+        }, 10 * 1000);
 
     } catch (error) {
         console.error("Error ending round:", error);

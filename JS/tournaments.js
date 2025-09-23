@@ -19,7 +19,7 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
         );
 
         // If no weekly tournament exists yet, create
-        if (weeklyTournament.length == 0) {
+        if (weeklyTournament.length === 0) {
             const nowUTC = new Date();
             const daysUntilWed = (3 - nowUTC.getUTCDay() + 7) % 7 || 7;
             const randomDay = Math.floor(Math.random() * 5);
@@ -378,7 +378,11 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
                 const tierNumberString = prize.replace("supporter tier", "");
                 supporterTier = parseInt(tierNumberString);
                 await db.promise().execute(
-                    `UPDATE users SET supporter_level = ? WHERE id = ? AND (supporter_level IS NULL OR supporter_level < ?)`,
+                    `UPDATE users SET supporter_level = ?, supported_amount = CASE
+                        WHEN supported_amount IS NULL OR supported_amount < 0.99 THEN 0.99
+                        ELSE supported_amount
+                    END
+                    WHERE id = ? AND (supporter_level IS NULL OR supporter_level < ?)`,
                     [supporterTier, winner.userId, supporterTier]
                 );
             }
