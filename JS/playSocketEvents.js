@@ -429,6 +429,5 @@ export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
 export function validateRoomSettings(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
-    if (playSocketServer.getRooms[roomId]?.maxSize !== 2) return false;
     return true;
 }
