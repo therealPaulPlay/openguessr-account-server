@@ -111,8 +111,8 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
             await connection.commit();
 
-            // Send WebSocket notifications
-            const eloChanges = { winnerId: eloChange, loserId: -eloChange };
+            // Send WebSocket notifications (brackets -> keys are the IDs)
+            const eloChanges = { [winnerId]: eloChange, [loserId]: -eloChange };
             const resultMessage = { type: 'duel-result', eloChanges, winnerId, tokenGain };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
         }
