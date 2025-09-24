@@ -5,6 +5,7 @@ import { getDB } from './dbConnection.js';
 import { s3Config } from './config.js';
 import { calculateMapBounds } from './calculateMapBounds.js';
 import cron from "node-cron";
+import { standardLimiter } from './rateLimiters.js';
 
 const locationRouter = express.Router();
 
@@ -76,7 +77,7 @@ export async function getLocations(mapName, amount, key) {
     const bounds = map?.bounds;
 
     // Previous indexes
-    if (locationsLength * 0.65 < keyCache.prevIndexes.length)  keyCache.prevIndexes = []; // In case e.g. the map file was changed and the prevIndexes are too many, reset them
+    if (locationsLength * 0.65 < keyCache.prevIndexes.length) keyCache.prevIndexes = []; // In case e.g. the map file was changed and the prevIndexes are too many, reset them
     const previousIndexes = keyCache.prevIndexes;
 
     const randomLocationIndexes = Array.from({ length: amount }, () => {
@@ -94,7 +95,7 @@ export async function getLocations(mapName, amount, key) {
 }
 
 // Locations are taken from S3 and either fixed or continuously updated (by the location generation server) files
-locationRouter.put('/:mapName', async (req, res) => {
+locationRouter.put('/:mapName', standardLimiter, async (req, res) => {
     const { amount = 5 } = req.body;
     const { mapName = "standard" } = req.params;
 
