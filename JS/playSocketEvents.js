@@ -131,38 +131,7 @@ function attachPlaySocketEvents(server) {
     });
 
     server.onEvent("roomCreationRequested", ({ clientId, initialStorage }) => {
-        if (typeof initialStorage.roundAmount !== "number" || initialStorage.roundAmount < 2 || initialStorage.roundAmount > 10) initialStorage.roundAmount = 3;
-        if (typeof initialStorage.roundLength !== "number" || initialStorage.roundLength < 10 || initialStorage.roundLength > 300) initialStorage.roundLength = 60;
-        if (typeof initialStorage.teamAmount !== "number" || initialStorage.teamAmount > 10 || initialStorage.teamAmount < 0) initialStorage.teamAmount = 1;
-        if (!["standard", "duel"].includes(initialStorage.style)) initialStorage.style = "standard";
-        if (typeof initialStorage.highestSupporterLevel !== "number" || initialStorage.highestSupporterLevel > 4 || initialStorage.highestSupporterLevel < 0) initialStorage.highestSupporterLevel = 0;
-        if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(initialStorage.restriction)) initialStorage.restriction = "standard";
-        if (typeof initialStorage.category !== "string") initialStorage.category = "standard";
-        if (typeof initialStorage.divisionRoom !== "boolean") initialStorage.divisionRoom = false;
-        if (clientId !== "server") initialStorage.tournamentRoom = false;
-        if (clientId !== "server") initialStorage.tournamentId = null;
-        initialStorage.players = []; // Ensure initial players array is empty
-        initialStorage.currentRound = 0;
-        initialStorage.location = [35.7072457, 139.863412]; // Default panorama to prevent blackscreen
-        initialStorage.guessLocationsArray = []; // Guesses from players (with location data)
-        initialStorage.confirmedArray = []; // Client IDs that have confirmed their guess
-        initialStorage.duelUuid = crypto.randomUUID();
-        initialStorage.firstRoundPlayed = false; // Resets with rematch
-        initialStorage.chats = [];
-        initialStorage.overlay = true;
-        initialStorage.timeReducedOverlay = false; // Duel "Opponent has guessed" overlay
-        initialStorage.showResult = false;
-        initialStorage.gameStarted = false; // Stays always true after the initial start
-        initialStorage.gameEnded = false;
-        initialStorage.matchIndex = 0;
-        initialStorage.countdownActive = false;
-        initialStorage.timerStart = false;
-        initialStorage.duelProcessed = false;
-        initialStorage.location = null;
-        initialStorage.mapBounds = null;
-        initialStorage.locked = false;
-
-        return initialStorage;
+        return reviewAndConstructInitialRoomStorage(clientId, initialStorage);
     });
 
     // Handle requests
@@ -430,4 +399,39 @@ export function validateDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
     return true;
+}
+
+export function reviewAndConstructInitialRoomStorage(requestorClientId, storage) {
+    if (typeof storage.roundAmount !== "number" || storage.roundAmount < 2 || storage.roundAmount > 10) storage.roundAmount = 3;
+    if (typeof storage.roundLength !== "number" || storage.roundLength < 10 || storage.roundLength > 300) storage.roundLength = 60;
+    if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 0) storage.teamAmount = 1;
+    if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
+    if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
+    if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "standard";
+    if (typeof storage.category !== "string") storage.category = "standard";
+    if (typeof storage.divisionRoom !== "boolean") storage.divisionRoom = false;
+    if (requestorClientId !== "server") storage.tournamentRoom = false;
+    if (requestorClientId !== "server") storage.tournamentId = null;
+    storage.players = []; // Ensure initial players array is empty
+    storage.currentRound = 0;
+    storage.location = [35.7072457, 139.863412]; // Default panorama to prevent blackscreen
+    storage.guessLocationsArray = []; // Guesses from players (with location data)
+    storage.confirmedArray = []; // Client IDs that have confirmed their guess
+    storage.duelUuid = crypto.randomUUID();
+    storage.firstRoundPlayed = false; // Resets with rematch
+    storage.chats = [];
+    storage.overlay = true;
+    storage.timeReducedOverlay = false; // Duel "Opponent has guessed" overlay
+    storage.showResult = false;
+    storage.gameStarted = false; // Stays always true after the initial start
+    storage.gameEnded = false;
+    storage.matchIndex = 0;
+    storage.countdownActive = false;
+    storage.timerStart = false;
+    storage.duelProcessed = false;
+    storage.location = null;
+    storage.mapBounds = null;
+    storage.locked = false;
+
+    return storage;
 }

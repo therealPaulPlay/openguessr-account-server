@@ -9,8 +9,7 @@ export const corsOptions = {
         /\.openguessr\.com$/,
         "https://openguessr-86h.pages.dev",
         /\.openguessr-86h\.pages\.dev\/?$/,
-        "https://autoguessr.com",
-        "https://og-venatus-test.netlify.app"
+        "https://autoguessr.com"
     ],
     allowedHeaders: [
         "Origin",

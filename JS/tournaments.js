@@ -3,7 +3,7 @@ import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { broadcastEvent, sendEventToClient } from "./serverSentEvents.js";
-import { playSocketServer, rematch, startRoom } from './playSocketEvents.js';
+import { playSocketServer, rematch, reviewAndConstructInitialRoomStorage, startRoom } from './playSocketEvents.js';
 
 const tournamentRouter = express.Router();
 
@@ -220,13 +220,14 @@ const processedTournaments = new Set();
 
 async function startTournament(tournamentId, map) {
     try {
-        const { id: roomId } = await playSocketServer.createRoom({
+        const roomStorage = reviewAndConstructInitialRoomStorage("server", {
             roundAmount: 5,
             roundLength: 60,
             category: map,
             tournamentRoom: true,
             tournamentId
         });
+        const { id: roomId } = playSocketServer.createRoom(roomStorage);
 
         await updateTournament(tournamentId, 'starting', null, null, roomId);
         broadcastEvent({ type: "tournament-starting" }); // Notify players that a tournament is soon starting
