@@ -283,11 +283,11 @@ async function checkAndStartTournaments() {
             }
         }
 
-        // Delete tournaments that are more than a week old
-        const oneWeekAgoUTC = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        // Delete tournaments that are more than 3 weeks old
+        const cutoffDateUTC = new Date(Date.now() - 3 * 7 * 24 * 60 * 60 * 1000);
         await db.promise().execute(
             `DELETE FROM tournaments WHERE start_date < ?`,
-            [oneWeekAgoUTC]
+            [cutoffDateUTC]
         );
 
         // On initial check after server restart, clean up interrupted tournaments
