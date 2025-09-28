@@ -10,19 +10,19 @@ const stripeRouter = express.Router();
 
 const testKey = "rk_test_51Ple5q1DTHjmMID9EMOkN5YcL81awit40q34fdsEWcdzkjO5vIfY3l89KxzzHVtIxARucrnsvaH7gYhwFHIHlKk900nYpXCPI2"; // Not a prod key, just for testing!
 
-const stripe = new Stripe(stripeKey);
+const stripe = new Stripe(stripeKey, { apiVersion: '2025-08-27.basil; managed_payments_preview=v1' });
 
 // Create stripe session (helper function)
 async function createStripeSession(price, userId, productId, name, imageSrc) {
     const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card', 'paypal', 'amazon_pay'],
         line_items: [
             {
                 price_data: {
                     currency: 'usd',
                     product_data: {
-                        name: name,
+                        name,
                         images: [imageSrc],
+                        tax_code: 'txcd_10103000', // Digital goods/services
                     },
                     unit_amount: Math.round(price * 100),
                 },
@@ -37,8 +37,8 @@ async function createStripeSession(price, userId, productId, name, imageSrc) {
             productId: productId,
             service: "OpenGuessr"
         },
-        automatic_tax: {
-            enabled: true,  // Enable automatic tax
+        managed_payments: {
+            enabled: true, // Enable managed payments (Stripe remits VAT for you)
         },
     });
     return session;
@@ -53,30 +53,26 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
     const db = getDB();
     const { productId, id } = req.body;
     try {
-        // Fetch user
+        // Get user details
         const [results] = await db.promise().execute('SELECT supporter_level, supported_amount, tokens FROM users WHERE id = ?', [id]);
         if (results.length === 0) return res.status(404).json({ error: 'User not found.' });
         const user = results[0];
-
         let price = 0;
         let name = "Default";
         let image = "";
 
         if (productId.includes("supporter_tier")) {
-            // Supporter tiers ----------------------------
+            // Supporter tiers
             image = "https://openguessr.com/img/supporter_icon.png";
             name = "OpenGuessr Supporter";
 
             // Check if user is trying to buy a tier they already have
             const supporterTier = Number(productId.replace("supporter_tier_", ""));
             if (user.supporter_level >= supporterTier) return res.status(400).json({ error: 'You already have access to this tier or a higher one.' });
-
-            // Calculate price
             price = SUPPORTER_PRICES[supporterTier - 1];
             if (user.supported_amount > 0) price = Math.max(price - user.supported_amount - 0.01, 0).toFixed(2);
-
         } else if (productId.includes("token_tier")) {
-            // Token tiers --------------------------------
+            // Token tiers
             const tokenImages = ["https://openguessr.com/img/token_stack_small.png", "https://openguessr.com/img/token_stack_medium.png", "https://openguessr.com/img/token_stack_large.png"];
             const tokenTier = Number(productId.replace("token_tier_", ""));
             name = "OpenGuessr Tokens";
@@ -87,7 +83,7 @@ stripeRouter.post('/create-checkout-session', standardLimiter, authenticateToken
         }
 
         const session = await createStripeSession(price, id, productId, name, image);
-        res.json({ sessionId: session.id });
+        res.json({ checkoutUrl: session.url }); // Return URL and not sessionId, so that Stripe.js isn't needed on client
     } catch (error) {
         console.error("Error creating checkout session:", error);
         res.status(500).json({ error: error.message });
@@ -110,13 +106,14 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
-    if (event.type === 'checkout.session.completed') {
+    if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
         const session = event.data.object;
         const { metadata, amount_total, id: sessionId } = session; // Include session ID as purchase ID
         const { email } = session.customer_details; // Email
         const { id, productId } = metadata; // User id and product id
 
         if (session.metadata?.service !== "OpenGuessr") return res.sendStatus(200); // Acknowledge & ignore – Ensures that events from other services don't result in errors
+        if (session.payment_status !== "paid") return res.sendStatus(200); // Acknoledge and skip unpaid payments
 
         try {
             await sendPurchaseConfirmationEmail(email, sessionId, amount_total);
@@ -126,7 +123,7 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
 
         try {
             if (productId.includes("supporter_tier")) {
-                // Supporter callback --------------------------
+                // Supporter callback
                 const supporterTier = Number(productId.replace("supporter_tier_", ""));
 
                 // Update user's supporter_level and supported_amount
@@ -150,7 +147,7 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
                 await db.promise().execute(statisticQuery, [month, year, amountInDollars, amountInDollars]);
 
             } else if (productId.includes("token_tier")) {
-                // Tokens callback ---------------------------
+                // Tokens callback
                 const tokenTier = Number(productId.replace("token_tier_", ""));
                 const tokenAdd = TOKEN_AMOUNTS[tokenTier - 1];
                 const updateQuery = "UPDATE users SET tokens = COALESCE(tokens, 0) + ? WHERE id = ?";
