@@ -113,7 +113,10 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
         const { id, productId } = metadata; // User id and product id
 
         if (session.metadata?.service !== "OpenGuessr") return res.sendStatus(200); // Acknowledge & ignore – Ensures that events from other services don't result in errors
-        if (session.payment_status !== "paid") return res.sendStatus(200); // Acknoledge and skip unpaid payments
+        if (session.payment_status !== "paid") {
+            console.log(`Skipping unpaid checkout session with payment status: ${session.payment_status}`);
+            return res.sendStatus(200); // Acknoledge and skip unpaid payments
+        }
 
         try {
             await sendPurchaseConfirmationEmail(email, sessionId, amount_total);
