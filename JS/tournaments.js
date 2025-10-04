@@ -13,28 +13,46 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
     try {
         const db = getDB();
 
-        // Check if new weekly tournament exists
+        // First quick check without lock (optimistic path - most requests take this)
         const [weeklyTournament] = await db.promise().execute(
             `SELECT 1 FROM tournaments WHERE name = 'Weekly Tournament' AND status IN ('upcoming', 'starting', 'ongoing') LIMIT 1`
         );
 
-        // If no weekly tournament exists yet, create
+        // If no weekly tournament exists, acquire lock and double-check before creating
         if (weeklyTournament.length === 0) {
-            const nowUTC = new Date();
-            const daysUntilWed = (3 - nowUTC.getUTCDay() + 7) % 7 || 7;
-            const randomDay = Math.floor(Math.random() * 5);
-            const randomHour = Math.floor(Math.random() * 9) + 12;
-            const startDate = new Date(Date.UTC(
-                nowUTC.getUTCFullYear(),
-                nowUTC.getUTCMonth(),
-                nowUTC.getUTCDate() + daysUntilWed + randomDay,
-                randomHour,
-                0,
-                0,
-                0
-            ));
-            const prizes = ["500 tokens", "750 tokens", "Supporter tier 1"];
-            await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)], "standard");
+            let connection;
+            try {
+                connection = await db.promise().getConnection();
+                await connection.execute('SELECT GET_LOCK(?, 10)', ['weekly_tournament_creation']);
+
+                // Double-check after acquiring lock (another request might have created it)
+                const [recheckTournament] = await connection.execute(
+                    `SELECT 1 FROM tournaments WHERE name = 'Weekly Tournament' AND status IN ('upcoming', 'starting', 'ongoing') LIMIT 1`
+                );
+
+                if (recheckTournament.length === 0) {
+                    const nowUTC = new Date();
+                    const daysUntilWed = (3 - nowUTC.getUTCDay() + 7) % 7 || 7;
+                    const randomDay = Math.floor(Math.random() * 5);
+                    const randomHour = Math.floor(Math.random() * 9) + 12;
+                    const startDate = new Date(Date.UTC(
+                        nowUTC.getUTCFullYear(),
+                        nowUTC.getUTCMonth(),
+                        nowUTC.getUTCDate() + daysUntilWed + randomDay,
+                        randomHour,
+                        0,
+                        0,
+                        0
+                    ));
+                    const prizes = ["500 tokens", "750 tokens", "Supporter tier 1"];
+                    await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)], "standard");
+                }
+            } finally {
+                if (connection) {
+                    await connection.execute('SELECT RELEASE_LOCK(?)', ['weekly_tournament_creation']);
+                    connection.release();
+                }
+            }
         }
 
         // Get tournaments
