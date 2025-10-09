@@ -76,13 +76,13 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
             // Insert win/loss result into history
             await connection.query(
-                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO duel_entries (uuid, user1_id, user2_id, user1_name, user2_name, user1_win, user2_win, elo_change)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     uuid,
                     winnerId, loserId,
                     winningPlayer.user_name, losingPlayer.user_name,
-                    1, 0 // winner wins, loser loses
+                    1, 0, eloChange // winner wins, loser loses
                 ]
             );
 

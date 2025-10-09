@@ -23,6 +23,7 @@ divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
                 user2_name,
                 user1_win,
                 user2_win,
+                elo_change,
                 created_at
             FROM duel_entries
         `;
@@ -54,6 +55,7 @@ divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
                     name: duel.user2_name,
                     won: duel.user2_win === 1
                 },
+                eloChange: duel.elo_change,
                 timestamp: duel.created_at
             }))
         };
