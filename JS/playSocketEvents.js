@@ -57,7 +57,7 @@ function attachPlaySocketEvents(server) {
             if (player) {
                 // Remove disconnected player from room storage
                 server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-                server.updateRoomStorage(roomId, "chats", "array-add", `System: ${player?.username || "Unknown"} left.`);
+                server.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `${player?.username || "Unknown"} left.` });
                 server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
             }
         }
@@ -123,7 +123,11 @@ function attachPlaySocketEvents(server) {
         if (update.key === "locked") return false;
 
         // Restrict updates
-        if (update.key === "chats" && (update.operation.data.type !== "array-add" || !update.operation.data.value?.startsWith(server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId)?.username))) return false;
+        if (update.key === "chats") {
+            if (update.operation.data.type !== "array-add") return false;
+            if (update.operation.data.value?.username !== server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId)?.username) return false;
+            if (update.operation.data.value?.clientId !== clientId) return false;
+        }
         if (update.key === "showResult" && (update.operation.data.type !== "set" || update.operation.data.value !== false)) return false;
 
         // React to update before it has happened & ensure showResult was previously true (and not already false)
@@ -157,7 +161,7 @@ function attachPlaySocketEvents(server) {
             }
             if (players.find(p => p.clientId === clientId)) return; // Second check if already exists to prevent race conditions
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
-            server.updateRoomStorage(roomId, "chats", "array-add", `System: ${playerData.username || "Unknown"} joined.`);
+            server.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `${playerData.username || "Unknown"} joined.` });
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
         }
 
@@ -227,6 +231,19 @@ function attachPlaySocketEvents(server) {
                 if (existingMarkerElement) server.updateRoomStorage(roomId, "guessLocationsArray", "array-remove-matching", existingMarkerElement)
                 const player = server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId);
                 if (player) server.updateRoomStorage(roomId, "guessLocationsArray", "array-add-unique", { id: clientId, lat: data.lat, lon: data.lon, username: player.username, pin: player.pin, team: player.teamIndex });
+            }
+        }
+
+        if (name === "setRoomLock") {
+            if (typeof data !== "boolean") return;
+            if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId)?.divisionRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
+                server.updateRoomStorage(roomId, "locked", "set", data);
+            }
+        }
+
+        if (name === "kickClient") {
+            if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId)?.divisionRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
+                server.kick(data, "Removed by host.");
             }
         }
     });
@@ -349,7 +366,7 @@ async function startRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "location", "set", location);
         playSocketServer.updateRoomStorage(roomId, "countdownActive", "set", true);
         playSocketServer.updateRoomStorage(roomId, "currentRound", "set", (playSocketServer.getRoomStorage(roomId).currentRound || 0) + 1);
-        playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.`);
+        playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.` });
     } catch (error) {
         console.error("Error starting round:", error);
     }
