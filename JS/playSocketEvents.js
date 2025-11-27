@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
-import { roomTimer } from './roomTimer.js';
+import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
 import saveDuelResult from './processDuelResult.js';
 import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
@@ -204,7 +204,7 @@ function attachPlaySocketEvents(server) {
                 }
 
                 // Wait shortly, hide overlay
-                setTimeout(() => {
+                setRoomTimeout(roomId, () => {
                     try {
                         server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
                     } catch (error) {
@@ -250,6 +250,7 @@ function attachPlaySocketEvents(server) {
 
     server.onEvent("roomDestroyed", (roomId) => {
         roomTimer.stop(roomId);
+        cancelAllRoomTimeouts(roomId);
     });
 
     function determineHighestSupporterLevel(roomId) {
@@ -315,7 +316,7 @@ function goToNextRound(roomId) {
 
         } else {
             // If the game has not ended, continue with next round
-            setTimeout(() => {
+            setRoomTimeout(roomId, () => {
                 startRound(roomId);
             }, playSocketServer.getRoomStorage(roomId)?.currentRound === 0 ? 0 : 1500);
         }
@@ -343,7 +344,7 @@ function endRound(roomId) {
 
         // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
         if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
-        if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) setTimeout(() => {
+        if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) setRoomTimeout(roomId, () => {
             if (playSocketServer.getRoomStorage(roomId)?.showResult) {
                 playSocketServer.updateRoomStorage(roomId, "showResult", "set", false);
                 goToNextRound(roomId)  // For tournaments, auto-skip result after 10s
@@ -372,9 +373,8 @@ async function startRound(roomId) {
     }
 
     // After countdown, start timer
-    setTimeout(() => {
+    setRoomTimeout(roomId, () => {
         try {
-            if (!playSocketServer.getRooms[roomId]) return; // If the room no longer exists, return
             playSocketServer.updateRoomStorage(roomId, "countdownActive", "set", false);
             playSocketServer.updateRoomStorage(roomId, "overlay", "set", false);
             if (!playSocketServer.getRoomStorage(roomId).firstRoundPlayed) playSocketServer.updateRoomStorage(roomId, "firstRoundPlayed", "set", true);

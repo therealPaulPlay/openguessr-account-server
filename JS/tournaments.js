@@ -44,7 +44,7 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
                         0,
                         0
                     ));
-                    const prizes = ["500 tokens", "750 tokens", "Supporter tier 1"];
+                    const prizes = ["250 tokens", "500 tokens", "750 tokens"];
                     await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)], "standard");
                 }
             } finally {
