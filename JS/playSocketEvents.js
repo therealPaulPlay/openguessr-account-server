@@ -98,7 +98,7 @@ function attachPlaySocketEvents(server) {
 
         // Block room configuration updates
         if (update.key === "roundAmount" || update.key === "style" || update.key === "roundLength" || update.key === "restriction") return false;
-        if (update.key === "category") return false;
+        if (update.key === "map") return false;
         if (update.key === "duelUuid") return false;
         if (update.key === "divisionRoom") return false;
         if (update.key === "tournamentRoom") return false;
@@ -358,8 +358,8 @@ function endRound(roomId) {
 
 async function startRound(roomId) {
     try {
-        const mapCategory = playSocketServer.getRoomStorage(roomId).category;
-        const data = await getLocations(mapCategory, 1, roomId); // Use room ID for key that ensures no duplicates
+        const map = playSocketServer.getRoomStorage(roomId).map;
+        const data = await getLocations(map, 1, roomId); // Use room ID for key that ensures no duplicates
         const location = data?.locations?.[0];
         const bounds = data?.bounds;
 
@@ -425,7 +425,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
     if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
     if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "standard";
-    if (typeof storage.category !== "string") storage.category = "standard";
+    if (typeof storage.map !== "string") storage.map = "World";
     if (typeof storage.divisionRoom !== "boolean") storage.divisionRoom = false;
     if (requestorClientId !== "server") storage.tournamentRoom = false;
     if (requestorClientId !== "server") storage.tournamentId = null;

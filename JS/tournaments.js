@@ -45,7 +45,7 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
                         0
                     ));
                     const prizes = ["250 tokens", "500 tokens", "750 tokens"];
-                    await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)], "standard");
+                    await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)]);
                 }
             } finally {
                 if (connection) {
@@ -181,7 +181,7 @@ tournamentRouter.post("/calendar-save/:id", standardLimiter, authenticateTokenWi
     }
 });
 
-async function createTournament(name, startDate, prize, mapCategory = "standard") {
+async function createTournament(name, startDate, prize, selectedMap = "World") {
     const db = getDB();
 
     try {
@@ -191,7 +191,7 @@ async function createTournament(name, startDate, prize, mapCategory = "standard"
 
         const [result] = await db.promise().execute(
             'INSERT INTO tournaments (name, start_date, prize, status, map) VALUES (?, ?, ?, ?, ?)',
-            [name, formattedDate, prize, "upcoming", mapCategory]
+            [name, formattedDate, prize, "upcoming", selectedMap]
         );
 
         broadcastEvent({ type: "tournament-updated" });
@@ -202,11 +202,11 @@ async function createTournament(name, startDate, prize, mapCategory = "standard"
     }
 }
 
-async function updateTournament(id, status = null, winnerId = null, winnerName = null, roomId = null, mapCategory = null) {
+async function updateTournament(id, status = null, winnerId = null, winnerName = null, roomId = null, selectedMap = null) {
     const db = getDB();
 
     try {
-        const updateFields = { status, winner_id: winnerId, winner_name: winnerName, room_id: roomId, map: mapCategory };
+        const updateFields = { status, winner_id: winnerId, winner_name: winnerName, room_id: roomId, map: selectedMap };
         const updates = [];
         const values = [];
 

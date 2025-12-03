@@ -12,12 +12,11 @@ const locationRouter = express.Router();
 let mapCache = {};
 
 async function getMap(name) {
+    if (!name || typeof name !== "string") throw new Error("Map name is not a valid string! Value: " + name);
     const cacheEntry = mapCache[name];
 
-    if (cacheEntry) {
-        return cacheEntry;
-
-    } else {
+    if (cacheEntry) return cacheEntry;
+    else {
         // Community map check
         const db = getDB();
         const isCommunityMap = name.includes("community_");
@@ -30,7 +29,7 @@ async function getMap(name) {
             if (results.length === 0) throw new Error("Map not found!");
             storageKey = results[0]?.storage_key;
         } else {
-            storageKey = "openguessr-official-maps/" + name + ".json";
+            storageKey = "openguessr-official-maps/" + name.toLowerCase().replaceAll(" ", "_") + ".json";
         }
 
         // Get from S3
@@ -95,9 +94,8 @@ export async function getLocations(mapName, amount, key) {
 }
 
 // Locations are taken from S3 and either fixed or continuously updated (by the location generation server) files
-locationRouter.put('/:mapName', standardLimiter, async (req, res) => {
-    const { amount = 5 } = req.body;
-    const { mapName = "standard" } = req.params;
+locationRouter.put('/', standardLimiter, async (req, res) => {
+    const { amount = 5, mapName = "World" } = req.body;
 
     try {
         // Validate that indexes exists and is an array
