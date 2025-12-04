@@ -147,7 +147,7 @@ competitionsRouter.put('/:index', standardLimiter, async (req, res) => {
 });
 
 // Get competitions user hasn't entered
-competitionsRouter.put('/notentered/:index', standardLimiter, async (req, res) => {
+competitionsRouter.put('/not-entered/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
