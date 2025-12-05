@@ -3,7 +3,7 @@ import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { broadcastEvent, sendEventToClient } from "./serverSentEvents.js";
-import { playSocketServer, rematch, reviewAndConstructInitialRoomStorage, startRoom } from './playSocketEvents.js';
+import { addChat, playSocketServer, rematch, reviewAndConstructInitialRoomStorage, startRoom } from './playSocketEvents.js';
 
 const tournamentRouter = express.Router();
 
@@ -261,7 +261,7 @@ async function startTournament(tournamentId, map) {
             if (minutes > 0 && seconds > 0) timeString = `${minutes} minutes and ${seconds} seconds`;
             else if (minutes > 0) timeString = `${minutes} minute${minutes > 1 ? 's' : ''}`;
             else timeString = `${seconds} seconds`;
-            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Starting tournament in ${timeString}.`);
+            addChat(roomId, "Server", "server", `Starting tournament in ${timeString}.`);
         }, 30 * 1000);
 
         setTimeout(async () => {
@@ -310,6 +310,7 @@ async function checkAndStartTournaments() {
 
         // On initial check after server restart, clean up interrupted tournaments
         if (initialTournamentCheck) {
+            initialTournamentCheck = false;
             const [interruptedTournaments] = await db.promise().execute(
                 `SELECT id FROM tournaments WHERE status IN ('starting', 'ongoing')`
             );
@@ -320,8 +321,6 @@ async function checkAndStartTournaments() {
                 );
                 console.log(`Cleaned up ${interruptedTournaments.length} interrupted tournament(s) after server restart.`);
             }
-
-            initialTournamentCheck = false;
         }
 
         console.log("Checked and started eligible tournaments.");
@@ -342,7 +341,8 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
 
         // If room is empty (e.g. all non-spectator participants left) close as a failsave
         if (!playerArrayWithoutSpectators?.length) {
-            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: No active tournament participants – room closing in 1 minute.`);
+            console.log(`Tournament ${tournamentId}: No active participants remaining (playerArray: ${JSON.stringify(playerArray)}, playerArrayWithoutSpectators: ${JSON.stringify(playerArrayWithoutSpectators)}), ending tournament!`);
+            addChat(roomId, "Server", "server", "No active tournament participants – room closing in 1 minute.");
             endTournament(tournamentId, roomId);
             return;
         }
@@ -382,7 +382,7 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
             });
 
             // Schedule room close
-            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Tournament over – room closing in 1 minute.`);
+            addChat(roomId, "Server", "server", "Tournament over – room closing in 1 minute.");
             endTournament(tournamentId, roomId, winner.userId, winner.username);
 
             // Give winner the prize
@@ -420,7 +420,7 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
             sendEventToClient(winner.userId, { type: 'tournament-won', tokenGain, supporterTier });
         } else {
             // Start a new match
-            playSocketServer.updateRoomStorage(roomId, "chats", "array-add", `System: Next match starting in 10s.`);
+            addChat(roomId, "Server", "server", "Next match starting in 10s.");
             setTimeout(() => {
                 rematch(roomId);
             }, 10000);

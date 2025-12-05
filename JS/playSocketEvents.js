@@ -57,7 +57,7 @@ function attachPlaySocketEvents(server) {
             if (player) {
                 // Remove disconnected player from room storage
                 server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-                server.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `${player?.username || "Unknown"} left.` });
+                addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
                 server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
             }
         }
@@ -161,7 +161,7 @@ function attachPlaySocketEvents(server) {
             }
             if (players.find(p => p.clientId === clientId)) return; // Second check if already exists to prevent race conditions
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
-            server.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `${playerData.username || "Unknown"} joined.` });
+            addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
         }
 
@@ -367,7 +367,7 @@ async function startRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "location", "set", location);
         playSocketServer.updateRoomStorage(roomId, "countdownActive", "set", true);
         playSocketServer.updateRoomStorage(roomId, "currentRound", "set", (playSocketServer.getRoomStorage(roomId).currentRound || 0) + 1);
-        playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username: "Server", clientId: "server", text: `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.` });
+        addChat(roomId, "Server", "server", `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.`);
     } catch (error) {
         console.error("Error starting round:", error);
     }
@@ -390,6 +390,10 @@ async function startRound(roomId) {
             console.error("Error in timeout within round start:", error);
         }
     }, 4000);
+}
+
+export function addChat(roomId, username, clientId, text) {
+    playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username, clientId, text });
 }
 
 async function getUser(userId) {
