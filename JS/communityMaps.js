@@ -202,6 +202,7 @@ const isValidMap = (map) => {
             console.log("Submitted locations were too few.");
             return false;
         }
+        const seenLocations = new Set();
         for (let location of map.locations) {
             if (!Array.isArray(location) || location.length !== 2) {
                 console.log("Map did not include coordinates at some spots.");
@@ -211,6 +212,12 @@ const isValidMap = (map) => {
                 console.log("Map coordinates weren't numbers.");
                 return false;
             }
+            const locationKey = JSON.stringify(location);
+            if (seenLocations.has(locationKey)) {
+                console.log("Map contains duplicate coordinates.");
+                return false;
+            }
+            seenLocations.add(locationKey);
         }
         return true;
     } catch (error) {
