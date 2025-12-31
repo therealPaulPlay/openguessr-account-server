@@ -34,7 +34,7 @@ tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
                     const nowUTC = new Date();
                     const daysUntilWed = (3 - nowUTC.getUTCDay() + 7) % 7 || 7;
                     const randomDay = Math.floor(Math.random() * 5);
-                    const randomHour = Math.floor(Math.random() * 9) + 12;
+                    const randomHour = 10 + Math.floor(Math.random() * 14); // 10am to 11pm UTC
                     const startDate = new Date(Date.UTC(
                         nowUTC.getUTCFullYear(),
                         nowUTC.getUTCMonth(),
