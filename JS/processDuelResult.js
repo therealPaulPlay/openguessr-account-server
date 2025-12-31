@@ -36,13 +36,16 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
         // Get players and their elo
         const [players] = await connection.query(
-            'SELECT id, user_name, elo FROM users WHERE id IN (?, ?) FOR UPDATE',
+            `SELECT u.id, u.user_name, u.elo, GREATEST(COALESCE(p.highest_elo, 0), 1000) AS highest_elo
+             FROM users u
+             LEFT JOIN profiles p ON p.user_id = u.id
+             WHERE u.id IN (?, ?) FOR UPDATE`,
             [winnerId, loserId]
         );
         if (players.length !== 2) throw new Error('One or both users not found!');
 
-        const player1 = players.find(p => Number(p.id) === winnerId);
-        const player2 = players.find(p => Number(p.id) === loserId);
+        const winningPlayer = players.find(p => Number(p.id) === winnerId);
+        const losingPlayer = players.find(p => Number(p.id) === loserId);
 
         if (draw) {
             // Insert draw result into history
@@ -52,7 +55,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
                 [
                     uuid,
                     winnerId, loserId,
-                    player1.user_name, player2.user_name,
+                    winningPlayer.user_name, losingPlayer.user_name,
                     0, 0 // both false for draw
                 ]
             );
@@ -69,8 +72,6 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
 
 
         } else {
-            const winningPlayer = player1;
-            const losingPlayer = player2;
             const eloChange = calculateEloChange(winningPlayer.elo, losingPlayer.elo);
             const tokenGain = randomTokenGain();
 
@@ -101,13 +102,18 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
                 [winnerId, eloChange, loserId, eloChange, winnerId, tokenGain, winnerId, loserId]
             );
 
-            // Update stats
+            // Update duel W/L stat
             updateProfileData(winnerId, "duels_won", true, 1);
             updateProfileData(loserId, "duels_lost", true, 1);
 
             // Update win streak
             updateProfileData(winnerId, "current_duel_win_streak", true, 1);
             updateProfileData(loserId, "current_duel_win_streak", false, 0);
+
+            // Update highest elo for winning player if applicable
+            if (winningPlayer.elo + eloChange > winningPlayer.highest_elo) {
+                updateProfileData(winnerId, "highest_elo", false, winningPlayer.elo + eloChange);
+            }
 
             await connection.commit();
 
