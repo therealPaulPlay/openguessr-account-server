@@ -38,7 +38,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
         const [players] = await connection.query(
             `SELECT u.id, u.user_name, u.elo, GREATEST(COALESCE(p.highest_elo, 0), 1000) AS highest_elo
              FROM users u
-             LEFT JOIN profiles p ON p.user_id = u.id
+             LEFT JOIN profile_data p ON p.user_id = u.id
              WHERE u.id IN (?, ?) FOR UPDATE`,
             [winnerId, loserId]
         );
