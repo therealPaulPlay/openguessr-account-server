@@ -42,7 +42,7 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
              WHERE u.id IN (?, ?) FOR UPDATE`,
             [winnerId, loserId]
         );
-        if (players.length !== 2) throw new Error('One or both users not found!');
+        if (players.length !== 2) throw new Error('One or both users not found, or users identical!');
 
         const winningPlayer = players.find(p => Number(p.id) === winnerId);
         const losingPlayer = players.find(p => Number(p.id) === loserId);

@@ -6,7 +6,7 @@ import http from 'node:http';
 import { initPlaySocket, playSocketServer } from './JS/playSocketEvents.js';
 import { connectDB } from "./JS/dbConnection.js";
 
-import roomRouter from "./JS/roomManager.js";
+import matchmakingRouter from "./JS/matchmaking.js";
 import stripeRouter from './JS/stripePayments.js';
 import leaderboardRouter from './JS/leaderboard.js';
 import accountRouter from "./JS/accounts.js";
@@ -52,7 +52,7 @@ initSSE(app);
 
 // Routes ------------------------------------------------------------------------------------------------
 app.use("/accounts/profile", profileRoutes);
-app.use("/rooms", roomRouter);
+app.use("/matchmaking", matchmakingRouter);
 app.use("/stripe", stripeRouter);
 app.use("/accounts", accountRouter);
 app.use("/leaderboard", leaderboardRouter);

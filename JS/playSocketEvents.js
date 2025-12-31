@@ -7,6 +7,7 @@ import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
 import { processTournamentMatchResults } from './tournaments.js';
+import { deleteMatchmakingRoom } from './matchmaking.js';
 
 export let playSocketServer;
 
@@ -91,6 +92,10 @@ function attachPlaySocketEvents(server) {
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
         if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game.";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked.";
+    });
+
+    server.onEvent("clientJoinedRoom", (clientId, roomId) => {
+        if (server.getRoomStorage(roomId)?.divisionRoom && server?.getRooms?.[roomId]?.participants.length >= 2) startRoom(roomId);
     });
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
@@ -188,6 +193,7 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'startRoom') {
+            if (server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) return; // Tournament and division rooms start automatically
             if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId).gameStarted) startRoom(roomId);
         }
 
@@ -251,6 +257,7 @@ function attachPlaySocketEvents(server) {
     server.onEvent("roomDestroyed", (roomId) => {
         roomTimer.stop(roomId);
         cancelAllRoomTimeouts(roomId);
+        deleteMatchmakingRoom(roomId);
     });
 
     function determineHighestSupporterLevel(roomId) {
@@ -289,6 +296,7 @@ export function rematch(roomId) {
 export async function startRoom(roomId) {
     playSocketServer.updateRoomStorage(roomId, "gameStarted", "set", true);
     startRound(roomId);
+    deleteMatchmakingRoom(roomId);
 }
 
 function goToNextRound(roomId) {
