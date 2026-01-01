@@ -231,7 +231,7 @@ cron.schedule('*/10 * * * *', async () => {
 });
 
 // Monthly resets -----------------------------------------------------------------------------------
-cron.schedule('0 1 1 * *', async () => {
+cron.schedule('0 0 1 * *', async () => {
     try {
         const pool = getDB();
 
