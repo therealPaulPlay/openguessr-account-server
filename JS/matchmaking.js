@@ -8,25 +8,25 @@ import crypto from 'crypto';
 
 const matchmakingRouter = express.Router();
 
+// In-memory matchmaking room store
+const matchmakingRoomCodes = [];
+// room structure: { code, createdAt, userId, userElo, skillBased, map, type, username }
+
 matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
     const { id: userId, skillBased, type, map = "World" } = req.body;
 
     if (!code || !userId || !map || !type) return res.status(400).json({ error: 'Code, user ID, map, and type are required.' });
+    if (typeof code !== "string" || code.length > 10) return res.status(400).json({ error: 'Invalid code format.' });
 
     try {
         if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
         if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a division room.' });
 
         // Delete any existing room from this user
-        const deleteExistingRoomQuery = 'DELETE FROM rooms WHERE user_id = ?';
-        await new Promise((resolve, reject) => {
-            db.execute(deleteExistingRoomQuery, [userId], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
-            });
-        });
+        const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
+        if (existingRoomIndex !== -1) matchmakingRoomCodes.splice(existingRoomIndex, 1);
 
         // Get user's ELO and username
         const getUserEloQuery = 'SELECT elo, user_name FROM users WHERE id = ?';
@@ -41,13 +41,16 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
         const userElo = userData.elo;
         const username = userData.user_name;
 
-        // Insert new room code with ELO
-        const insertQuery = 'INSERT INTO rooms (id, code, created_at, user_id, user_elo, skill_based, map, type, user_name) VALUES (UUID(), ?, NOW(), ?, ?, ?, ?, ?, ?)';
-        await new Promise((resolve, reject) => {
-            db.execute(insertQuery, [code, userId, userElo, skillBased ? 1 : 0, map, type, username], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
-            });
+        // Add new room to in-memory store
+        matchmakingRoomCodes.push({
+            code,
+            createdAt: new Date(),
+            userId: Number(userId),
+            userElo,
+            skillBased: Boolean(skillBased),
+            map,
+            type,
+            username
         });
 
         res.status(201).json({ message: 'Matchmaking room submitted successfully.' });
@@ -58,7 +61,6 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
 });
 
 matchmakingRouter.put('/join-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const db = getDB();
     const { id: userId, elo = 1000, type, skillBased = false } = req.body;
     const index = parseInt(req.params.index, 10);
 
@@ -75,25 +77,21 @@ matchmakingRouter.put('/join-room/:index', standardLimiter, authenticateTokenWit
         const minElo = breakpoints[divIndex];
         const maxElo = breakpoints[divIndex + 1];
 
-        let whereClause;
+        // Filter rooms based on skill-based matching rules
+        let filteredRooms = matchmakingRoomCodes.filter(room => {
+            if (room.userId === Number(userId)) return false; // Don't match with own room
+            if (room.type !== type) return false; // Must be same type
 
-        if (skillBased) whereClause = `WHERE user_elo >= ? AND user_elo < ?`; // Skill-based: Only match with players in user's ELO range
-        else whereClause = `WHERE (skill_based = 0 OR skill_based IS NULL OR (skill_based = 1 AND user_elo >= ? AND user_elo < ?))`;  // Match with non-skill-based players AND skill-based players in their range
-
-        const selectQuery = `
-        SELECT code
-        FROM rooms
-        ${whereClause} AND user_id != ? AND type = ?
-        ORDER BY created_at
-        LIMIT 1 OFFSET ?
-        `;
-
-        const roomCode = await new Promise((resolve, reject) => {
-            db.query(selectQuery, [minElo, maxElo, Number(userId), type, index], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]?.code || null);
-            });
+            if (skillBased) return room.userElo >= minElo && room.userElo < maxElo; // Skill-based: Only match with players in user's ELO range
+            else return !room.skillBased || (room.userElo >= minElo && room.userElo < maxElo); // Match with non-skill-based players AND skill-based players in their range
         });
+
+        // Sort by creation time (oldest first)
+        filteredRooms.sort((a, b) => a.createdAt - b.createdAt);
+
+        // Get room at specified index
+        const room = filteredRooms[index] || null;
+        const roomCode = room ? room.code : null;
 
         res.json({ code: roomCode });
     } catch (error) {
@@ -104,9 +102,9 @@ matchmakingRouter.put('/join-room/:index', standardLimiter, authenticateTokenWit
 
 export async function deleteMatchmakingRoom(code) {
     if (!code) return console.warn("Delete matchmaking room called without code!");
-    const db = getDB();
     try {
-        await db.promise().execute('DELETE FROM rooms WHERE code = ?', [code]); // Delete from rooms
+        const roomIndex = matchmakingRoomCodes.findIndex(room => room.code === code);
+        if (roomIndex !== -1) matchmakingRoomCodes.splice(roomIndex, 1);
     } catch (error) {
         console.error(`Error deleting room with code ${code}:`, error);
     }
@@ -124,24 +122,21 @@ matchmakingRouter.get('/time/timestamp', standardLimiter, async (req, res) => {
 
 // List all rooms of a certain type
 matchmakingRouter.get('/all-rooms-of-type/:type', standardLimiter, async (req, res) => {
-    const db = getDB();
     const type = req.params.type;
 
     if (!type) return res.status(400).json({ error: "Room type is required." });
 
     try {
-        const selectQuery = `
-        SELECT code, map, created_at, user_id, user_name
-        FROM rooms 
-        WHERE type = ?
-        LIMIT 50`;
-
-        const rooms = await new Promise((resolve, reject) => {
-            db.execute(selectQuery, [type], (err, results) => {
-                if (err) return reject(err);
-                resolve(results);
-            });
-        });
+        const rooms = matchmakingRoomCodes
+            .filter(room => room.type === type)
+            .slice(0, 50)
+            .map(room => ({
+                code: room.code,
+                map: room.map,
+                created_at: room.createdAt,
+                user_id: room.userId,
+                user_name: room.username
+            }));
 
         res.json({ rooms });
     } catch (error) {
@@ -188,15 +183,5 @@ function verifyWebhook(payload, signature, secret) {
         Buffer.from(receivedSignature, 'hex')
     );
 }
-
-// Cleanup room codes on server restart
-setTimeout(async () => {
-    try {
-        const db = getDB();
-        await db.promise().execute("DELETE FROM rooms WHERE created_at < NOW() - INTERVAL 10 SECOND");
-    } catch (error) {
-        console.error("Matchmaking room cleanup failed:", error);
-    }
-}, 5_000);
 
 export default matchmakingRouter;
