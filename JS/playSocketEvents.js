@@ -132,6 +132,7 @@ function attachPlaySocketEvents(server) {
             if (update.operation.data.type !== "array-add") return false;
             if (update.operation.data.value?.username !== server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId)?.username) return false;
             if (update.operation.data.value?.clientId !== clientId) return false;
+            if (update.operation.data.value?.teamIndex != null && update.operation.data.value?.teamIndex !== server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId)?.teamIndex) return false;
         }
         if (update.key === "showResult" && (update.operation.data.type !== "set" || update.operation.data.value !== false)) return false;
 
@@ -152,18 +153,18 @@ function attachPlaySocketEvents(server) {
             const players = server.getRoomStorage(roomId)?.players || [];
             const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
             if (players.find(p => p.clientId === clientId)) return; // First check if already exists
+            const teamIndex = teamAmount <= 1 ? 0 : (players.length % teamAmount);
 
             let playerData;
 
             if (userId) {
                 const user = await getUser(userId);
                 if (!user) return;
-                const teamIndex = teamAmount <= 1 ? 1 : ((players.length % teamAmount) + 1);
                 playerData = { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false };
             } else {
-                const teamIndex = teamAmount <= 1 ? 1 : ((players.length % teamAmount) + 1);
                 playerData = { clientId, username: data.guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
             }
+
             if (players.find(p => p.clientId === clientId)) return; // Second check if already exists to prevent race conditions
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
@@ -400,8 +401,8 @@ async function startRound(roomId) {
     }, 4000);
 }
 
-export function addChat(roomId, username, clientId, text) {
-    playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username, clientId, text });
+export function addChat(roomId, username, clientId, text, teamIndex = null) {
+    playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username, clientId, text, teamIndex });
 }
 
 async function getUser(userId) {
