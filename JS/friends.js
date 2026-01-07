@@ -166,20 +166,29 @@ friendRouter.get('/search/:query', standardLimiter, async (req, res) => {
         if (!query) return res.status(400).json({ error: 'Invalid search query after sanitization.' });
 
         const db = getDB();
-        const searchUsersQuery = `
-            SELECT id, user_name
-            FROM users
-            WHERE MATCH(user_name) AGAINST(? IN BOOLEAN MODE)
-            ORDER BY
-                -- Prioritize relevance from full-text search
-                MATCH(user_name) AGAINST(? IN BOOLEAN MODE) DESC,
-                -- Then by the length of the user_name
-                LENGTH(user_name) ASC
-            LIMIT 100
-        `;
 
-        const searchParam = `${query}*`; // Use wildcard for better matching
-        const [users] = await db.promise().execute(searchUsersQuery, [searchParam, searchParam]);
+        // For short queries (1-2 chars), use prefix matching which is much faster than full-text search
+        let searchQuery, searchParams;
+
+        if (query.length <= 2) {
+            searchQuery = `
+                SELECT id, user_name FROM users
+                WHERE user_name LIKE ?
+                ORDER BY LENGTH(user_name) ASC
+                LIMIT 25
+            `;
+            searchParams = [`${query}%`];
+        } else {
+            searchQuery = `
+                SELECT id, user_name FROM users
+                WHERE MATCH(user_name) AGAINST(? IN BOOLEAN MODE)
+                ORDER BY MATCH(user_name) AGAINST(? IN BOOLEAN MODE) DESC, LENGTH(user_name) ASC
+                LIMIT 25
+            `;
+            searchParams = [`${query}*`, `${query}*`];
+        }
+
+        const [users] = await db.promise().execute(searchQuery, searchParams);
 
         res.status(200).json({ users });
     } catch (error) {
