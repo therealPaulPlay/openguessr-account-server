@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import requestIp from 'request-ip';
 import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
@@ -11,10 +12,41 @@ import { deleteMatchmakingRoom } from './matchmaking.js';
 
 export let playSocketServer;
 
+// WebSocket upgrade rate limiting
+const wsUpgradeAttempts = new Map(); // IP -> { count, resetTime }
+const WS_RATE_LIMIT_WINDOW = 5 * 1000; // 5 seconds
+const WS_RATE_LIMIT_MAX = 10;
+
+function isWsUpgradeRateLimited(ip) {
+    const now = Date.now();
+    const record = wsUpgradeAttempts.get(ip);
+
+    if (!record || now > record.resetTime) {
+        wsUpgradeAttempts.set(ip, { count: 1, resetTime: now + WS_RATE_LIMIT_WINDOW });
+        return false;
+    }
+
+    record.count++;
+    return record.count > WS_RATE_LIMIT_MAX;
+}
+
+// Clean up old entries periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of wsUpgradeAttempts) {
+        if (now > record.resetTime) wsUpgradeAttempts.delete(ip);
+    }
+}, 60 * 1000);
+
 export async function initPlaySocket(httpServer) {
     playSocketServer = new PlaySocketServer({
         server: httpServer,
-        path: '/socket'
+        path: '/socket',
+        verifyClient: (info, callback) => {
+            const ip = requestIp.getClientIp(info.req);
+            if (isWsUpgradeRateLimited(ip)) return callback(false, 429, 'Too Many Requests');
+            callback(true);
+        }
     });
     attachPlaySocketEvents(playSocketServer); // Attach events AFTER initialization
 }
