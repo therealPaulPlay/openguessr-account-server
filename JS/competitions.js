@@ -126,7 +126,7 @@ competitionsRouter.put('/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
-        const offset = parseInt(index, 10);
+        const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
         // Use query() instead of execute() for LIMIT/OFFSET
@@ -151,7 +151,7 @@ competitionsRouter.put('/not-entered/:index', standardLimiter, async (req, res) 
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
-        const offset = parseInt(index, 10);
+        const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
         const [results] = await db.promise().query(`
@@ -176,7 +176,7 @@ competitionsRouter.put('/search/:index', standardLimiter, async (req, res) => {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
         const searchQuery = req.body.search || '';
-        const offset = parseInt(index, 10);
+        const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
         const sanitizedSearchQuery = `%${searchQuery.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
@@ -203,7 +203,7 @@ competitionsRouter.put('/expired/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
-        const offset = parseInt(index, 10);
+        const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
         const [results] = await db.promise().query(`
@@ -222,6 +222,8 @@ competitionsRouter.put('/expired/:index', standardLimiter, async (req, res) => {
     }
 });
 
+const detailsRequestsMap = new Map(); // Competition ID - user ID -> timestamp of request
+
 // Get competition details
 competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
@@ -229,14 +231,13 @@ competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId
         const userId = req.body.id;
         const db = getDB();
 
+        if (!userId || id == null) return res.status(400).json({ error: 'User ID and competition ID are required.' });
+
         const [results] = await db.promise().execute(
             'SELECT * FROM competitions WHERE id = ? AND expired = FALSE',
             [id]
         );
-
-        if (results.length === 0) {
-            return res.status(404).json({ status: 404, error: 'Competition not found or expired.' });
-        }
+        if (results.length === 0) return res.status(404).json({ status: 404, error: 'Competition not found or expired.' });
 
         const competition = results[0];
 
@@ -248,15 +249,17 @@ competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId
             'SELECT COUNT(*) AS count FROM competition_entries WHERE competition_id = ? AND user_id = ?',
             [id, userId]
         );
+        if (entryResults[0].count > 0) return res.status(403).json({ status: 403, error: 'You have already entered this competition.' });
 
-        if (entryResults[0].count > 0) {
-            return res.status(403).json({ status: 403, error: 'You have already entered this competition.' });
-        }
+        const requestsKey = id + "-" + userId; // Competition ID + user ID
+        if (detailsRequestsMap.has(requestsKey)) return res.status(400).json({ error: 'You have already seen this competition, but did not finish it. Please wait at least one hour before re-playing.' });
 
         await db.promise().execute(
             'UPDATE competitions SET playercount = playercount + 1, ranking = ranking + 1 WHERE id = ?',
             [id]
         );
+
+        detailsRequestsMap.set(requestsKey, Date.now()); // Track to prevent re-opening the same competition (used by some cheaters)
 
         const remainingDuration = Math.max(0, competition.duration - Math.floor((Date.now() - new Date(competition.created_at).getTime()) / 1000));
         res.json({ ...competition, remainingDuration, expired: false });
@@ -265,6 +268,14 @@ competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId
         res.status(500).json({ status: 500, error: 'Failed to fetch competition details.' });
     }
 });
+
+// Clean up old detail requests every minute
+setInterval(() => {
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+    detailsRequestsMap.forEach((value, key) => {
+        if (value < oneHourAgo) detailsRequestsMap.delete(key);
+    });
+}, 60 * 1000);
 
 // Create competition
 competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWithId, [
@@ -385,7 +396,7 @@ competitionsRouter.post('/leaderboard/:id', standardLimiter, async (req, res) =>
             return res.status(404).json({ status: 404, error: 'Competition not found' });
         }
 
-        const [leaderboardResults] = await db.promise().query(`
+        const [leaderboardResults] = await db.promise().execute(`
             SELECT user_id AS id, supporter_level, username AS userName, score,
               RANK() OVER (ORDER BY score DESC) AS position
             FROM competition_entries
@@ -400,7 +411,7 @@ competitionsRouter.post('/leaderboard/:id', standardLimiter, async (req, res) =>
         };
 
         if (userId) {
-            const [userRankResults] = await db.promise().query(`
+            const [userRankResults] = await db.promise().execute(`
                 SELECT id, userName, score, position, supporter_level FROM (
                   SELECT user_id AS id, username AS userName, score, supporter_level,
                     RANK() OVER (ORDER BY score DESC) AS position
@@ -464,13 +475,8 @@ competitionsRouter.post('/ranking', rankingLimiter, authenticateTokenWithId, asy
         const { compId, updateFactor } = req.body;
         const factor = Number(updateFactor);
 
-        if (!Number.isInteger(factor) || factor < -10 || factor > 5) {
-            return res.status(400).json({ status: 400, error: 'Invalid updateFactor.' });
-        }
-
-        if (!Number.isInteger(compId)) {
-            return res.status(400).json({ status: 400, error: 'Invalid competition id.' });
-        }
+        if (!Number.isInteger(factor) || factor < -10 || factor > 5) return res.status(400).json({ status: 400, error: 'Invalid updateFactor.' });
+        if (!Number.isInteger(compId)) return res.status(400).json({ status: 400, error: 'Invalid competition id.' });
 
         const db = getDB();
         await db.promise().execute(
