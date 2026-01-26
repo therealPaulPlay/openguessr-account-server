@@ -21,13 +21,6 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
     if (typeof code !== "string" || code.length > 10) return res.status(400).json({ error: 'Invalid code format.' });
 
     try {
-        if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
-        if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a division room.' });
-
-        // Delete any existing room from this user
-        const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
-        if (existingRoomIndex !== -1) matchmakingRoomCodes.splice(existingRoomIndex, 1);
-
         // Get user's ELO and username
         const getUserEloQuery = 'SELECT elo, user_name FROM users WHERE id = ?';
         const userData = await new Promise((resolve, reject) => {
@@ -40,6 +33,14 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
         if (!userData) return res.status(404).json({ error: 'User not found.' });
         const userElo = userData.elo;
         const username = userData.user_name;
+
+        // Validate room & push to matchmaking synchronously (nothing async in between!)
+        if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
+        if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a division room.' });
+
+        // Delete any existing room from this user
+        const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
+        if (existingRoomIndex !== -1) matchmakingRoomCodes.splice(existingRoomIndex, 1);
 
         // Add new room to in-memory store
         matchmakingRoomCodes.push({
