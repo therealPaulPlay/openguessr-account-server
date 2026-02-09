@@ -479,14 +479,14 @@ export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
     return roomParticipants.includes(clientIdForUserId); // True or false
 }
 
-export function validateDuelRoom(roomId) {
+export function validateDivisionDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
     return true;
 }
 
-export function validate2v2Room(roomId) {
+export function validateTeamDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.teamAmount < 2) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;

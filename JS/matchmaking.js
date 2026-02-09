@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDuelRoom, validate2v2Room, startRoom } from './playSocketEvents.js';
+import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, startRoom } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 
@@ -36,8 +36,8 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateTokenW
 
         // Validate room & push to matchmaking synchronously (nothing async in between!)
         if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
-        if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a valid ranked duel room.' });
-        if (type == "team-duel" && !validate2v2Room(code)) return res.status(400).json({ error: 'This room is not a valid 2v2 room.' });
+        if (type == "division-duel" && !validateDivisionDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid division-duel room.' });
+        if (type == "team-duel" && !validateTeamDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid team-duel room.' });
 
         // Delete any existing room from this user
         const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
@@ -142,7 +142,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
         const roomsToMerge = [];
         let currentPlayerCount = requestingRoomPlayerCount;
         for (const room of otherRooms) {
-            if (currentPlayerCount + room.playerCount > roomCapacity) continue; // Skip rooms that would exceed target (safety check, technically not possible with 2v2)
+            if (currentPlayerCount + room.playerCount > roomCapacity) continue; // Skip rooms that would exceed target (safety check, technically not possible with 2 vs. 2)
             roomsToMerge.push(room);
             currentPlayerCount += room.playerCount;
             if (currentPlayerCount === roomCapacity) break;
