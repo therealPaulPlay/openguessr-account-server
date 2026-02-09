@@ -83,33 +83,25 @@ function attachPlaySocketEvents(server) {
         }
     });
 
-    server.onEvent("clientDisconnected", async (clientId, roomId) => {
-        if (roomId) {
-            const players = server.getRoomStorage(roomId)?.players;
-            const player = players?.find(p => p.clientId === clientId);
-            if (player) {
-                // Remove disconnected player from room storage
-                server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-                addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
-                server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
-            }
+    server.onEvent("clientLeftRoom", async (clientId, roomId) => {
+        const players = server.getRoomStorage(roomId)?.players;
+        const player = players?.find(p => p.clientId === clientId);
+        if (player) {
+            // Remove player from room storage
+            server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
+            addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
+            server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
         }
 
+        // Process division duel if user was in one
         if (authedMultiplayerClients.has(clientId)) {
             const userId = authedMultiplayerClients.get(clientId);
 
-            // Only remove from user ID -> client ID map if this is the current/latest client from this user
-            const currentClientForUser = authedMultiplayerUserIds.get(userId);
-            if (currentClientForUser == clientId) authedMultiplayerUserIds.delete(userId);
-
-            // Always remove from client -> user ID maps
-            authedMultiplayerClients.delete(clientId);
-
             // Process the result if in ongoing duel room
-            if (userId && server.getRooms[roomId] && !server.getRoomStorage(roomId).duelProcessed && server.getRoomStorage(roomId).gameStarted && server.getRoomStorage(roomId).divisionRoom) {
+            if (userId && server.rooms[roomId] && !server.getRoomStorage(roomId).duelProcessed && server.getRoomStorage(roomId).gameStarted && server.getRoomStorage(roomId).divisionRoom) {
                 const players = server.getRoomStorage(roomId).players;
 
-                // If one other player is still in the room, that means this client left first and should lose!
+                // If one other player is still in the room, that means this client left first and should lose
                 if (players.length === 1) {
                     const otherPlayerUserId = players[0]?.userId;
                     if (otherPlayerUserId != null) {
@@ -121,13 +113,26 @@ function attachPlaySocketEvents(server) {
         }
     });
 
+    server.onEvent("clientDisconnected", async (clientId) => {
+        if (authedMultiplayerClients.has(clientId)) {
+            const userId = authedMultiplayerClients.get(clientId);
+
+            // Only remove from user ID -> client ID map if this is the current/latest client from this user
+            const currentClientForUser = authedMultiplayerUserIds.get(userId);
+            if (currentClientForUser == clientId) authedMultiplayerUserIds.delete(userId);
+
+            // Always remove from client -> user ID maps
+            authedMultiplayerClients.delete(clientId);
+        }
+    });
+
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
-        if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game.";
+        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game.";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked.";
     });
 
     server.onEvent("clientJoinedRoom", (clientId, roomId) => {
-        if (server.getRoomStorage(roomId)?.divisionRoom && server?.getRooms?.[roomId]?.participants.length >= 2) startRoom(roomId);
+        if (server.getRoomStorage(roomId)?.divisionRoom && server?.rooms?.[roomId]?.participants.length >= 2) startRoom(roomId);
     });
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
@@ -138,6 +143,7 @@ function attachPlaySocketEvents(server) {
         if (update.key === "map") return false;
         if (update.key === "duelUuid") return false;
         if (update.key === "divisionRoom") return false;
+        if (update.key === "matchmakingRoom") return false;
         if (update.key === "tournamentRoom") return false;
         if (update.key === "tournamentId") return false;
         if (update.key === "duelProcessed") return false;
@@ -183,21 +189,37 @@ function attachPlaySocketEvents(server) {
         if (name === 'addPlayer') {
             const userId = authedMultiplayerClients.get(clientId);
             const players = server.getRoomStorage(roomId)?.players || [];
-            const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
             if (players.find(p => p.clientId === clientId)) return; // First check if already exists
-            const teamIndex = teamAmount <= 1 ? 0 : (players.length % teamAmount);
 
-            let playerData;
-
+            // Fetch user data if authenticated
+            let user = null;
             if (userId) {
-                const user = await getUser(userId);
+                user = await getUser(userId);
                 if (!user) return;
-                playerData = { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false };
-            } else {
-                playerData = { clientId, username: data.guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
             }
 
-            if (players.find(p => p.clientId === clientId)) return; // Second check if already exists to prevent race conditions
+            // Re-fetch players and calculate team index AFTER async call to prevent race conditions
+            const currentPlayers = server.getRoomStorage(roomId)?.players || [];
+            const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
+            if (currentPlayers.find(p => p.clientId === clientId)) return; // If client is already present, exit (second check to prevent race condition)
+
+            let teamIndex = 0;
+            if (teamAmount > 1) {
+                if (server.getRoomStorage(roomId)?.matchmakingRoom) {
+                    // For matchmaking rooms: fill teams sequentially (team 0 first, then team 1, etc.)
+                    const roomSize = server.rooms[roomId]?.size || teamAmount;
+                    const teamSize = Math.floor(roomSize / teamAmount);
+                    teamIndex = Math.min(Math.floor(currentPlayers.length / teamSize), teamAmount - 1);
+                } else {
+                    // For regular rooms: round-robin assignment
+                    teamIndex = currentPlayers.length % teamAmount;
+                }
+            }
+
+            const playerData = user
+                ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false }
+                : { clientId, username: data.guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
+
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
@@ -226,8 +248,8 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'startRoom') {
-            if (server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) return; // Tournament and division rooms start automatically
-            if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId).gameStarted) startRoom(roomId);
+            if (server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return; // Tournament and matchmaking rooms start automatically
+            if (clientId === server.rooms[roomId]?.host && !server.getRoomStorage(roomId).gameStarted) startRoom(roomId);
         }
 
         if (name === 'confirmGuess') {
@@ -260,7 +282,7 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'rematch') {
-            if (clientId !== server.getRooms[roomId]?.host || server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) return; // Only allow host to rematch & prevent rematch in division games or tournaments
+            if (clientId !== server.rooms[roomId]?.host || server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return; // Only allow host to rematch & prevent rematch in matchmaking games or tournaments
             if (server.getRoomStorage(roomId)?.gameEnded) rematch(roomId);
         }
 
@@ -275,13 +297,13 @@ function attachPlaySocketEvents(server) {
 
         if (name === "setRoomLock") {
             if (typeof data !== "boolean") return;
-            if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId)?.divisionRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
+            if (clientId === server.rooms[roomId]?.host && !server.getRoomStorage(roomId)?.matchmakingRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
                 server.updateRoomStorage(roomId, "locked", "set", data);
             }
         }
 
         if (name === "kickClient") {
-            if (clientId === server.getRooms[roomId]?.host && !server.getRoomStorage(roomId)?.divisionRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
+            if (clientId === server.rooms[roomId]?.host && !server.getRoomStorage(roomId)?.matchmakingRoom && !server.getRoomStorage(roomId)?.tournamentRoom) {
                 server.kick(data, "Removed by host.");
             }
         }
@@ -448,7 +470,7 @@ async function getUser(userId) {
 
 export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
     // Check if room exists and get participants
-    const roomParticipants = playSocketServer?.getRooms?.[roomId]?.participants;
+    const roomParticipants = playSocketServer?.rooms?.[roomId]?.participants;
     if (!roomParticipants) return false;
 
     // Get client id for the provided user id
@@ -459,6 +481,14 @@ export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
 
 export function validateDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
+    if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
+    return true;
+}
+
+export function validate2v2Room(roomId) {
+    if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.teamAmount < 2) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
     return true;
 }
@@ -472,6 +502,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "standard";
     if (typeof storage.map !== "string") storage.map = "World";
     if (typeof storage.divisionRoom !== "boolean") storage.divisionRoom = false;
+    if (typeof storage.matchmakingRoom !== "boolean") storage.matchmakingRoom = false;
     if (requestorClientId !== "server") storage.tournamentRoom = false;
     if (requestorClientId !== "server") storage.tournamentId = null;
     storage.players = []; // Ensure initial players array is empty

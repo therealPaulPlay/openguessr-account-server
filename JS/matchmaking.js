@@ -2,17 +2,17 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDuelRoom } from './playSocketEvents.js';
+import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDuelRoom, validate2v2Room, startRoom } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 
 const matchmakingRouter = express.Router();
 
 // In-memory matchmaking room store
+// Room structure: { code, createdAt, userId, userElo, skillBased, map, type, username }
 const matchmakingRoomCodes = [];
-// room structure: { code, createdAt, userId, userElo, skillBased, map, type, username }
 
-matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
     const { id: userId, skillBased, type, map = "World" } = req.body;
@@ -36,7 +36,8 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
 
         // Validate room & push to matchmaking synchronously (nothing async in between!)
         if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
-        if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a division room.' });
+        if (type == "ranked-duel" && !validateDuelRoom(code)) return res.status(400).json({ error: 'This room is not a valid ranked duel room.' });
+        if (type == "team-duel" && !validate2v2Room(code)) return res.status(400).json({ error: 'This room is not a valid 2v2 room.' });
 
         // Delete any existing room from this user
         const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
@@ -61,7 +62,7 @@ matchmakingRouter.post('/host-room/:code', standardLimiter, authenticateTokenWit
     }
 });
 
-matchmakingRouter.put('/join-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
+matchmakingRouter.put('/get-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: userId, elo = 1000, type, skillBased = false } = req.body;
     const index = parseInt(req.params.index, 10);
 
@@ -98,6 +99,81 @@ matchmakingRouter.put('/join-room/:index', standardLimiter, authenticateTokenWit
     } catch (error) {
         console.error('Error fetching room code:', error);
         res.status(500).json({ error: 'An error occurred while fetching the room code.' });
+    }
+});
+
+// Find and form a team duel (2v2) match by combining rooms
+matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id: userId } = req.body;
+
+    try {
+        // Find the requesting user's room in the matchmaking queue
+        const requestingRoom = matchmakingRoomCodes.find(room => room.userId === Number(userId) && room.type === 'team-duel');
+        if (!requestingRoom) return res.status(400).json({ error: 'You do not have a team-duel room in the matchmaking queue.' });
+
+        const requestingRoomId = requestingRoom.code;
+        const roomCapacity = playSocketServer.rooms[requestingRoomId].size;
+        const teamAmount = playSocketServer.getRoomStorage(requestingRoomId)?.teamAmount || 2;
+        const maxPlayersPerTeam = Math.floor(roomCapacity / teamAmount);
+        const requestingRoomPlayerCount = playSocketServer.rooms[requestingRoomId].participants.length;
+
+        // Validate that this room doesn't have more players than allowed per team
+        if (requestingRoomPlayerCount > maxPlayersPerTeam) {
+            return res.status(400).json({ error: 'Your room has too many players for matchmaking.' });
+        }
+
+        // Lock the room to prevent additional players from joining after having started matchmaking
+        playSocketServer.updateRoomStorage(requestingRoomId, "locked", "set", true);
+
+        // Get all team-duel rooms with their current player counts
+        const teamDuelRooms = matchmakingRoomCodes
+            .filter(room => room.type === 'team-duel')
+            .map(room => ({
+                ...room,
+                playerCount: playSocketServer.rooms[room.code]?.participants?.length || 0
+            }));
+
+        // Sort other rooms by player count (largest first) to find matches
+        const otherRooms = teamDuelRooms
+            .filter(r => r.code !== requestingRoomId)
+            .sort((a, b) => b.playerCount - a.playerCount);
+
+        // Find combination that reaches exactly target player count
+        const roomsToMerge = [];
+        let currentPlayerCount = requestingRoomPlayerCount;
+        for (const room of otherRooms) {
+            if (currentPlayerCount + room.playerCount > roomCapacity) continue; // Skip rooms that would exceed target (safety check, technically not possible with 2v2)
+            roomsToMerge.push(room);
+            currentPlayerCount += room.playerCount;
+            if (currentPlayerCount === roomCapacity) break;
+        }
+
+        // If we can't form a valid match, return not found
+        if (currentPlayerCount !== roomCapacity) return res.json({ matched: false });
+
+        // Determine the largest room (target room where everyone moves to)
+        const allRoomsInMatch = [{ ...requestingRoom, playerCount: requestingRoomPlayerCount }, ...roomsToMerge];
+        allRoomsInMatch.sort((a, b) => b.playerCount - a.playerCount);
+        const targetRoom = allRoomsInMatch[0];
+        const roomsToEmpty = allRoomsInMatch.slice(1);
+
+        // Move all players from smaller rooms into target room
+        for (const room of roomsToEmpty) {
+            const participants = [...(playSocketServer.rooms[room.code]?.participants || [])];
+            for (const clientId of participants) {
+                playSocketServer.move(clientId, targetRoom.code);
+            }
+            deleteMatchmakingRoom(room.code);
+        }
+
+        // Start the game and remove target room from matchmaking
+        startRoom(targetRoom.code);
+        deleteMatchmakingRoom(targetRoom.code);
+
+        return res.json({ matched: true, targetRoom: targetRoom.code });
+    } catch (error) {
+        console.error('Error during team duel match formation:', error);
+        return res.status(500).json({ error: 'Failed to form match.' });
     }
 });
 
