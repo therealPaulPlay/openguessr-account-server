@@ -161,14 +161,12 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
         for (const room of roomsToEmpty) {
             const participants = [...(playSocketServer.rooms[room.code]?.participants || [])];
             for (const clientId of participants) {
-                playSocketServer.move(clientId, targetRoom.code);
+                playSocketServer.move(clientId, targetRoom.code); // All players get moved out -> room destroyed -> room gets removed from matchmaking
             }
-            deleteMatchmakingRoom(room.code);
         }
 
-        // Start the game and remove target room from matchmaking
+        // Start the game and delete target room from matchmaking (delete is called inside startRoom)
         startRoom(targetRoom.code);
-        deleteMatchmakingRoom(targetRoom.code);
 
         return res.json({ matched: true, targetRoom: targetRoom.code });
     } catch (error) {

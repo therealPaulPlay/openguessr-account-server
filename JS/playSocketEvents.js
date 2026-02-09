@@ -483,6 +483,7 @@ export function validateDivisionDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
+    if (playSocketServer.getRoomStorage(roomId)?.gameStarted) return false;
     return true;
 }
 
@@ -490,6 +491,7 @@ export function validateTeamDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.teamAmount < 2) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
+    if (playSocketServer.getRoomStorage(roomId)?.gameStarted) return false;
     return true;
 }
 
