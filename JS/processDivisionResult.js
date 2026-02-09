@@ -18,8 +18,8 @@ function randomTokenGain() {
     return 5 + Math.round(Math.random() * 5);
 }
 
-// Save duel result with winner/loser IDs
-async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
+// Save division duel result with winner/loser IDs
+export default async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
     winnerId = Number(winnerId);
     loserId = Number(loserId);
 
@@ -130,5 +130,3 @@ async function saveDuelResult(uuid, winnerId, loserId, draw = false) {
         if (connection) connection.release();
     }
 }
-
-export default saveDuelResult;

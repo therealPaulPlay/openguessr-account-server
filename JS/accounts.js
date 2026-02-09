@@ -26,7 +26,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
                 u.experience, 
                 u.supporter_level, 
                 u.supported_amount, 
-                u.new_requests, 
+                u.new_request, 
                 u.elo,
                 u.tokens,
                 p.*

@@ -43,7 +43,7 @@ friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async 
 
         // Set the new_request field to true for the recipient
         const updateRecipientQuery = `
-            UPDATE users SET new_requests = 1 WHERE id = ?
+            UPDATE users SET new_request = 1 WHERE id = ?
         `;
         await db.promise().query(updateRecipientQuery, [recipientId]);
 
@@ -214,7 +214,7 @@ friendRouter.post('/requests', standardLimiter, authenticateTokenWithId, async (
         const [requests] = await db.promise().query(getRequestsQuery, [recipientId]);
 
         const updateRecipientQuery = `
-            UPDATE users SET new_requests = 0 WHERE id = ?
+            UPDATE users SET new_request = 0 WHERE id = ?
         `;
         await db.promise().query(updateRecipientQuery, [recipientId]);
 

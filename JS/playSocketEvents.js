@@ -3,7 +3,7 @@ import requestIp from 'request-ip';
 import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
-import saveDuelResult from './processDuelResult.js';
+import saveDivisionDuelResult from './processDivisionResult.js';
 import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
@@ -106,7 +106,7 @@ function attachPlaySocketEvents(server) {
                     const otherPlayerUserId = players[0]?.userId;
                     if (otherPlayerUserId != null) {
                         server.updateRoomStorage(roomId, "duelProcessed", "set", true);
-                        saveDuelResult(server.getRoomStorage(roomId).duelUuid, otherPlayerUserId, userId);
+                        saveDivisionDuelResult(server.getRoomStorage(roomId).duelUuid, otherPlayerUserId, userId);
                     }
                 }
             }
@@ -370,7 +370,7 @@ function goToNextRound(roomId) {
 
                 if (winner && loser) {
                     playSocketServer.updateRoomStorage(roomId, "duelProcessed", "set", true);
-                    saveDuelResult(playSocketServer.getRoomStorage(roomId)?.duelUuid, winner.userId, loser.userId, isDraw);
+                    saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId)?.duelUuid, winner.userId, loser.userId, isDraw);
                 }
             }
 
