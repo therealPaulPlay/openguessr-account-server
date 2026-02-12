@@ -458,7 +458,7 @@ competitionsRouter.put('/daily/daily-competition', standardLimiter, async (req, 
                 console.error('Failed to create or fetch daily competition');
                 return res.status(500).json({ status: 500, error: 'Failed to create daily competition.' });
             }
-            console.log('Daily competition created and fetched successfully');
+            console.log('Daily competition created and fetched successfully.');
         }
 
         res.json({ competitions: results.map(formatCompetition) });

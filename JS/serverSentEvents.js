@@ -31,7 +31,7 @@ export function initSSE(app) {
         });
     });
 
-    console.log("SSE server initialized at /events endpoint");
+    console.log("SSE server initialized at /events endpoint.");
 
     // Send a heartbeat every 30 seconds to keep connections alive and detect broken ones
     setInterval(() => {

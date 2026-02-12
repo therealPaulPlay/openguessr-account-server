@@ -82,7 +82,7 @@ async function updateCache() {
         }
 
         await connection.commit();
-        console.log('Leaderboard cache update completed successfully');
+        console.log('Leaderboard cache update completed successfully.');
 
         // Release the lock
         await connection.execute('SELECT RELEASE_LOCK(?)', ['leaderboard_update']);
