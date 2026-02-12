@@ -230,11 +230,11 @@ const isValidMap = (map) => {
 communityMapRouter.post('/', [
     failedSubmissionLimiter, authenticateTokenWithId,
     body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Map name contains inappropriate words.');
+        if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
         return true;
     }),
     body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Map description contains inappropriate words.');
+        if (!check(value)) throw new Error('Map description is empty or contains inappropriate words.');
         return true;
     }),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
