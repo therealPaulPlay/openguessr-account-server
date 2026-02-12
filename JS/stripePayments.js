@@ -167,16 +167,20 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
 });
 
 // Statistics for supporter purchases
+let monthlyStatsCache = { value: null, expiresAt: 0 };
+
 stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) => {
+    if (monthlyStatsCache.value !== null && Date.now() < monthlyStatsCache.expiresAt) {
+        return res.json({ supported_amount: monthlyStatsCache.value });
+    }
+
     const db = getDB();
 
     try {
-        // Get the current month and year
         const currentDate = new Date();
         const year = currentDate.getFullYear();
-        const month = currentDate.getMonth() + 1; // JavaScript months are 0-based, so add 1
+        const month = currentDate.getMonth() + 1;
 
-        // Query to get the supported_amount for the current month and year
         const query = `
       SELECT supported_amount
       FROM supporter_statistics
@@ -189,15 +193,12 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
                 return res.status(500).send('Internal server error');
             }
 
-            // If no entry exists for the current month, return 0
-            if (results.length === 0) {
-                return res.json({ supported_amount: 0 });
-            }
+            const supportedAmount = results.length === 0
+                ? 0
+                : parseFloat(results[0].supported_amount.toFixed(2));
 
-            // Format the number to 2 decimal places before returning
-            const supportedAmount = parseFloat(results[0].supported_amount.toFixed(2));
+            monthlyStatsCache = { value: supportedAmount, expiresAt: Date.now() + 15_000 };
 
-            // Return the supported amount for the current month
             return res.json({ supported_amount: supportedAmount });
         });
     } catch (error) {
