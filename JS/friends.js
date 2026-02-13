@@ -3,6 +3,7 @@ import { standardLimiter, friendRequestLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getSseClients, sendEventToClient } from "./serverSentEvents.js";
 import { getDB } from "./dbConnection.js";
+import { cacheResponse } from "./responseCache.js";
 
 const friendRouter = express.Router();
 
@@ -152,7 +153,7 @@ friendRouter.post('/friends', standardLimiter, authenticateTokenWithId, async (r
 });
 
 // Search for users by name using full-text search
-friendRouter.get('/search/:query', standardLimiter, async (req, res) => {
+friendRouter.get('/search/:query', standardLimiter, cacheResponse("friends-search", 5000), async (req, res) => {
     let { query } = req.params;
 
     if (!query) return res.status(400).json({ error: 'Search query is required.' });

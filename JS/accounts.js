@@ -47,9 +47,9 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
 });
 
 // Get user warnlist status
-accountRouter.get('/check-warnlist/:id', standardLimiter, async (req, res) => {
+accountRouter.put('/check-warnlist', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
-        const referenceId = `user-${req.params?.id}`; // Prepend "user-" to the provided id
+        const referenceId = `user-${req.body?.id}`; // Prepend "user-" to the provided id
         const type = 'user';
         const jsonResponse = await fetchReportData("warnlist", type, referenceId);
 

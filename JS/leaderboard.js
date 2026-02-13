@@ -1,7 +1,9 @@
 import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { getDB } from "./dbConnection.js";
+import { cacheResponse } from "./responseCache.js";
 import cron from 'node-cron';
+import { authenticateTokenWithId } from './authUtils.js';
 
 const leaderboardRouter = express.Router();
 
@@ -128,7 +130,7 @@ async function getPlayerRank(experience) {
 }
 
 // Endpoint for Top 100 leaderboard by experience
-leaderboardRouter.get('/experience', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/experience', standardLimiter, cacheResponse("experience-leaderboard"), async (req, res) => {
     const db = getDB();
 
     try {
@@ -148,9 +150,10 @@ leaderboardRouter.get('/experience', standardLimiter, async (req, res) => {
 });
 
 // Endpoint for user-specific leaderboard
-leaderboardRouter.get('/experience-user-section/:id', standardLimiter, async (req, res) => {
+leaderboardRouter.put('/experience-user-section', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
-    const userId = req.params.id;
+    const userId = req.body.id;
+    if (userId == null) return res.status(400).json({ error: 'User ID not provided.' });
 
     try {
         // Fetch the user's details (name, experience, and supporter level) from the database
@@ -204,7 +207,7 @@ leaderboardRouter.get('/experience-user-section/:id', standardLimiter, async (re
 });
 
 // Elo Leaderboard Top 100
-leaderboardRouter.get('/elo', standardLimiter, async (req, res) => {
+leaderboardRouter.get('/elo', standardLimiter, cacheResponse("elo-leaderboard"), async (req, res) => {
     const db = getDB();
 
     try {

@@ -7,8 +7,15 @@ import { body, validationResult } from 'express-validator';
 import { updateProfileData } from './profileDataHelper.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
+import { cacheResponse, clearResponseCache } from "./responseCache.js";
 
 const competitionsRouter = express.Router();
+
+function clearCompetitionListCaches() {
+    clearResponseCache("competitions-active");
+    clearResponseCache("competitions-expired");
+    clearResponseCache("competitions-search");
+}
 
 // Map Validation function
 const isValidMap = (map) => {
@@ -101,6 +108,7 @@ const cleanupCompetitions = async () => {
               AND ((c.created_at + INTERVAL c.duration SECOND + INTERVAL 7 DAY) < NOW())
         `);
 
+        clearCompetitionListCaches();
         console.log('Competition cleanup completed.');
     } catch (error) {
         console.error('Error during cleanup:', error);
@@ -122,7 +130,7 @@ const formatCompetition = (comp, includeLocations = false) => {
 };
 
 // Get active competitions
-competitionsRouter.put('/:index', standardLimiter, async (req, res) => {
+competitionsRouter.put('/:index', standardLimiter, cacheResponse("competitions-active"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
@@ -147,11 +155,13 @@ competitionsRouter.put('/:index', standardLimiter, async (req, res) => {
 });
 
 // Get competitions user hasn't entered
-competitionsRouter.put('/not-entered/:index', standardLimiter, async (req, res) => {
+competitionsRouter.put('/not-entered/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const { index = 0 } = req.params;
-        const userId = req.body.id || null;
+        const userId = req.body.id;
         const offset = parseInt(index, 10) || 0;
+        if (userId == null) return res.status(400).json({ status: 400, error: "User ID is required." });
+
         const db = getDB();
 
         const [results] = await db.promise().query(`
@@ -171,7 +181,7 @@ competitionsRouter.put('/not-entered/:index', standardLimiter, async (req, res) 
 });
 
 // Search competitions
-competitionsRouter.put('/search/:index', standardLimiter, async (req, res) => {
+competitionsRouter.put('/search/:index', standardLimiter, cacheResponse("competitions-search"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
@@ -199,7 +209,7 @@ competitionsRouter.put('/search/:index', standardLimiter, async (req, res) => {
 });
 
 // Get expired competitions
-competitionsRouter.put('/expired/:index', standardLimiter, async (req, res) => {
+competitionsRouter.put('/expired/:index', standardLimiter, cacheResponse("competitions-expired"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
@@ -321,6 +331,7 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
             [name, author, id, restriction, duration, roundLength, description, locationAmount, JSON.stringify({ locations }), isPrivate]
         );
 
+        clearCompetitionListCaches();
         res.status(201).json({
             status: 201,
             message: 'Competition created successfully.',
@@ -373,6 +384,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
         );
 
         updateProfileData(id, "competitions_entered", true, 1);
+        clearResponseCache("competitions-leaderboard");
         res.status(201).json({ status: 201, message: 'Results submitted successfully.' });
     } catch (error) {
         console.error('Error submitting results:', error);
@@ -381,7 +393,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
 });
 
 // Get competition leaderboard
-competitionsRouter.post('/leaderboard/:id', standardLimiter, async (req, res) => {
+competitionsRouter.post('/leaderboard/:id', standardLimiter, cacheResponse("competitions-leaderboard"), async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.body.id || null;
@@ -432,7 +444,7 @@ competitionsRouter.post('/leaderboard/:id', standardLimiter, async (req, res) =>
 });
 
 // Get daily competition
-competitionsRouter.put('/daily/daily-competition', standardLimiter, async (req, res) => {
+competitionsRouter.put('/daily/daily-competition', standardLimiter, cacheResponse("daily-competition"), async (req, res) => {
     try {
         const userId = req.body.id || null;
         const db = getDB();
@@ -452,6 +464,7 @@ competitionsRouter.put('/daily/daily-competition', standardLimiter, async (req, 
         if (!results.some(r => !r.expired)) {
             console.log('No daily competition found, creating new one...');
             await createDailyCompetition();
+            clearResponseCache("daily-competition");
             [results] = await db.promise().execute(query, [userId]);
 
             if (!results.some(r => !r.expired)) {

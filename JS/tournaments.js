@@ -4,10 +4,11 @@ import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { broadcastEvent, sendEventToClient } from "./serverSentEvents.js";
 import { addChat, playSocketServer, rematch, reviewAndConstructInitialRoomStorage, startRoom } from './playSocketEvents.js';
+import { cacheResponse, clearResponseCache } from "./responseCache.js";
 
 const tournamentRouter = express.Router();
 
-tournamentRouter.get("/all-tournaments", standardLimiter, async (req, res) => {
+tournamentRouter.get("/all-tournaments", standardLimiter, cacheResponse("all-tournaments"), async (req, res) => {
     const userId = req.query['user-id'];
 
     try {
@@ -194,6 +195,7 @@ async function createTournament(name, startDate, prize, selectedMap = "World") {
             [name, formattedDate, prize, "upcoming", selectedMap]
         );
 
+        clearResponseCache("all-tournaments");
         broadcastEvent({ type: "tournament-updated" });
         return result.insertId;
     } catch (error) {
@@ -226,6 +228,7 @@ async function updateTournament(id, status = null, winnerId = null, winnerName =
             values
         );
 
+        clearResponseCache("all-tournaments");
         broadcastEvent({ type: "tournament-updated" });
         return id;
     } catch (error) {
@@ -479,6 +482,7 @@ async function addTournamentMatchResults(tournamentId, matchIndex, matchData) {
         await Promise.all(insertPromises);
         await connection.commit();
 
+        clearResponseCache("all-tournaments");
         broadcastEvent({ type: "tournament-updated" });
 
     } catch (error) {

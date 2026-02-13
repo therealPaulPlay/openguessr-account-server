@@ -1,10 +1,10 @@
 import express from 'express';
-import { standardLimiter } from "./rateLimiters.js";
+import { standardLimiter, creatorStatisticLimiter } from "./rateLimiters.js";
 import { getDB } from "./dbConnection.js";
 
 const creatorRouter = express.Router();
 
-creatorRouter.post('/creator-link-statistic', standardLimiter, async (req, res) => {
+creatorRouter.post('/creator-link-statistic', standardLimiter, creatorStatisticLimiter, async (req, res) => {
     try {
         const db = getDB();
         const { creator } = req.body;

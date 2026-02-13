@@ -5,6 +5,7 @@ import { getDB } from "./dbConnection.js";
 import mailTransporter from "./mailer.js";
 import Stripe from 'stripe';
 import { stripeKey, stripeWebhookSecret, emailConfig } from "./config.js";
+import { cacheResponse } from "./responseCache.js";
 
 const stripeRouter = express.Router();
 
@@ -167,13 +168,7 @@ stripeRouter.post('/webhook', standardLimiter, async (req, res) => {
 });
 
 // Statistics for supporter purchases
-let monthlyStatsCache = { value: null, expiresAt: 0 };
-
-stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) => {
-    if (monthlyStatsCache.value !== null && Date.now() < monthlyStatsCache.expiresAt) {
-        return res.json({ supported_amount: monthlyStatsCache.value });
-    }
-
+stripeRouter.get('/statistics/current-month', standardLimiter, cacheResponse("stripe-statistics"), async (req, res) => {
     const db = getDB();
 
     try {
@@ -187,21 +182,15 @@ stripeRouter.get('/statistics/current-month', standardLimiter, async (req, res) 
       WHERE month = ? AND year = ?
     `;
 
-        db.execute(query, [month, year], (err, results) => {
-            if (err) {
-                console.error('Error fetching current month statistics:', err);
-                return res.status(500).send('Internal server error');
-            }
+        const [results] = await db.promise().execute(query, [month, year]);
 
-            const supportedAmount = results.length === 0
-                ? 0
-                : parseFloat(results[0].supported_amount.toFixed(2));
+        const supportedAmount = results.length === 0
+            ? 0
+            : parseFloat(results[0].supported_amount.toFixed(2));
 
-            monthlyStatsCache = { value: supportedAmount, expiresAt: Date.now() + 15_000 };
-
-            return res.json({ supported_amount: supportedAmount });
-        });
+        return res.json({ supported_amount: supportedAmount });
     } catch (error) {
+        console.error('Error fetching current month statistics:', error);
         return res.status(500).json({ error: "Internal server error." });
     }
 });

@@ -1,12 +1,13 @@
 import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { getDB } from "./dbConnection.js";
+import { cacheResponse } from "./responseCache.js";
 import cron from "node-cron";
 
 const divisionDataRouter = express.Router();
 
 // Get duel history ----------------------------------------------------------------------------------------------------------------------------------------------------
-divisionDataRouter.get('/duel-history', standardLimiter, async (req, res) => {
+divisionDataRouter.get('/duel-history', standardLimiter, cacheResponse("duel-history", 1000), async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = 50;
     const offset = (page - 1) * limit;

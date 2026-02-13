@@ -92,4 +92,11 @@ const friendRequestLimiter = rateLimit({
     message: { error: 'You are sending too many friend requests.' }
 });
 
-export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter };
+const creatorStatisticLimiter = rateLimit({
+    windowMs: 1000, // 1 second
+    max: 20, // 20 requests per second globally (across all IPs)
+    keyGenerator: () => 'global',
+    message: { error: 'Too many creator statistic requests.' }
+});
+
+export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };

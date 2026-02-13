@@ -54,10 +54,9 @@ autoguessrRouter.post('/save', standardLimiter, authenticateTokenWithId, async (
 });
 
 // Retrieve the saved JSON for a given user ID (not save ID!)
-autoguessrRouter.get('/get-save/:id', standardLimiter, async (req, res) => {
+autoguessrRouter.put('/get-save', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
-    const { id } = req.params;
-
+    const { id } = req.body;
     if (!id) return res.status(400).json({ error: 'User ID is required.' });
 
     try {
@@ -70,9 +69,7 @@ autoguessrRouter.get('/get-save/:id', standardLimiter, async (req, res) => {
         });
 
         // If no record is found, return an empty object
-        if (results.length === 0 || !results[0].main_save) {
-            return res.json({});
-        }
+        if (results.length === 0 || !results[0].main_save) return res.json({});
 
         // Return the parsed JSON object (mysql2 package auto-parses this)
         let savedData = results[0].main_save;

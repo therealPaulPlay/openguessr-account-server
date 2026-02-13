@@ -2,6 +2,7 @@ import express from 'express';
 import { standardLimiter, failedSubmissionLimiter, successfulSubmissionLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
+import { cacheResponse, clearResponseCache } from "./responseCache.js";
 import { body, validationResult } from 'express-validator';
 import { getPublicObjectURL, spacesClient } from './spacesConnection.js';
 import { s3Config } from "./config.js";
@@ -11,8 +12,17 @@ import { check } from 'fast-profanity-filter';
 
 const communityMapRouter = express.Router();
 
+function clearMapListCaches() {
+    clearResponseCache("maps-index");
+    clearResponseCache("maps-category");
+    clearResponseCache("maps-favourites");
+    clearResponseCache("maps-by-user");
+    clearResponseCache("maps-by-name");
+    clearResponseCache("maps-search");
+}
+
 // Return the next 50 maps starting from a given index (without map data!)
-communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
+communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-index"), (req, res) => {
     const db = getDB();
     const limit = 50;
 
@@ -41,7 +51,7 @@ communityMapRouter.get('/index/:index', standardLimiter, (req, res) => {
 });
 
 // Filter maps by category with pagination
-communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res) => {
+communityMapRouter.get('/category/:category/:index', standardLimiter, cacheResponse("maps-category"), (req, res) => {
     const db = getDB();
 
     const category = req.params.category;
@@ -71,7 +81,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, (req, res)
 });
 
 // Get maps created by a certain user (user id)
-communityMapRouter.get('/by-user/:id/:index', standardLimiter, (req, res) => {
+communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("maps-by-user"), (req, res) => {
     const db = getDB();
     const limit = 50;
     const authorId = parseInt(req.params.id, 10);
@@ -106,7 +116,7 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, (req, res) => {
 });
 
 // Search maps by query with pagination
-communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
+communityMapRouter.get('/search/:query/:index', standardLimiter, cacheResponse("maps-search"), (req, res) => {
     const db = getDB();
 
     const query = `%${req.params.query}%`;
@@ -136,7 +146,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 });
 
 // Return all favourite maps
-communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
+communityMapRouter.get('/favourites', standardLimiter, cacheResponse("maps-favourites"), (req, res) => {
     const db = getDB();
 
     db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE favourite = TRUE ORDER BY likes DESC', (err, results) => {
@@ -160,7 +170,7 @@ communityMapRouter.get('/favourites', standardLimiter, (req, res) => {
 });
 
 // Get the actual map data by the name of the map
-communityMapRouter.get('/:name', standardLimiter, async (req, res) => {
+communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"), async (req, res) => {
     const db = getDB();
     const name = req.params.name.toLowerCase().replaceAll("_", " ");
 
@@ -330,6 +340,7 @@ communityMapRouter.post('/', [
             [storageKey, mapId]
         );
 
+        clearMapListCaches();
         res.status(201).json({ message: 'Map submitted successfully!' });
 
     } catch (err) {
@@ -392,6 +403,7 @@ communityMapRouter.put('/', [
         // Remove from cache so that the new version will be pulled
         removeMapFromCache("community_" + name.toLowerCase());
 
+        clearMapListCaches();
         res.status(200).json({ message: 'Map updated successfully!' });
     } catch (err) {
         console.error('Error updating map:', err);
@@ -432,6 +444,7 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, as
         // Delete from the database
         await db.promise().execute('DELETE FROM maps WHERE id = ?', [id]);
 
+        clearMapListCaches();
         res.status(200).json({ message: 'Map deleted successfully.' });
     } catch (err) {
         console.error('Error deleting map:', err);
@@ -477,7 +490,7 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
 // 3.3) Get map like amount & personal like status if id passed 
 communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     const name = req.params.name.toLowerCase();
-    const player_id = req.body.id;
+    const playerId = req.body.id;
     const db = getDB();
 
     try {
@@ -488,9 +501,9 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
         const likeAmount = mapResults[0].likes;
         let liked = false;
 
-        if (player_id) {
+        if (playerId) {
             // Check if the player has liked the map
-            const [likeResults] = await db.promise().execute('SELECT 1 FROM map_likes WHERE map_id = (SELECT id FROM maps WHERE LOWER(name) = ?) AND player_id = ?', [name, player_id]);
+            const [likeResults] = await db.promise().execute('SELECT 1 FROM map_likes WHERE map_id = (SELECT id FROM maps WHERE LOWER(name) = ?) AND player_id = ?', [name, playerId]);
             if (likeResults.length > 0) liked = true;
         }
 
