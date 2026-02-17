@@ -238,13 +238,10 @@ cron.schedule('0 0 1 * *', async () => {
     try {
         const pool = getDB();
 
-        // Convert excess elo to tokens before resetting
+        // Halve elo above 2000 and convert the deducted amount into tokens
         await pool.promise().query(
-            'UPDATE users SET tokens = COALESCE(tokens, 0) + (elo - 2000) WHERE elo > 2000'
+            'UPDATE users SET tokens = COALESCE(tokens, 0) + CEIL((elo - 2000) / 2), elo = 2000 + FLOOR((elo - 2000) / 2) WHERE elo > 2000'
         );
-
-        // Reset elo to 2000 for players above 2000
-        await pool.promise().query('UPDATE users SET elo = 2000 WHERE elo > 2000');
 
         // Halve XP over 100M for players above 100M XP
         await pool.promise().query('UPDATE users SET experience = 100000000 + ROUND((experience - 100000000) / 2) WHERE experience > 100000000');
