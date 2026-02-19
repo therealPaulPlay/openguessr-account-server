@@ -18,7 +18,6 @@ function clearMapListCaches() {
     clearResponseCache("maps-favourites");
     clearResponseCache("maps-by-user");
     clearResponseCache("maps-by-name");
-    clearResponseCache("maps-search");
 }
 
 // Return the next 50 maps starting from a given index (without map data!)
@@ -116,7 +115,7 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
 });
 
 // Search maps by query with pagination
-communityMapRouter.get('/search/:query/:index', standardLimiter, cacheResponse("maps-search"), (req, res) => {
+communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const db = getDB();
 
     const query = `%${req.params.query}%`;

@@ -14,7 +14,6 @@ const competitionsRouter = express.Router();
 function clearCompetitionListCaches() {
     clearResponseCache("competitions-active");
     clearResponseCache("competitions-expired");
-    clearResponseCache("competitions-search");
 }
 
 // Map Validation function
@@ -181,7 +180,7 @@ competitionsRouter.put('/not-entered/:index', standardLimiter, authenticateToken
 });
 
 // Search competitions
-competitionsRouter.put('/search/:index', standardLimiter, cacheResponse("competitions-search"), async (req, res) => {
+competitionsRouter.put('/search/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.body.id || null;
