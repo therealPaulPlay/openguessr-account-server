@@ -237,8 +237,6 @@ async function updateTournament(id, status = null, winnerId = null, winnerName =
     }
 }
 
-const processedTournaments = new Set();
-
 async function startTournament(tournamentId, map) {
     try {
         const roomStorage = reviewAndConstructInitialRoomStorage("server", {
@@ -298,10 +296,7 @@ async function checkAndStartTournaments() {
         );
 
         for (const tournament of tournaments) {
-            if (!processedTournaments.has(tournament.id)) {
-                processedTournaments.add(tournament.id);
-                await startTournament(tournament.id, tournament.map);
-            }
+            await startTournament(tournament.id, tournament.map);
         }
 
         // Delete tournaments that are more than 3 weeks old
