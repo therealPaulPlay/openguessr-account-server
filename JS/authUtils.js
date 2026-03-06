@@ -64,7 +64,7 @@ function authenticateTokenWithId(req, res, next) {
             }
 
             const tokenUserId = decoded.userId;
-            const requestUserId = req.body.id ? req.body.id : req.params.id; // get id from params or from body, depending on what exists
+            const requestUserId = req.body.id ?? req.query.id ?? req.params.id;
             const email = decoded.sub;
 
             // Compare token userId with the requested userId
