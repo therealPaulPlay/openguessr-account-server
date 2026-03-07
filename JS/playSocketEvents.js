@@ -90,7 +90,12 @@ function attachPlaySocketEvents(server) {
             // Remove player from room storage
             server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
             addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
+
+            // Update highest supporter level
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
+
+            // Check if all players now have confirmed guesses
+            endRoundIfAllPlayersGuessed(roomId);
         }
 
         // Process division duel if user was in one
@@ -275,10 +280,7 @@ function attachPlaySocketEvents(server) {
             }
 
             // Check if all guesses are in (which immediately ends the round)
-            if (server.getRoomStorage(roomId)?.confirmedArray?.length >= server.getRoomStorage(roomId)?.players?.length && !server.getRoomStorage(roomId)?.showResult) {
-                roomTimer.stop(roomId);
-                endRound(roomId);
-            }
+            endRoundIfAllPlayersGuessed(roomId);
         }
 
         if (name === 'rematch') {
@@ -385,6 +387,14 @@ function goToNextRound(roomId) {
         }
     } catch (error) {
         console.error("Error going to the next round:", error);
+    }
+}
+
+function endRoundIfAllPlayersGuessed(roomId) {
+    if (playSocketServer.getRoomStorage(roomId)?.players?.length < 1) return; // Room doesn't exist or lacks added players
+    if (playSocketServer.getRoomStorage(roomId)?.confirmedArray?.length >= playSocketServer.getRoomStorage(roomId)?.players?.length && !playSocketServer.getRoomStorage(roomId)?.showResult) {
+        roomTimer.stop(roomId);
+        endRound(roomId);
     }
 }
 
