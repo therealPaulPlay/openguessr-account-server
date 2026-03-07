@@ -45,8 +45,8 @@ tournamentRouter.get("/all-tournaments", standardLimiter, cacheResponse("all-tou
                         0,
                         0
                     ));
-                    const prizes = ["250 tokens", "500 tokens", "750 tokens"];
-                    await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * 3)]);
+                    const prizes = ["250 tokens", "375 tokens", "500 tokens", "625 tokens", "750 tokens"];
+                    await createTournament("Weekly Tournament", startDate, prizes[Math.floor(Math.random() * prizes.length)]);
                 }
             } finally {
                 if (connection) {
