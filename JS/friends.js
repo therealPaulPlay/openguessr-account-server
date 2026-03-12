@@ -158,37 +158,63 @@ friendRouter.get('/search/:query', standardLimiter, async (req, res) => {
     if (!query) return res.status(400).json({ error: 'Search query is required.' });
 
     try {
+        const db = getDB();
+
+        // Check if query could be a player ID (e.g. "2536107" or "user-2536107")
+        const idMatch = query.match(/^(?:user-)?(\d+)$/);
+
+        // Sanitize query
         query = query
             .replace(/[+\-><\(\)~*\"@]+/g, ' ')
             .trim()
             .replace(/\s+/g, ' ');
 
-        if (!query) return res.status(400).json({ error: 'Invalid search query after sanitization.' });
+        if (!query && !idMatch) return res.status(400).json({ error: 'Invalid search query after sanitization.' });
 
-        const db = getDB();
-
-        // For short queries (1-2 chars), use prefix matching which is much faster than full-text search
-        let searchQuery, searchParams;
-
-        if (query.length <= 2) {
-            searchQuery = `
-                SELECT id, user_name FROM users
-                WHERE user_name LIKE ?
-                ORDER BY LENGTH(user_name) ASC
-                LIMIT 25
-            `;
-            searchParams = [`${query}%`];
-        } else {
-            searchQuery = `
-                SELECT id, user_name FROM users
-                WHERE MATCH(user_name) AGAINST(? IN BOOLEAN MODE)
-                ORDER BY MATCH(user_name) AGAINST(? IN BOOLEAN MODE) DESC, LENGTH(user_name) ASC
-                LIMIT 25
-            `;
-            searchParams = [`${query}*`, `${query}*`];
+        // Search for ID
+        let idUser = null;
+        if (idMatch) {
+            const [rows] = await db.promise().execute(
+                'SELECT id, user_name FROM users WHERE id = ?',
+                [idMatch[1]]
+            );
+            if (rows.length > 0) idUser = rows[0];
         }
 
-        const [users] = await db.promise().execute(searchQuery, searchParams);
+        let users = [];
+
+        if (query) {
+            // For short queries (1-2 chars), use prefix matching which is much faster than full-text search
+            let searchQuery, searchParams;
+
+            if (query.length <= 2) {
+                searchQuery = `
+                    SELECT id, user_name FROM users
+                    WHERE user_name LIKE ?
+                    ORDER BY LENGTH(user_name) ASC
+                    LIMIT 25
+                `;
+                searchParams = [`${query}%`];
+            } else {
+                searchQuery = `
+                    SELECT id, user_name FROM users
+                    WHERE MATCH(user_name) AGAINST(? IN BOOLEAN MODE)
+                    ORDER BY MATCH(user_name) AGAINST(? IN BOOLEAN MODE) DESC, LENGTH(user_name) ASC
+                    LIMIT 25
+                `;
+                searchParams = [`${query}*`, `${query}*`];
+            }
+
+            const [rows] = await db.promise().execute(searchQuery, searchParams);
+            users = rows;
+        }
+
+        // Insert the ID match if it's not already in the name search results
+        if (idUser && !users.some(u => u.id === idUser.id)) {
+            // Place after any exact username matches, otherwise prepend
+            const exactMatchCount = users.filter(u => u.user_name.toLowerCase() === query.toLowerCase()).length;
+            users.splice(exactMatchCount, 0, idUser);
+        }
 
         res.status(200).json({ users });
     } catch (error) {
