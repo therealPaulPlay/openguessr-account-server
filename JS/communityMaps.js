@@ -285,7 +285,7 @@ communityMapRouter.post('/', [
                 parseFloat(coord[1])
             ]);
 
-            if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
+            if (!isValidMap({ locations })) return res.status(400).json({ error: 'Map must contain at least 50 locations with valid coordinates and no duplicates.' });
         } catch (error) {
             console.error('Error parsing JSON:', error);
             return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse.' });
@@ -371,7 +371,7 @@ communityMapRouter.put('/', [
             parseFloat(coord[1])
         ]);
 
-        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Invalid map data. Must contain at least 50 locations with valid coordinates.' });
+        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Map must contain at least 50 locations with valid coordinates and no duplicates.' });
 
     } catch (error) {
         console.error('Error parsing JSON:', error);
