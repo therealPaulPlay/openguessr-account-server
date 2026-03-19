@@ -143,7 +143,7 @@ export async function processEloRefunds(bannedPlayerId) {
         // First, get all matches from the duel division entries that this player won
         // Duel division history is only kept for 4-8 weeks, so not all elo will be refunded, only recent games
         const [results] = await connection.execute("SELECT * FROM duel_entries WHERE refunded = FALSE AND ((user1_id = ? AND user1_win = TRUE) OR (user2_id = ? AND user2_win = TRUE)) FOR UPDATE", [bannedPlayerId, bannedPlayerId]);
-        
+
         // Player did not play any division games recently
         if (results.length === 0) {
             await connection.commit();
@@ -184,8 +184,11 @@ export async function processEloRefunds(bannedPlayerId) {
 
         // Send WebSocket notifications
         usersWithEloRefunds.forEach((value, userId) => {
-            sendEventToClient(userId, { type: "elo-refund", amount: value });
+            sendEventToClient(userId, { type: "elo-refunded", amount: value });
         });
+
+        // Inform banned user too
+        sendEventToClient(userId, { type: "elo-deducted", amount: totalRefundedElo });
 
     } catch (error) {
         if (connection) await connection.rollback();
