@@ -130,3 +130,67 @@ export default async function saveDivisionDuelResult(uuid, winnerId, loserId, dr
         if (connection) connection.release();
     }
 }
+
+export async function processEloRefunds(bannedPlayerId) {
+    const db = getDB();
+    let connection;
+
+    try {
+        // Wrap in transaction to avoid two of these calls running simultaneously refunding twice etc. (for atomicy)
+        connection = await db.promise().getConnection();
+        await connection.beginTransaction();
+
+        // First, get all matches from the duel division entries that this player won
+        // Duel division history is only kept for 4-8 weeks, so not all elo will be refunded, only recent games
+        const [results] = await connection.execute("SELECT * FROM duel_entries WHERE refunded = FALSE AND ((user1_id = ? AND user1_win = TRUE) OR (user2_id = ? AND user2_win = TRUE)) FOR UPDATE", [bannedPlayerId, bannedPlayerId]);
+        
+        // Player did not play any division games recently
+        if (results.length === 0) {
+            await connection.commit();
+            return;
+        }
+
+        const usersWithEloRefunds = new Map();
+        let totalRefundedElo = 0;
+
+        results.forEach((entry) => {
+            const eloChange = entry.elo_change;
+            const loserId = entry.user1_id === bannedPlayerId ? entry.user2_id : entry.user1_id;
+
+            if (eloChange > 0) {
+                totalRefundedElo += eloChange;
+                usersWithEloRefunds.set(loserId, (usersWithEloRefunds.get(loserId) || 0) + eloChange);
+            }
+        });
+
+        // Mark all won entries as refunded in one query
+        await connection.execute("UPDATE duel_entries SET refunded = TRUE WHERE refunded = FALSE AND ((user1_id = ? AND user1_win = TRUE) OR (user2_id = ? AND user2_win = TRUE))", [bannedPlayerId, bannedPlayerId]);
+
+        const refundQueries = [];
+        usersWithEloRefunds.forEach((value, userId) => {
+            refundQueries.push(`UPDATE users SET elo = elo + ${value} WHERE id = ${userId}`);
+        });
+
+        if (refundQueries.length) {
+            await connection.query(refundQueries.join(";") + ";"); // Combine queries
+        }
+
+        if (totalRefundedElo > 0) {
+            // Lower the banned player's elo, floor at 0
+            await connection.execute("UPDATE users SET elo = GREATEST(0, elo - ?) WHERE id = ?", [totalRefundedElo, bannedPlayerId]);
+        }
+
+        await connection.commit();
+
+        // Send WebSocket notifications
+        usersWithEloRefunds.forEach((value, userId) => {
+            sendEventToClient(userId, { type: "elo-refund", amount: value });
+        });
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error("Error processing elo refunds:", error);
+    } finally {
+        if (connection) connection.release();
+    }
+}

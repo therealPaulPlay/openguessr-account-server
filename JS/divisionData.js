@@ -25,6 +25,7 @@ divisionDataRouter.get('/duel-history', standardLimiter, cacheResponse("duel-his
                 user1_win,
                 user2_win,
                 elo_change,
+                refunded,
                 created_at
             FROM duel_entries
         `;
@@ -49,14 +50,15 @@ divisionDataRouter.get('/duel-history', standardLimiter, cacheResponse("duel-his
                 player1: {
                     id: duel.user1_id,
                     name: duel.user1_name,
-                    won: duel.user1_win === 1
+                    won: Boolean(duel.user1_win)
                 },
                 player2: {
                     id: duel.user2_id,
                     name: duel.user2_name,
-                    won: duel.user2_win === 1
+                    won: Boolean(duel.user2_win)
                 },
                 eloChange: duel.elo_change,
+                refunded: Boolean(duel.refunded),
                 timestamp: duel.created_at
             }))
         };

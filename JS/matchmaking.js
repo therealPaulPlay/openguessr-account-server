@@ -5,6 +5,7 @@ import { getDB } from "./dbConnection.js";
 import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, startRoom } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
+import { processEloRefunds } from './processDivisionResult.js';
 
 const matchmakingRouter = express.Router();
 
@@ -231,6 +232,9 @@ matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) 
                 const userId = Number(data.referenceId?.replace("user-", ""));
                 const clientId = authedMultiplayerUserIds.get(userId);
                 if (clientId) playSocketServer?.kick(clientId, "Banned.");
+
+                // For manual bans, refund elo
+                if (type === "blacklist-entry-added-manually") processEloRefunds(userId); // Not awaited here
             }
 
             res.sendStatus(200);

@@ -50,8 +50,12 @@ export function initSSE(app) {
 export function sendEventToClient(userId, eventData) {
     const client = clients[userId];
     if (client) {
-        client.write(`data: ${JSON.stringify(eventData)}\n\n`);
-        return true;
+        try {
+            client.write(`data: ${JSON.stringify(eventData)}\n\n`);
+            return true;
+        } catch (error) {
+            delete clients[userId];
+        }
     }
     return false;
 }
