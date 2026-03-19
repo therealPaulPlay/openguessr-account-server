@@ -188,7 +188,7 @@ export async function processEloRefunds(bannedPlayerId) {
         });
 
         // Inform banned user too
-        if (totalRefundedElo > 0) sendEventToClient(userId, { type: "elo-deducted", amount: totalRefundedElo });
+        if (totalRefundedElo > 0) sendEventToClient(bannedPlayerId, { type: "elo-deducted", amount: totalRefundedElo });
 
     } catch (error) {
         if (connection) await connection.rollback();
