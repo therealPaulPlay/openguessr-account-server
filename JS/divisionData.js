@@ -75,9 +75,9 @@ cron.schedule('0 2 1 * *', async () => {
     try {
         const pool = getDB();
 
-        // Delete duel entries older than x days
+        // Delete duel entries older than 2 weeks
         await pool.promise().query(
-            'DELETE FROM duel_entries WHERE created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)'
+            'DELETE FROM duel_entries WHERE created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)'
         );
     } catch (error) {
         console.error('Error during monthly duel entry cleanup:', error);
