@@ -1,7 +1,7 @@
 import express from 'express';
 const accountRouter = express.Router();
 import jwt from 'jsonwebtoken';
-import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter } from "./rateLimiters.js";
+import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, passwordResetLimiter } from "./rateLimiters.js";
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import axios from 'axios';
@@ -136,9 +136,7 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
     let { username, email, password } = req.body;
     const userIp = req.clientIp;
 
-    if (!username || !email || !password) {
-        return res.status(400).json({ error: 'Username, email, and password are required.' });
-    }
+    if (!username || !email || !password) return res.status(400).json({ error: 'Username, email, and password are required.' });
 
     try {
         username = username.trim(); // remove whitespaces from username
@@ -196,9 +194,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
     const db = getDB();
     const { email, password } = req.body;
 
-    if (!email || !password) {
-        return res.status(400).json({ error: 'Email and password are required.' });
-    }
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
 
     try {
         // Find user by email
@@ -209,16 +205,11 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
                 resolve(results[0]);
             });
         });
-
-        if (!user) {
-            return res.status(400).json({ error: 'Invalid credentials.' });
-        }
+        if (!user) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Check password
         const isValidPassword = await isPasswordValid(password, user.password);
-        if (!isValidPassword) {
-            return res.status(400).json({ error: 'Invalid credentials.' });
-        }
+        if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Generate JWT token
         const bearerToken = createNewJwtToken({ email, id: user.id });
@@ -353,12 +344,10 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
     const db = getDB();
     const { id, password } = req.body;
 
-    if (!id || !password) {
-        return res.status(400).json({ error: 'Id and password are required.' });
-    }
+    if (!id || !password) return res.status(400).json({ error: 'Id and password are required.' });
 
     try {
-        // Find user by email to retrieve password hash
+        // Find user by ID to retrieve password hash
         const userQuery = 'SELECT password FROM users WHERE id = ?';
         const user = await new Promise((resolve, reject) => {
             db.execute(userQuery, [id], (err, results) => {
@@ -366,16 +355,11 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
                 resolve(results[0]);
             });
         });
-
-        if (!user) {
-            return res.status(400).json({ error: 'Invalid credentials. User not found.' });
-        }
+        if (!user) return res.status(400).json({ error: 'User not found.' });
 
         // Check password
         const isValidPassword = await isPasswordValid(password, user.password);
-        if (!isValidPassword) {
-            return res.status(400).json({ error: 'Invalid credentials.' });
-        }
+        if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Delete user account
         const deleteUserQuery = 'DELETE FROM users WHERE id = ?';
@@ -396,13 +380,11 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
 // Password resets via email -----------------------------------------------------------------------------
 
 // request password reset email endpoint
-accountRouter.post('/reset-password-request', registerLimiter, async (req, res) => {
+accountRouter.post('/reset-password-request', passwordResetLimiter, async (req, res) => {
     const db = getDB();
     const { email } = req.body;
 
-    if (!email) {
-        return res.status(400).json({ error: 'Email is required.' });
-    }
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
 
     try {
         // Find user by email
@@ -413,10 +395,7 @@ accountRouter.post('/reset-password-request', registerLimiter, async (req, res) 
                 resolve(results[0]);
             });
         });
-
-        if (!user) {
-            return res.status(404).json({ error: 'No account with that email found.' });
-        }
+        if (!user) return res.status(404).json({ error: 'No account with that email found.' });
 
         // Create a password reset token
         const resetToken = jwt.sign({ email: email, id: user.id }, RESET_KEY, { expiresIn: '1h' });
@@ -448,9 +427,7 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
     const db = getDB();
     const { token, newPassword } = req.body;
 
-    if (!token || !newPassword) {
-        return res.status(400).json({ error: 'Token and new password are required.' });
-    }
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required.' });
 
     try {
         // Verify the reset token + get user Id from the token so that the correct account's password can be changed

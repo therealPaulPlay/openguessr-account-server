@@ -3,16 +3,23 @@ import rateLimit from 'express-rate-limit';
 // req.clientIp is being set by the request-ip middleware that's being applied in server.js
 const standardLimiter = rateLimit({
     windowMs: 1000, // 1 second
-    keyGenerator: (req) => req.clientIp, // correct IP
+    keyGenerator: (req) => req.clientIp, // Use correct ip and not the one of the proxy - This uses request-ip, a package that checks various aspects of the request to get the correct ip address
     max: 20, // Limit each IP to 20 requests per windowMs
     message: { error: 'Too many standard requests.' }
 });
 
 const registerLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 24 hours
-    keyGenerator: (req) => req.clientIp, // use correct ip and not the one of the proxy. This uses request-ip, a package that checks various aspects of the request to get the correct ip address.
+    keyGenerator: (req) => req.clientIp,
     max: 8, // limit each IP to 8 requests per windowMs
-    message: { error: 'Too many accounts created / passwords reset from this IP, please try again after 24 hours.' }
+    message: { error: 'Too many accounts created, please try again later.' }
+});
+
+const passwordResetLimiter = rateLimit({
+    windowMs: 12 * 60 * 60 * 1000, // 12 hours
+    keyGenerator: (req) => req.clientIp,
+    max: 5, // limit each IP to 5 requests per windowMs
+    message: { error: 'Too many password resets, please try again later.' }
 });
 
 const loginLimiter = rateLimit({
@@ -99,4 +106,4 @@ const creatorStatisticLimiter = rateLimit({
     message: { error: 'Too many creator statistic requests.' }
 });
 
-export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
+export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, passwordResetLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
