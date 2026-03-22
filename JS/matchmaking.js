@@ -176,7 +176,30 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
     }
 });
 
-export async function deleteMatchmakingRoom(code) {
+// Safely cancel matchmaking by removing the room from the queue and destroying it
+// Clients use this instead of leaving directly, since leaving a room that was just matched
+// (but not yet reflected client-side) would count as a loss
+// Returns { removed } so the client knows whether cancellation succeeded or the game was already matched
+matchmakingRouter.delete('/delete-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    try {
+        const code = req.params.code;
+        const userId = Number(req.body.id);
+
+        // Check if the room is still in matchmaking and owned by this user
+        const room = matchmakingRoomCodes.find(room => room.code === code);
+        if (room && room.userId !== userId) return res.status(403).json({ error: 'You are not the owner of this room.' });
+        if (!room) return res.json({ removed: false });
+
+        // Destroying the room also removes it from matchmakingRoomCodes via the roomDestroyed event
+        playSocketServer.destroyRoom(code);
+        res.json({ removed: true });
+    } catch (error) {
+        console.error('Error deleting matchmaking room:', error);
+        res.status(500).json({ error: 'Failed to delete matchmaking room.' });
+    }
+});
+
+export function deleteMatchmakingRoom(code) {
     if (!code) return console.warn("Delete matchmaking room called without code!");
     try {
         const roomIndex = matchmakingRoomCodes.findIndex(room => room.code === code);
