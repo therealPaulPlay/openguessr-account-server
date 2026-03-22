@@ -5,12 +5,15 @@ import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, pass
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import axios from 'axios';
-import { jwtResetSecret as RESET_KEY } from "./config.js";
+import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret } from "./config.js";
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
-import { emailConfig } from './config.js';
+import { emailConfig, corsOptions } from './config.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
+
+// Generate random suffix containing numbers and characters
+const generateRandomSuffix = (length = 4) => Math.random().toString(36).substring(2, 2 + length).toUpperCase();
 
 // Regular expression to allow alphanumeric characters, emojis, spaces, and standard symbols
 const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{20D0}-\u{20FF}\u{2B50}\u{2B55}]+$/u;
@@ -142,8 +145,8 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
         username = username.trim(); // remove whitespaces from username
         email = email.trim().toLowerCase(); // remove whitespaces from email and make it lowercase
 
-        // Check if the username consists only of spaces
-        if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Username contains unsupported characters.' });
+        if (username.length > 255) return res.status(400).json({ error: 'Username is too long.' });
         if (!check(username)) return res.status(400).json({ error: 'Username should not contain profanity.' });
 
         // Check if email already exists
@@ -198,7 +201,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
 
     try {
         // Find user by email
-        const userQuery = 'SELECT id, user_name, password, experience FROM users WHERE email = ?';
+        const userQuery = 'SELECT id, password FROM users WHERE email = ?';
         const user = await new Promise((resolve, reject) => {
             db.execute(userQuery, [email], (err, results) => {
                 if (err) return reject(err);
@@ -208,6 +211,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         if (!user) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Check password
+        if (!user.password) return res.status(400).json({ error: 'No password set for this account.' });
         const isValidPassword = await isPasswordValid(password, user.password);
         if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
@@ -217,9 +221,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         res.json({
             message: 'Login successful',
             token: bearerToken,
-            id: user.id,
-            username: user.user_name,
-            experience: user.experience
+            id: user.id
         });
 
     } catch (error) {
@@ -255,7 +257,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         const payload = jwt.verify(crazyGamesToken, publicKey, { algorithms: ["RS256"] });
 
         // Extract username and userId from the payload
-        username = payload.username;
+        username = payload.username?.substring(0, 200); // Truncate if longer than 200 chars
         crazyGamesUserId = payload.userId;
     } catch (e) {
         console.error("Failed to verify token", e);
@@ -285,11 +287,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
                 const existingUserNameUser = existingUserNames[0];
 
                 if (existingUserNameUser) {
-                    const generateRandomSuffix = () => {
-                        return Math.random().toString(36).substring(2, 6).toUpperCase(); // Generate 4 random letters/numbers
-                    };
-
-                    username = `${username}_CG${generateRandomSuffix()}`; // Update the username to the unique value
+                    username = `${username}_CG${generateRandomSuffix()}`;
 
                     // Check again
                     const [duplicateResults] = await db.promise().execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
@@ -339,6 +337,121 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
     }
 });
 
+// Google OAuth Register and/or Login Endpoint
+accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
+    const db = getDB();
+    const { code, redirectUri } = req.body;
+    const userIp = req.clientIp;
+
+    if (!code || !redirectUri) return res.status(400).json({ error: 'Authorization code and redirect URI are required.' });
+
+    // Validate redirect URI against allowed CORS origins
+    let isAllowedUri = false;
+    try {
+        const redirectOrigin = new URL(redirectUri).origin;
+        isAllowedUri = corsOptions.origin.some(origin =>
+            origin instanceof RegExp ? origin.test(redirectOrigin) : redirectUri.startsWith(origin)
+        );
+    } catch {}
+    if (!isAllowedUri) return res.status(400).json({ error: 'Invalid redirect URI.' });
+
+    let googleUserId;
+    let googleEmail;
+    let googleName;
+
+    // Exchange authorization code for tokens
+    try {
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code,
+                client_id: googleOAuthClientId,
+                client_secret: googleOAuthClientSecret,
+                redirect_uri: redirectUri,
+                grant_type: 'authorization_code'
+            })
+        });
+
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok || !tokenData.access_token) return res.status(400).json({ error: 'Failed to exchange authorization code.' });
+
+        // Fetch user info from Google
+        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` }
+        });
+
+        const userInfo = await userInfoResponse.json();
+        if (!userInfoResponse.ok || !userInfo.id || !userInfo.email) return res.status(400).json({ error: 'Failed to fetch Google user info.' });
+
+        googleUserId = userInfo.id;
+        googleEmail = userInfo.email;
+        googleName = userInfo.name?.substring(0, 200); // Truncate if longer than 200 chars
+    } catch (e) {
+        console.error('Google OAuth token exchange failed:', e);
+        return res.status(400).json({ error: 'Google authentication failed.' });
+    }
+
+    // Find or create account
+    let connection;
+    try {
+        connection = await db.promise().getConnection();
+        await connection.beginTransaction();
+
+        // Check if user exists by google_id
+        const [existingUsers] = await connection.execute('SELECT id FROM users WHERE google_id = ? FOR UPDATE', [googleUserId]);
+        const existingUser = existingUsers[0];
+
+        if (existingUser) {
+            await connection.commit();
+
+            const bearerToken = createNewJwtToken({ id: existingUser.id });
+            return res.json({ message: 'Login successful', token: bearerToken, id: existingUser.id });
+        }
+
+        // Check if email is already used by a non-Google account
+        const [emailUsers] = await connection.execute('SELECT id FROM users WHERE email = ? FOR UPDATE', [googleEmail]);
+        if (emailUsers[0]) {
+            await connection.commit();
+            return res.status(409).json({ error: 'Please use email login for this account.' });
+        }
+
+        let username = googleName || `User_GO${generateRandomSuffix()}`;
+
+        // Google names are not unique, so try progressively longer suffixes
+        const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+        if (existingUserNames[0]) {
+            username = `${googleName || 'User'}_GO${generateRandomSuffix()}`;
+
+            const [secondCheck] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+            if (secondCheck[0]) {
+                username = `${googleName || 'User'}_GO${generateRandomSuffix(6)}`;
+
+                const [thirdCheck] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+                if (thirdCheck[0]) throw new Error("The username already exists and all fallbacks do too.");
+            }
+        }
+
+        const now = new Date();
+        const [insertResult] = await connection.execute(
+            'INSERT INTO users (user_name, email, ip_address, created_at, google_id) VALUES (?, ?, ?, ?, ?)',
+            [username, googleEmail, userIp, now, googleUserId]
+        );
+
+        await connection.commit();
+
+        const bearerToken = createNewJwtToken({ id: insertResult.insertId });
+        return res.json({ message: 'Login successful', token: bearerToken, id: insertResult.insertId });
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('Error during Google authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during Google authentication.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
 // Delete Account Endpoint ---------------------------------------------------------------------------------------------------------------------------
 accountRouter.delete('/delete', loginLimiter, async (req, res) => {
     const db = getDB();
@@ -358,6 +471,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
         if (!user) return res.status(400).json({ error: 'User not found.' });
 
         // Check password
+        if (!user.password) return res.status(400).json({ error: 'No password set for this account.' });
         const isValidPassword = await isPasswordValid(password, user.password);
         if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 

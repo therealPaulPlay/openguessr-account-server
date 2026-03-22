@@ -34,6 +34,9 @@ export const dbConfig = {
 export const jwtSecret = process.env.JWT_SECRET;
 export const jwtResetSecret = process.env.JWT_RESET_SECRET;
 
+export const googleOAuthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+export const googleOAuthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+
 export const emailConfig = {
     host: process.env.EMAIL_HOST,
     port: 465,
