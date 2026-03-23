@@ -211,7 +211,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         if (!user) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Check password
-        if (!user.password) return res.status(400).json({ error: 'No password set for this account.' });
+        if (!user.password) return res.status(400).json({ error: 'Please use Google or reset your password.' });
         const isValidPassword = await isPasswordValid(password, user.password);
         if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
@@ -352,7 +352,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         isAllowedUri = corsOptions.origin.some(origin =>
             origin instanceof RegExp ? origin.test(redirectOrigin) : redirectUri.startsWith(origin)
         );
-    } catch {}
+    } catch { }
     if (!isAllowedUri) return res.status(400).json({ error: 'Invalid redirect URI.' });
 
     let googleUserId;
