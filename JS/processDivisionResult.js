@@ -166,13 +166,13 @@ export async function processEloRefunds(bannedPlayerId) {
         // Mark all won entries as refunded in one query
         await connection.execute("UPDATE duel_entries SET refunded = TRUE WHERE refunded = FALSE AND ((user1_id = ? AND user1_win = TRUE) OR (user2_id = ? AND user2_win = TRUE))", [bannedPlayerId, bannedPlayerId]);
 
-        const refundQueries = [];
-        usersWithEloRefunds.forEach((value, userId) => {
-            refundQueries.push(`UPDATE users SET elo = elo + ${value} WHERE id = ${userId}`);
-        });
-
-        if (refundQueries.length) {
-            await connection.query(refundQueries.join(";") + ";"); // Combine queries
+        if (usersWithEloRefunds.size > 0) {
+            const userIds = [...usersWithEloRefunds.keys()];
+            const params = [];
+            const caseClauses = userIds.map(id => { params.push(id, usersWithEloRefunds.get(id)); return "WHEN id = ? THEN elo + ?"; }).join(" ");
+            const inPlaceholders = userIds.map(() => "?").join(",");
+            params.push(...userIds);
+            await connection.query(`UPDATE users SET elo = CASE ${caseClauses} ELSE elo END WHERE id IN (${inPlaceholders})`, params);
         }
 
         if (totalRefundedElo > 0) {
