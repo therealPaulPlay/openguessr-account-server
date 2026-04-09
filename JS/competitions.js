@@ -19,17 +19,17 @@ function clearCompetitionListCaches() {
 // Map Validation function
 const isValidMap = (map) => {
     try {
-        if (!map.locations || !Array.isArray(map.locations)) return false;
-        if (map.locations.length < 1 || map.locations.length > 20) return false;
+        if (!map.locations || !Array.isArray(map.locations)) return 'Locations must be a non-empty array.';
+        if (map.locations.length < 1 || map.locations.length > 20) return `Location count must be between 1 and 20 (got ${map.locations.length}).`;
 
         for (let location of map.locations) {
-            if (!Array.isArray(location) || location.length !== 2) return false;
-            if (typeof location[0] !== 'number' || typeof location[1] !== 'number') return false;
+            if (!Array.isArray(location) || location.length !== 2) return 'Each location must be an array of two values.';
+            if (typeof location[0] !== 'number' || typeof location[1] !== 'number') return 'Location coordinates must be numbers.';
         }
-        return true;
+        return null;
     } catch (error) {
         console.error("Error during map validation:", error);
-        return false;
+        return 'An error occurred during map validation.';
     }
 };
 
@@ -271,7 +271,7 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
     body('duration').isInt({ min: 600, max: 604800 }).withMessage('Duration must be between 10 minutes and 7 days.'),
     body('roundLength').isInt({ min: 3, max: 300 }).withMessage('Round length must be between 3 seconds and 5 minutes.'),
     body('description').isLength({ min: 15, max: 70 }).withMessage('Description must be between 15 and 70 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Competition description is empty or contains inappropriate words.');
+        if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
         return true;
     }),
     body('locations').isLength({ max: 10000 }).withMessage('Location data cannot exceed 10,000 characters.'),
@@ -297,8 +297,8 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
         const locations = parsedMapData.locations.map(coord => [parseFloat(coord[0]), parseFloat(coord[1])]);
         const locationAmount = locations.length;
 
-        if (!isValidMap({ locations })) return res.status(400).json({ status: 400, error: 'Invalid map data. Must contain valid coordinates.' });
-        if (locationAmount < 1 || locationAmount > 20) return res.status(400).json({ status: 400, error: `Location count must be between 1 and 20. Currently it is ${locationAmount}.` });
+        const mapError = isValidMap({ locations });
+        if (mapError) return res.status(400).json({ status: 400, error: mapError });
 
         const [result] = await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',

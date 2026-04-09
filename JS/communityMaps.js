@@ -118,7 +118,8 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
 communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const db = getDB();
 
-    const query = `%${req.params.query}%`;
+    const rawQuery = req.params.query.slice(0, 255);
+    const query = `%${rawQuery}%`;
     const startIndex = parseInt(req.params.index, 10);
     if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
@@ -204,34 +205,29 @@ communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"),
 const isValidMap = (map) => {
     try {
         if (!map.locations || !Array.isArray(map.locations)) {
-            console.log("Submitted map was empty or not an array.");
-            return false;
+            return 'Map locations must be a non-empty array.';
         }
         if (map.locations.length < 50) {
-            console.log("Submitted locations were too few.");
-            return false;
+            return `Map must contain at least 50 locations (got ${map.locations.length}).`;
         }
         const seenLocations = new Set();
         for (let location of map.locations) {
             if (!Array.isArray(location) || location.length !== 2) {
-                console.log("Map did not include coordinates at some spots.");
-                return false;
+                return 'Each location must be an array of two values.';
             }
             if (typeof location[0] !== 'number' || typeof location[1] !== 'number') {
-                console.log("Map coordinates weren't numbers.");
-                return false;
+                return 'Location coordinates must be numbers.';
             }
             const locationKey = JSON.stringify(location);
             if (seenLocations.has(locationKey)) {
-                console.log("Map contains duplicate coordinates.");
-                return false;
+                return `Map contains duplicate location: [${location[0]}, ${location[1]}]`;
             }
             seenLocations.add(locationKey);
         }
-        return true;
+        return null;
     } catch (error) {
         console.error("Error occurred during map validation: " + error);
-        return false;
+        return 'An error occurred during map validation.';
     }
 };
 
@@ -243,7 +239,7 @@ communityMapRouter.post('/', [
         return true;
     }),
     body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Map description is empty or contains inappropriate words.');
+        if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
         return true;
     }),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
@@ -285,7 +281,8 @@ communityMapRouter.post('/', [
                 parseFloat(coord[1])
             ]);
 
-            if (!isValidMap({ locations })) return res.status(400).json({ error: 'Map must contain at least 50 locations with valid coordinates and no duplicates.' });
+            const mapError = isValidMap({ locations });
+            if (mapError) return res.status(400).json({ error: mapError });
         } catch (error) {
             console.error('Error parsing JSON:', error);
             return res.status(400).json({ error: 'Invalid JSON format for map data. Failed to parse.' });
@@ -362,7 +359,7 @@ communityMapRouter.put('/', [
     if (!player_id || !name || !mapData) return res.status(400).json({ error: 'Name, player ID and data is required.' });
 
     let parsedMapData;
-    let locations; // here locations are converted to numbers in case they are strings
+    let locations; // Here, locations are converted to numbers in case they are strings
 
     try {
         parsedMapData = JSON.parse(mapData);
@@ -371,7 +368,8 @@ communityMapRouter.put('/', [
             parseFloat(coord[1])
         ]);
 
-        if (!isValidMap({ locations })) return res.status(400).json({ error: 'Map must contain at least 50 locations with valid coordinates and no duplicates.' });
+        const mapError = isValidMap({ locations });
+        if (mapError) return res.status(400).json({ error: mapError });
 
     } catch (error) {
         console.error('Error parsing JSON:', error);
