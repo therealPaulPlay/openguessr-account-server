@@ -430,11 +430,23 @@ function endRound(roomId) {
 }
 
 async function startRound(roomId) {
+    let location;
+    let bounds;
     try {
         const map = playSocketServer.getRoomStorage(roomId).map;
         const data = await getLocations(map, 1, roomId); // Use room ID for key that ensures no duplicates
-        const location = data?.locations?.[0];
-        const bounds = data?.bounds;
+        location = data?.locations?.[0];
+        bounds = data?.bounds;
+    } catch (error) {
+        console.error("Error loading location for round:", error);
+    }
+
+    try {
+        // Abort start if no locations are available (e.g. map doesn't exist but user client is outdated - edge case)
+        if (!location) {
+            addChat(roomId, "Server", "server", "Couldn't load a location for this map.");
+            return;
+        }
 
         playSocketServer.updateRoomStorage(roomId, "mapBounds", "set", bounds); // Set this before location!
         playSocketServer.updateRoomStorage(roomId, "location", "set", location);
@@ -534,7 +546,6 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.countdownActive = false;
     storage.timerStart = false;
     storage.duelProcessed = false;
-    storage.location = null;
     storage.mapBounds = null;
     storage.locked = false;
 
