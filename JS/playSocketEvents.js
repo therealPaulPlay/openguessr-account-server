@@ -133,6 +133,7 @@ function attachPlaySocketEvents(server) {
 
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
         if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game.";
+        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late.";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked.";
     });
 

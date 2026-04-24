@@ -269,8 +269,7 @@ async function startTournament(tournamentId, map) {
             try {
                 clearInterval(chatInfoInterval);
                 await updateTournament(tournamentId, 'ongoing');
-                playSocketServer?.updateRoomStorage(roomId, "locked", "set", true);
-                startRoom(roomId); // Start
+                startRoom(roomId);
             } catch (error) {
                 console.error(`Error updating tournament ${tournamentId} to ongoing:`, error);
             }
