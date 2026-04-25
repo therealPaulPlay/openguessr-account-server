@@ -103,6 +103,17 @@ friendRouter.post('/accept', standardLimiter, authenticateTokenWithId, async (re
         `;
         await db.promise().query(deleteReverseRequestQuery, [recipientId, senderId]);
 
+        // Notify the original sender that their request was accepted
+        const [recipientRows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [recipientId]);
+        const recipientName = recipientRows[0]?.user_name;
+        if (recipientName) {
+            sendEventToClient(senderId, {
+                type: 'friend-request-accepted',
+                from: recipientId,
+                name: recipientName
+            });
+        }
+
         res.status(200).json({ message: 'Friend request accepted successfully.' });
     } catch (error) {
         console.error('Error accepting friend request:', error);
@@ -266,6 +277,17 @@ friendRouter.post('/decline', standardLimiter, authenticateTokenWithId, async (r
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Friend request not found.' });
+        }
+
+        // Notify the original sender that their request was declined
+        const [recipientRows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [recipientId]);
+        const recipientName = recipientRows[0]?.user_name;
+        if (recipientName) {
+            sendEventToClient(senderId, {
+                type: 'friend-request-declined',
+                from: recipientId,
+                name: recipientName
+            });
         }
 
         res.status(200).json({ message: 'Friend request declined successfully.' });
