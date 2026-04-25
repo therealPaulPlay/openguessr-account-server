@@ -532,7 +532,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (requestorClientId !== "server") storage.tournamentId = null;
     storage.players = []; // Ensure initial players array is empty
     storage.currentRound = 0;
-    storage.location = [35.7072457, 139.863412]; // Default panorama to prevent blackscreen
+    storage.location = null;
     storage.guessLocationsArray = []; // Guesses from players (with location data)
     storage.confirmedArray = []; // Client IDs that have confirmed their guess
     storage.duelUuid = crypto.randomUUID();
