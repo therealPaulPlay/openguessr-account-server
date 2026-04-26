@@ -75,4 +75,28 @@ async function applyValidationChecks(db, userId, column, value) {
     return value;
 }
 
-export { updateProfileData };
+// Save a single round result for a duel
+//   round: { round, location: { lat, lon }, guesses: [{ userId, username, lat, lon, totalPoints }] }
+async function saveDuelRoundResults(duelEntryUuid, round) {
+    try {
+        if (!duelEntryUuid) throw new Error("Error in saveDuelRoundResults – duelEntryUuid is required");
+        if (typeof round?.round !== "number") throw new Error("Error in saveDuelRoundResults – round.round must be a number");
+
+        const db = getDB();
+        const lat = round.location?.lat ?? null;
+        const lon = round.location?.lon ?? null;
+        const guesses = Array.isArray(round.guesses) ? round.guesses : [];
+
+        await db.promise().execute(
+            `INSERT INTO duel_entries_rounds (duel_entry_uuid, round, lat, lon, guesses) VALUES (?, ?, ?, ?, ?)`,
+            [duelEntryUuid, round.round, lat, lon, JSON.stringify(guesses)]
+        );
+        return { success: true };
+
+    } catch (error) {
+        console.error("Error occurred in saveDuelRoundResults:", error.message);
+        return { success: false, error };
+    }
+}
+
+export { updateProfileData, saveDuelRoundResults };

@@ -4,6 +4,7 @@ import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
 import saveDivisionDuelResult from './processDivisionResult.js';
+import { saveDuelRoundResults } from './dbWriteHelpers.js';
 import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
@@ -359,6 +360,20 @@ export async function startRoom(roomId) {
 
 function goToNextRound(roomId) {
     try {
+        // Persist the round for division rooms
+        if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && playSocketServer.getRoomStorage(roomId)?.currentRound > 0) {
+            const guesses = (playSocketServer.getRoomStorage(roomId)?.guessLocationsArray || []).map((g) => {
+                const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.clientId === g.id);
+                return { userId: player?.userId ?? null, username: g.username, lat: g.lat, lon: g.lon, totalPoints: player?.score || 0 };
+            });
+            const round = {
+                round: playSocketServer.getRoomStorage(roomId)?.currentRound,
+                location: { lat: playSocketServer.getRoomStorage(roomId)?.location?.[0], lon: playSocketServer.getRoomStorage(roomId)?.location?.[1] },
+                guesses
+            };
+            saveDuelRoundResults(playSocketServer.getRoomStorage(roomId)?.duelUuid, round);
+        }
+
         playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
         playSocketServer.updateRoomStorage(roomId, "overlay", "set", true);
 

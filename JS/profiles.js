@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { updateProfileData } from "./profileDataHelper.js";
+import { updateProfileData } from "./dbWriteHelpers.js";
 
 const profileRouter = express.Router();
 

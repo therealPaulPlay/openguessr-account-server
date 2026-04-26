@@ -1,5 +1,5 @@
 import { getDB } from "./dbConnection.js";
-import { updateProfileData } from "./profileDataHelper.js";
+import { updateProfileData } from "./dbWriteHelpers.js";
 import { sendEventToClient } from "./serverSentEvents.js";
 
 // Calculation function

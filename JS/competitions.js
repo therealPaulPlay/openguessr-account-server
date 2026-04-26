@@ -4,7 +4,7 @@ import { standardLimiter, rankingLimiter, createCompetitionLimiter } from "./rat
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { body, validationResult } from 'express-validator';
-import { updateProfileData } from './profileDataHelper.js';
+import { updateProfileData } from './dbWriteHelpers.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
 import { cacheResponse, clearResponseCache } from "./responseCache.js";

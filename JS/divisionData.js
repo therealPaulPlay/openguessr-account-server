@@ -70,6 +70,35 @@ divisionDataRouter.get('/duel-history', standardLimiter, cacheResponse("duel-his
     }
 });
 
+// Get rounds for a single duel ----------------------------------------------------------------------------------------------------------------------------------------------------
+divisionDataRouter.get('/duel-rounds/:uuid', standardLimiter, cacheResponse("duel-rounds"), async (req, res) => {
+    const uuid = req.params.uuid;
+    if (!uuid) return res.status(400).json({ error: "Missing duel uuid." });
+
+    const pool = getDB();
+
+    try {
+        const [rows] = await pool.promise().query(
+            `SELECT round, lat, lon, guesses
+             FROM duel_entries_rounds
+             WHERE duel_entry_uuid = ?
+             ORDER BY round ASC`,
+            [uuid]
+        );
+
+        const rounds = rows.map((row) => ({
+            round: row.round,
+            location: { lat: row.lat, lon: row.lon },
+            guesses: typeof row.guesses === "string" ? JSON.parse(row.guesses) : (row.guesses || [])
+        }));
+
+        res.status(200).json({ rounds });
+    } catch (error) {
+        console.error('Error fetching duel rounds:', error);
+        res.status(500).json({ error: 'An error occurred while fetching duel rounds.' });
+    }
+});
+
 // Delete old duel entries at the start of each month -----------------------------------------------------------------------
 cron.schedule('0 2 1 * *', async () => {
     try {
@@ -78,6 +107,13 @@ cron.schedule('0 2 1 * *', async () => {
         // Delete duel entries older than 2 weeks
         await pool.promise().query(
             'DELETE FROM duel_entries WHERE created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)'
+        );
+
+        // Delete round records whose parent duel entry no longer exists
+        await pool.promise().query(
+            `DELETE r FROM duel_entries_rounds r
+             LEFT JOIN duel_entries d ON d.uuid = r.duel_entry_uuid
+             WHERE d.uuid IS NULL AND r.created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)`
         );
     } catch (error) {
         console.error('Error during monthly duel entry cleanup:', error);

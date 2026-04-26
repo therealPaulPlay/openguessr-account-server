@@ -3,7 +3,7 @@ const shopRouter = express.Router();
 import { standardLimiter } from "./rateLimiters.js";
 import { getDB } from "./dbConnection.js";
 import cron from 'node-cron';
-import { updateProfileData } from './profileDataHelper.js';
+import { updateProfileData } from './dbWriteHelpers.js';
 import { authenticateTokenWithId } from './authUtils.js';
 
 // Pins are referenced by their id with the first digit being the rarity – e.g. 100 is the first common pin, 202 is the third rare pin
