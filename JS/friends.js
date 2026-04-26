@@ -41,23 +41,16 @@ friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async 
         `;
         await db.promise().query(sendRequestQuery, [senderId, recipientId]);
 
-        // Set the new_request field to true for the recipient
-        const updateRecipientQuery = `
-            UPDATE users SET new_request = 1 WHERE id = ?
-        `;
-        await db.promise().query(updateRecipientQuery, [recipientId]);
+        // Notify the recipient via SSE - If they're offline, set new_request so the
+        // bubble indicator shows next time when they are online
+        const delivered = sendEventToClient(recipientId, {
+            type: 'friend-request-received',
+            from: senderId,
+            name: senderName
+        });
 
-        // Send notification to recipient if they are online - using SSE
-        try {
-            const eventData = {
-                type: 'friend-request-received',
-                from: senderId,
-                name: senderName
-            };
-
-            sendEventToClient(recipientId, eventData);
-        } catch (error) {
-            console.error('Error sending invite SSE notification:', error);
+        if (!delivered) {
+            await db.promise().query(`UPDATE users SET new_request = 1 WHERE id = ?`, [recipientId]);
         }
 
         res.status(201).json({ message: 'Friend request sent successfully.' });
