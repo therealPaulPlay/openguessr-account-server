@@ -12,7 +12,6 @@ import leaderboardRouter from './JS/leaderboard.js';
 import accountRouter from "./JS/accounts.js";
 import profileRoutes from "./JS/profiles.js";
 import creatorRouter from "./JS/creatorStatistic.js";
-import autoguessrRouter from "./JS/autoguessrSaves.js";
 import communityMapRouter from "./JS/communityMaps.js";
 import competitionsRouter from "./JS/competitions.js";
 import friendRouter from "./JS/friends.js";
@@ -20,6 +19,7 @@ import divisionDataRouter from './JS/divisionData.js';
 import shopRouter from './JS/shop.js';
 import locationRouter from './JS/locations.js';
 import tournamentRouter from './JS/tournaments.js';
+import headlessChatRouter, { headlessChatServer } from './JS/headlessChatIntegration.js';
 // import mapLimitRouter from './JS/mapLimit.js';
 
 import { port } from "./JS/config.js";
@@ -57,7 +57,6 @@ app.use("/stripe", stripeRouter);
 app.use("/accounts", accountRouter);
 app.use("/leaderboard", leaderboardRouter);
 app.use("/creators", creatorRouter);
-app.use("/autoguessr", autoguessrRouter);
 app.use("/maps", communityMapRouter);
 app.use("/competitions", competitionsRouter);
 app.use("/friends", friendRouter);
@@ -65,6 +64,7 @@ app.use("/divisions", divisionDataRouter);
 app.use("/shop", shopRouter);
 app.use("/locations", locationRouter);
 app.use("/tournaments", tournamentRouter);
+app.use("/headless-chat", headlessChatRouter);
 // app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the http server --------------------------------------------------------------------------------------
@@ -75,6 +75,7 @@ server.listen(port, () => {
 // Handle shutdown gracefully ---------------------------------------------------------------------------------
 function shutdown() {
     playSocketServer.stop();
+    headlessChatServer.stop();
     process.exit(0);
 }
 

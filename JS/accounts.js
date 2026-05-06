@@ -9,6 +9,7 @@ import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecr
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
 import { emailConfig, corsOptions } from './config.js';
+import { headlessChatServer } from './headlessChatIntegration.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
 
@@ -483,6 +484,11 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
                 resolve(results);
             });
         });
+
+        // Cascade chat-side cleanup, must happen after the user row is gone (per lib spec)
+        // Errors here are logged but don't fail the response since the account itself is already deleted
+        try { await headlessChatServer.deleteParticipant(String(id)); }
+        catch (error) { console.error('Error during chat cleanup for deleted user:', error); }
 
         res.json({ message: 'Account deleted successfully.' });
     } catch (error) {

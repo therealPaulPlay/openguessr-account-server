@@ -1,5 +1,18 @@
+import { headlessChatServer } from './headlessChatIntegration.js';
+
 // SSE clients store
 const clients = {};
+
+// Drop a single SSE connection, on the last drop for a user also clean up the user's headless-chat subscriptions
+function dropConnection(userId, res) {
+    const set = clients[userId];
+    if (!set) return;
+    set.delete(res);
+    if (set.size === 0) {
+        delete clients[userId];
+        headlessChatServer.cleanupParticipant(userId); // Clean up all headless-chat subscriptions & update last activity
+    }
+}
 
 // Get clients
 export function getSseClients() {
@@ -23,24 +36,30 @@ export function initSSE(app) {
         res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
 
         // Store the connection with the user ID
-        clients[userId] = res;
+        let set = clients[userId];
+        if (!set) {
+            set = new Set();
+            clients[userId] = set;
+        }
+        set.add(res);
 
         // Handle client disconnect
-        req.on('close', () => {
-            if (clients[userId] === res) delete clients[userId];
-        });
+        req.on('close', () => dropConnection(userId, res));
     });
 
     console.log("SSE server initialized at /events endpoint.");
 
     // Send a heartbeat every 30 seconds to keep connections alive and detect broken ones
     setInterval(() => {
-        Object.keys(clients).forEach(userId => {
-            try {
-                clients[userId].write(": heartbeat\n\n");
-            } catch (error) {
-                delete clients[userId]; // If writing fails, the connection is broken, so remove it
-            }
+        Object.entries(clients).forEach(([userId, set]) => {
+            set.forEach((res) => {
+                try {
+                    res.write(": heartbeat\n\n");
+                } catch (error) {
+                    // If writing fails, the connection is broken and the entry is removed
+                    dropConnection(userId, res);
+                }
+            })
         });
     }, 30000);
 }
@@ -48,23 +67,33 @@ export function initSSE(app) {
 
 // Helper function to send events to a specific client
 export function sendEventToClient(userId, eventData) {
-    const client = clients[userId];
-    if (client) {
-        try {
-            client.write(`data: ${JSON.stringify(eventData)}\n\n`);
-            return true;
-        } catch (error) {
-            delete clients[userId];
-        }
+    const clientSet = clients[userId];
+
+    // Return true if at least one send succeeds
+    let didOneSucceed = false;
+
+    if (clientSet) {
+        clientSet.forEach((res) => {
+            try {
+                res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+                didOneSucceed = true;
+            } catch (error) {
+                // Ignore, heartbeat reaps genuinely dead connections
+            }
+        });
     }
-    return false;
+    return didOneSucceed;
 }
 
 // Helper function to broadcast events to all connected clients
 export function broadcastEvent(eventData) {
-    Object.keys(clients).forEach(userId => {
-        try {
-            clients[userId].write(`data: ${JSON.stringify(eventData)}\n\n`);
-        } catch (error) { }
+    Object.values(clients).forEach(set => {
+        set.forEach((res) => {
+            try {
+                res.write(`data: ${JSON.stringify(eventData)}\n\n`);
+            } catch (error) {
+                // Ignore errors
+            }
+        });
     });
 }

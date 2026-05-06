@@ -1,4 +1,5 @@
 # OpenGuessr account server
+
 This is the new main OpenGuessr server. Uses Express.js.
 
 ## What is this server used for?
@@ -8,3 +9,7 @@ This is the new main OpenGuessr server. Uses Express.js.
 - Profiles
 - Payments
 - ...
+
+## What database does this server use?
+
+The works with MySQL 8.0.14+.
