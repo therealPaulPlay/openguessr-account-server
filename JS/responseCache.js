@@ -1,11 +1,15 @@
 const cacheStores = new Map();
+const SWEEP_INTERVAL_MS = 15 * 1000;
 
-function evictExpired(store) {
+// Periodic sweep across all stores, removes entries whose TTL has passed
+setInterval(() => {
     const now = Date.now();
-    for (const [key, entry] of store) {
-        if (now >= entry.expiresAt) store.delete(key);
+    for (const store of cacheStores.values()) {
+        for (const [key, entry] of store) {
+            if (now >= entry.expiresAt) store.delete(key);
+        }
     }
-}
+}, SWEEP_INTERVAL_MS).unref();
 
 // Express middleware that caches successful JSON responses in memory for a given TTL
 export function cacheResponse(name, ttlMs = 15000) {
@@ -13,11 +17,13 @@ export function cacheResponse(name, ttlMs = 15000) {
 
     return (req, res, next) => {
         const store = cacheStores.get(name);
-        evictExpired(store);
-
         const cacheKey = req.method + req.originalUrl;
         const entry = store.get(cacheKey);
-        if (entry) return res.status(entry.statusCode).json(entry.body);
+
+        if (entry) {
+            if (Date.now() < entry.expiresAt) return res.status(entry.statusCode).json(entry.body); // Return from cache
+            else store.delete(cacheKey); // Expired, clear cache for this key
+        }
 
         const originalJson = res.json.bind(res);
         res.json = (body) => {

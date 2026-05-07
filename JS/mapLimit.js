@@ -5,7 +5,6 @@ import jwt from 'jsonwebtoken';
 import { getDB } from "./dbConnection.js";
 import { jwtSecret as SECRET_KEY } from "./config.js";
 import cron from 'node-cron';
-import { getApiKey } from './apiKeyManager.js';
 import validateCaptcha from './captchaMiddleware.js';
 
 // Function to check the rate limit
@@ -132,7 +131,7 @@ mapLimitRouter.get('/maplimit', validateCaptcha, async (req, res) => {
         let ApiKey = "Key not provided";
 
         try {
-            ApiKey = await getApiKey();
+            ApiKey = "PLACEHOLDER"; // Replace with actual key / key system
         } catch (error) {
             console.error("Error getting API KEY in maplimit endpoint:", error);
         }

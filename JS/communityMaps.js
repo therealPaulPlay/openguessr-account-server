@@ -1,5 +1,5 @@
 import express from 'express';
-import { standardLimiter, failedSubmissionLimiter, successfulSubmissionLimiter } from "./rateLimiters.js";
+import { standardLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
@@ -233,7 +233,7 @@ const isValidMap = (map) => {
 
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
-    failedSubmissionLimiter, authenticateTokenWithId,
+    failedMapSubmissionLimiter, authenticateTokenWithId,
     body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
         if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
         return true;
@@ -297,7 +297,7 @@ communityMapRouter.post('/', [
 
         // Check rate limit BEFORE uploading or saving to database – this only counts for successful submissions that made it so far
         await new Promise((resolve, reject) => {
-            successfulSubmissionLimiter(req, res, (err) => {
+            successfulMapSubmissionLimiter(req, res, (err) => {
                 if (err) reject(err);
                 else resolve();
             });
@@ -347,7 +347,7 @@ communityMapRouter.post('/', [
 
 // Update map
 communityMapRouter.put('/', [
-    failedSubmissionLimiter, authenticateTokenWithId,
+    failedMapSubmissionLimiter, authenticateTokenWithId,
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
     const { id: player_id, name, mapData } = req.body;

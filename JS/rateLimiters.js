@@ -4,7 +4,7 @@ import rateLimit from 'express-rate-limit';
 const standardLimiter = rateLimit({
     windowMs: 1000, // 1 second
     keyGenerator: (req) => req.clientIp, // Use correct ip and not the one of the proxy - This uses request-ip, a package that checks various aspects of the request to get the correct ip address
-    max: 20, // Limit each IP to 20 requests per windowMs
+    max: 10, // Limit each IP to 10 requests per windowMs
     message: { error: 'Too many standard requests.' }
 });
 
@@ -56,7 +56,7 @@ const supporterMapLoadLimiter = rateLimit({
     skipFailedRequests: true // Skip failed requests so we can handle them manually
 });
 
-const failedSubmissionLimiter = rateLimit({
+const failedMapSubmissionLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 1 day
     max: 100,
     keyGenerator: (req) => req.clientIp,
@@ -65,7 +65,7 @@ const failedSubmissionLimiter = rateLimit({
     },
 });
 
-const successfulSubmissionLimiter = rateLimit({
+const successfulMapSubmissionLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 1 day
     max: 3,
     keyGenerator: (req) => req.clientIp,
@@ -106,4 +106,4 @@ const creatorStatisticLimiter = rateLimit({
     message: { error: 'Too many creator statistic requests.' }
 });
 
-export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, passwordResetLimiter, supporterMapLoadLimiter, failedSubmissionLimiter, successfulSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
+export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, passwordResetLimiter, supporterMapLoadLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };

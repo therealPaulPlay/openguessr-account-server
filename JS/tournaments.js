@@ -56,62 +56,54 @@ tournamentRouter.get("/all-tournaments", standardLimiter, cacheResponse("all-tou
             }
         }
 
-        // Get tournaments
-        const [tournaments] = await db.promise().execute(`
-            SELECT t.id, t.name, t.start_date as date, t.prize, t.status, t.winner_id, t.winner_name, t.map,
-                   COUNT(ts.user_id) as saves
-            FROM tournaments t
-            LEFT JOIN tournament_saves ts ON t.id = ts.tournament_id
-            GROUP BY t.id ORDER BY t.start_date DESC
-        `);
+        // Tournaments + saves count + (optional) per-user saved flag
+        const [tournaments] = await db.promise().execute(
+            `SELECT t.id, t.name, t.start_date as date, t.prize, t.status, t.winner_id, t.winner_name, t.map,
+                    COUNT(ts.user_id) as saves
+                    ${userId ? `, MAX(ts.user_id = ?) AS saved` : ``}
+             FROM tournaments t
+             LEFT JOIN tournament_saves ts ON t.id = ts.tournament_id
+             GROUP BY t.id ORDER BY t.start_date DESC`,
+            userId ? [userId] : []
+        );
 
-        const result = [];
+        // Match results for all tournaments
+        const [allMatchResults] = await db.promise().execute(
+            `SELECT tournament_id, match_index, user_id, score, ascended, user_name
+             FROM tournament_match_results
+             ORDER BY tournament_id, match_index, ascended DESC, score DESC`
+        );
 
-        for (const tournament of tournaments) {
-            const tournamentData = {
+        // Group match results by tournament_id, then by match_index
+        const matchesByTournament = {};
+        allMatchResults.forEach(row => {
+            if (!matchesByTournament[row.tournament_id]) matchesByTournament[row.tournament_id] = {};
+            const matchesMap = matchesByTournament[row.tournament_id];
+
+            if (!matchesMap[row.match_index]) matchesMap[row.match_index] = { ascendedPlayers: [], eliminatedPlayers: [] };
+            const player = { username: row.user_name, id: row.user_id, score: row.score };
+
+            if (row.ascended) matchesMap[row.match_index].ascendedPlayers.push(player);
+            else matchesMap[row.match_index].eliminatedPlayers.push(player);
+        });
+
+        const result = tournaments.map(tournament => {
+            const matchesMap = matchesByTournament[tournament.id] || {};
+            return {
                 id: tournament.id,
                 name: tournament.name,
                 date: tournament.date,
                 saves: tournament.saves,
                 prize: tournament.prize,
                 status: tournament.status,
-                matches: [],
+                matches: Object.keys(matchesMap)
+                    .sort((a, b) => parseInt(a) - parseInt(b))
+                    .map(key => matchesMap[key]),
                 winner: tournament.winner_id ? { name: tournament.winner_name, id: tournament.winner_id } : {},
-                map: tournament.map
+                map: tournament.map,
+                ...(userId ? { saved: Boolean(tournament.saved) } : {})
             };
-
-            if (userId) {
-                const [savedCheck] = await db.promise().execute(
-                    'SELECT 1 FROM tournament_saves WHERE tournament_id = ? AND user_id = ?',
-                    [tournament.id, userId]
-                );
-                tournamentData.saved = savedCheck.length > 0; // Add "saved" field to tournament data for signed-in users
-            }
-
-            const [matchResults] = await db.promise().execute(
-                `SELECT match_index, user_id, score, ascended, user_name 
-                 FROM tournament_match_results WHERE tournament_id = ? 
-                 ORDER BY match_index, ascended DESC, score DESC`,
-                [tournament.id]
-            );
-
-            const matchesMap = {};
-            matchResults.forEach(result => {
-                if (!matchesMap[result.match_index])
-                    matchesMap[result.match_index] = { ascendedPlayers: [], eliminatedPlayers: [] };
-
-                const player = { username: result.user_name, id: result.user_id, score: result.score };
-
-                if (result.ascended) matchesMap[result.match_index].ascendedPlayers.push(player);
-                else matchesMap[result.match_index].eliminatedPlayers.push(player);
-            });
-
-            tournamentData.matches = Object.keys(matchesMap)
-                .sort((a, b) => parseInt(a) - parseInt(b))
-                .map(key => matchesMap[key]);
-
-            result.push(tournamentData);
-        }
+        });
 
         res.json(result);
     } catch (error) {
