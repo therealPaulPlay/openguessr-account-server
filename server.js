@@ -20,7 +20,6 @@ import shopRouter from './JS/shop.js';
 import locationRouter from './JS/locations.js';
 import tournamentRouter from './JS/tournaments.js';
 import headlessChatRouter, { headlessChatServer } from './JS/headlessChatIntegration.js';
-// import mapLimitRouter from './JS/mapLimit.js';
 
 import { port } from "./JS/config.js";
 import { corsOptions } from "./JS/config.js";
@@ -65,7 +64,6 @@ app.use("/shop", shopRouter);
 app.use("/locations", locationRouter);
 app.use("/tournaments", tournamentRouter);
 app.use("/headless-chat", headlessChatRouter);
-// app.use("/accounts", mapLimitRouter); !CHANGE this to enable maplimit routes
 
 // Start the http server --------------------------------------------------------------------------------------
 server.listen(port, () => {
