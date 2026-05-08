@@ -4,12 +4,13 @@ This is the new main OpenGuessr server. Uses Express.js.
 
 ## What is this server used for?
 - Accounts
-- Experience & Exp. leaderboard
-- Matchmaking
+- Leaderboards
+- Multiplayer & Matchmaking
 - Profiles
 - Payments
+- Messages
 - ...
 
 ## What database does this server use?
 
-The works with MySQL 8.0.14+.
+The server works with MySQL 8.0.14+.
