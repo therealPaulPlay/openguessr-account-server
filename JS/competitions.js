@@ -59,7 +59,7 @@ const createDailyCompetition = async () => {
         const competitionData = {
             name: 'Daily Competition',
             author: 'PaulPlay',
-            author_id: 0,
+            author_id: null,
             restriction: 'standard',
             duration: getSecondsUntilNextUTC(),
             round_length: 120,
@@ -427,7 +427,7 @@ competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheRespons
       SELECT c.*, IF(e.user_id IS NOT NULL, TRUE, FALSE) AS entered
       FROM competitions c
       LEFT JOIN competition_entries e ON c.id = e.competition_id AND e.user_id = ?
-      WHERE c.name = 'Daily Competition' AND c.author_id = 0
+      WHERE c.name = 'Daily Competition' AND c.author_id IS NULL
       ORDER BY c.expired ASC, c.id DESC
       LIMIT 2
     `;
