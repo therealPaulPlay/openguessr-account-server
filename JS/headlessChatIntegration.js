@@ -664,8 +664,8 @@ headlessChatServer.onCreateInvite(async (invite, inviteLimitPerParticipant) => {
     // PRIMARY KEY on (conversation_id, from_participant_id, to_participant_id) makes INSERT IGNORE dedupe on the triple
     // Pre-check above already eliminated the recipient-is-participant case, so affectedRows === 0 here is purely a dedup no-op
     const [result] = await getDB().promise().execute(
-        `INSERT IGNORE INTO hc_invites (conversation_id, from_participant_id, to_participant_id, created_at) VALUES (?, ?, ?, ?)`,
-        [conversationId, invite.fromParticipantId, invite.toParticipantId, invite.createdAt],
+        `INSERT IGNORE INTO hc_invites (conversation_id, from_participant_id, to_participant_id, created_at, seen) VALUES (?, ?, ?, ?, ?)`,
+        [conversationId, invite.fromParticipantId, invite.toParticipantId, invite.createdAt, invite.seen ? 1 : 0],
     );
     return { inserted: result.affectedRows > 0 };
 });
@@ -683,6 +683,11 @@ headlessChatServer.onReadInvite(async (conversationId, fromParticipantId, toPart
 });
 
 headlessChatServer.onReadInvitesInvolvingParticipant(async (participantId) => {
+    // Mark unseen invites as seen where this participant is the recipient, the subsequent SELECT picks up the post-update state
+    await getDB().promise().execute(
+        `UPDATE hc_invites SET seen = 1 WHERE to_participant_id = ? AND seen = 0`,
+        [participantId],
+    );
     // UNION ALL hits each index independently, OR across columns can defeat the optimizer at scale
     const [inviteRows] = await getDB().promise().execute(
         `SELECT * FROM (
@@ -772,6 +777,27 @@ headlessChatServer.onReadConversationParticipantActivity(async (conversationId, 
 headlessChatServer.onReadParticipantActivities(async (participantId) => {
     const [rows] = await getDB().promise().execute(`SELECT * FROM hc_participant_activities WHERE participant_id = ?`, [participantId]);
     return rows.map(rowToActivity);
+});
+
+headlessChatServer.onReadHasNew(async (participantId) => {
+    const [rows] = await getDB().promise().execute(
+        `SELECT
+            EXISTS(
+                SELECT 1 FROM hc_conversation_participants cp
+                JOIN hc_messages m ON m.conversation_id = cp.conversation_id
+                LEFT JOIN hc_participant_activities pa ON pa.conversation_id = cp.conversation_id AND pa.participant_id = cp.participant_id
+                WHERE cp.participant_id = ?
+                  AND m.created_at > IFNULL(pa.last_read_message_created_at, 0)
+            ) AS has_new_messages,
+            EXISTS(
+                SELECT 1 FROM hc_invites WHERE to_participant_id = ? AND seen = 0
+            ) AS has_new_invites`,
+        [participantId, participantId],
+    );
+    return {
+        hasNewMessages: Number(rows[0].has_new_messages) === 1,
+        hasNewInvites: Number(rows[0].has_new_invites) === 1,
+    };
 });
 
 // Aliases come from the users table
@@ -881,6 +907,7 @@ function rowToInvite(row, conversation) {
         toParticipantId: String(row.to_participant_id),
         conversation,
         createdAt: row.created_at,
+        seen: Boolean(row.seen),
     };
 }
 
