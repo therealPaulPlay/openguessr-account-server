@@ -534,7 +534,7 @@ export function validateTeamDuelRoom(roomId) {
 }
 
 export function reviewAndConstructInitialRoomStorage(requestorClientId, storage) {
-    if (typeof storage.roundAmount !== "number" || storage.roundAmount < 2 || storage.roundAmount > 10) storage.roundAmount = 3;
+    if (typeof storage.roundAmount !== "number" || storage.roundAmount < 1 || storage.roundAmount > 10) storage.roundAmount = 3;
     if (typeof storage.roundLength !== "number" || storage.roundLength < 10 || storage.roundLength > 300) storage.roundLength = 60;
     if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 0) storage.teamAmount = 1;
     if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
