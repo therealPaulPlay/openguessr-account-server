@@ -266,75 +266,67 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
     }
 
     // Now, check if there is an account associated with that crazy games id
+    // UNIQUE indexes on crazy_games_id and user_name let us catch ER_DUP_ENTRY
+    // on INSERT instead of using FOR UPDATE, which avoids gap-lock deadlocks
+    let connection;
     try {
-        let userId;
-        let inTransaction = false;
+        connection = await db.promise().getConnection();
 
+        let userId;
         try {
-            // Start transaction
-            await db.promise().query('START TRANSACTION');
-            inTransaction = true;
+            await connection.beginTransaction();
 
             // Check if user exists
-            const [existingUsers] = await db.promise().execute('SELECT id FROM users WHERE crazy_games_id = ? FOR UPDATE', [crazyGamesUserId]);
+            const [existingUsers] = await connection.execute('SELECT id FROM users WHERE crazy_games_id = ?', [crazyGamesUserId]);
             const existingUser = existingUsers[0];
 
             if (existingUser) {
                 userId = existingUser.id; // If user already exists, just use their ID
             } else {
-                // If no account exists, create one (register via CrazyGames ID)
+                // No account exists, create one (register via CrazyGames ID)
                 // Check if username already exists
-                const [existingUserNames] = await db.promise().execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-                const existingUserNameUser = existingUserNames[0];
+                const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ?', [username]);
+                if (existingUserNames[0]) username = `${username}_CG${generateRandomSuffix()}`;
 
-                if (existingUserNameUser) {
-                    username = `${username}_CG${generateRandomSuffix()}`;
-
-                    // Check again
-                    const [duplicateResults] = await db.promise().execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-                    const duplicateCheck = duplicateResults[0];
-
-                    if (duplicateCheck) throw new Error("The username already exists and the unique fallback does too.");
-                }
-
-                // Get current timestamp
                 const now = new Date();
 
-                // Insert new user into the database
-                const [insertResult] = await db.promise().execute(
-                    'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)',
-                    [username, userIp, now, crazyGamesUserId]
-                );
+                // Insert new user, concurrent inserts between our SELECTs and here surface as ER_DUP_ENTRY
+                try {
+                    const [insertResult] = await connection.execute(
+                        'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)',
+                        [username, userIp, now, crazyGamesUserId]
+                    );
+                    userId = insertResult.insertId;
+                } catch (insertError) {
+                    if (insertError.code !== 'ER_DUP_ENTRY') throw insertError;
 
-                userId = insertResult.insertId;
+                    // Either UNIQUE index could've fired, re-read by CG id to disambiguate
+                    // If a row exists, it's the crazy_games_id race - reuse it
+                    // If not, the collision was on user_name and the fallback suffix wasn't enough
+                    const [raceWinner] = await connection.execute('SELECT id FROM users WHERE crazy_games_id = ?', [crazyGamesUserId]);
+                    if (raceWinner[0]) userId = raceWinner[0].id;
+                    else throw new Error("Could not allocate a unique username, please retry");
+                }
             }
 
-            // Commit the transaction
-            await db.promise().query('COMMIT');
-            inTransaction = false;
-
-            // Generate JWT token
-            const bearerToken = createNewJwtToken({ id: userId });
-
-            return res.json({
-                message: 'Login successful',
-                token: bearerToken,
-                id: userId
-            });
-
-        } catch (error) {
-            if (inTransaction) {
-                // Rollback the transaction in case of error
-                await db.promise().query('ROLLBACK').catch(err => {
-                    console.error('Rollback error:', err);
-                });
-            }
-            throw error;
+            await connection.commit();
+        } catch (txError) {
+            await connection.rollback();
+            throw txError;
         }
 
+        const bearerToken = createNewJwtToken({ id: userId });
+
+        return res.json({
+            message: 'Login successful',
+            token: bearerToken,
+            id: userId
+        });
     } catch (error) {
         console.error('Error during crazygames authentication:', error);
         return res.status(500).json({ error: 'An unexpected error occurred during crazygames authentication.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
