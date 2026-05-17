@@ -64,7 +64,7 @@ let keyLocationsCache = {};
 export async function getLocations(mapName, amount, key) {
     let keyCache = keyLocationsCache[key];
 
-    // If this is a different map or no entry exists, reset / initialize
+    // If this is a different map or no entry exists, reset
     if (!keyCache || keyCache.mapName !== mapName || !Array.isArray(keyCache.prevIndexes)) {
         keyCache = keyLocationsCache[key] = { mapName, prevIndexes: [] };
     }
@@ -74,6 +74,9 @@ export async function getLocations(mapName, amount, key) {
     const locations = map?.data?.locations;
     const locationsLength = locations?.length || 0;
     const bounds = map?.bounds;
+
+    // Map too small for randomization, simply return locs in order
+    if (locationsLength <= amount) return { locations: locations.slice(), bounds };
 
     // Previous indexes
     if (locationsLength * 0.65 < keyCache.prevIndexes.length) keyCache.prevIndexes = []; // In case e.g. the map file was changed and the prevIndexes are too many, reset them
