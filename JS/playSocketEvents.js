@@ -260,6 +260,9 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'confirmGuess') {
+            // Ignore confirmations while no round is active - the confirmed array is cleared on round end (right when the timer stops, and timerStart is set to null)
+            // and the confirmation would falsely count for the next round if it were allowed here
+            if (!server.getRoomStorage(roomId)?.timerStart) return;
             server.updateRoomStorage(roomId, "confirmedArray", "array-add-unique", clientId);
 
             // Time reduced overlay
@@ -483,7 +486,7 @@ async function startRound(roomId) {
             // Timer information for clients
             playSocketServer.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: playSocketServer.getRoomStorage(roomId).roundLength });
 
-            // Server-side timer (+1s delayed to ensure all clients have their timers finished)
+            // Server-side timer
             roomTimer.set(roomId, playSocketServer.getRoomStorage(roomId).roundLength * 1000, () => {
                 endRound(roomId);
             });

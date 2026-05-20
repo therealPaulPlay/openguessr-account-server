@@ -4,7 +4,6 @@ import jwt from 'jsonwebtoken';
 import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, passwordResetLimiter } from "./rateLimiters.js";
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import axios from 'axios';
 import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret } from "./config.js";
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
@@ -245,8 +244,10 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
 
     // Fetch the public key from CrazyGames
     try {
-        const resp = await axios.get("https://sdk.crazygames.com/publicKey.json");
-        publicKey = resp.data["publicKey"];
+        const response = await fetch("https://sdk.crazygames.com/publicKey.json");
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        const data = await response.json();
+        publicKey = data["publicKey"];
         if (!publicKey) return res.status(400).json({ error: "Public key is empty" });
     } catch (e) {
         console.error("Failed to fetch CrazyGames public key", e);
