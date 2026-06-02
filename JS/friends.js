@@ -6,6 +6,19 @@ import { getDB } from "./dbConnection.js";
 
 const friendRouter = express.Router();
 
+// Check if either one of two users is at the friend limit, self first
+// Returns an error message string or null if both passing
+async function checkFriendAmountLimit(selfId, otherId) {
+    const db = getDB();
+
+    const [rows] = await db.promise().execute(`SELECT user_id, COUNT(*) as count FROM friends WHERE user_id IN (?, ?) GROUP BY user_id`, [selfId, otherId]);
+
+    // Return error if either user has reached the limit
+    if ((rows.find(r => r.user_id == selfId)?.count ?? 0) >= 100) return 'You have reached the maximum allowed number of friends.';
+    if ((rows.find(r => r.user_id == otherId)?.count ?? 0) >= 100) return 'Your recipient has reached the maximum allowed number of friends.';
+    return null;
+}
+
 // Send a friend request
 friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: senderId, recipientId } = req.body;
@@ -14,19 +27,16 @@ friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async 
     if (senderId == recipientId) return res.status(400).json({ error: 'You cannot send a friend request to yourself.' });
 
     try {
+        const limitError = await checkFriendAmountLimit(senderId, recipientId);
+        if (limitError) return res.status(409).json({ error: limitError });
+
         const db = getDB();
         // Check if the users are already friends
-        const checkFriendsQuery = `
-            SELECT * FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
-        `;
-        const [existingFriends] = await db.promise().query(checkFriendsQuery, [senderId, recipientId, recipientId, senderId]);
+        const [existingFriends] = await db.promise().query(`SELECT * FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`, [senderId, recipientId, recipientId, senderId]);
         if (existingFriends.length > 0) return res.status(409).json({ error: 'You are already friends with this user.' });
 
         // Check if a friend request already exists
-        const checkRequestQuery = `
-            SELECT * FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
-        `;
-        const [existingRequest] = await db.promise().query(checkRequestQuery, [senderId, recipientId]);
+        const [existingRequest] = await db.promise().query(`SELECT * FROM friend_requests WHERE sender_id = ? AND recipient_id = ?`, [senderId, recipientId]);
         if (existingRequest.length > 0) return res.status(409).json({ error: 'Friend request already sent.' });
 
         // Get name
@@ -69,32 +79,24 @@ friendRouter.post('/accept', standardLimiter, authenticateTokenWithId, async (re
     }
 
     try {
+        const limitError = await checkFriendAmountLimit(recipientId, senderId);
+        if (limitError) return res.status(409).json({ error: limitError });
+
         const db = getDB();
+
         // Check if the friend request exists
-        const checkRequestQuery = `
-            SELECT * FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
-        `;
-        const [existingRequest] = await db.promise().query(checkRequestQuery, [senderId, recipientId]);
+        const [existingRequest] = await db.promise().query(`SELECT * FROM friend_requests WHERE sender_id = ? AND recipient_id = ?`, [senderId, recipientId]);
         if (existingRequest.length === 0) return res.status(404).json({ error: 'Friend request not found.' });
 
         // Insert into friends table (two-way friendship)
-        const addFriendsQuery = `
-            INSERT INTO friends (user_id, friend_id)
-            VALUES (?, ?), (?, ?)
-        `;
-        await db.promise().query(addFriendsQuery, [senderId, recipientId, recipientId, senderId]);
+        await db.promise().query(`INSERT INTO friends (user_id, friend_id)
+            VALUES (?, ?), (?, ?)`, [senderId, recipientId, recipientId, senderId]);
 
         // Delete the friend request from sender to recipient
-        const deleteRequestQuery = `
-            DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
-        `;
-        await db.promise().query(deleteRequestQuery, [senderId, recipientId]);
+        await db.promise().query(`DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?`, [senderId, recipientId]);
 
         // Also delete any friend request from recipient to sender if it exists
-        const deleteReverseRequestQuery = `
-            DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
-        `;
-        await db.promise().query(deleteReverseRequestQuery, [recipientId, senderId]);
+        await db.promise().query(`DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?`, [recipientId, senderId]);
 
         // Notify the original sender that their request was accepted
         const [recipientRows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [recipientId]);
@@ -111,6 +113,38 @@ friendRouter.post('/accept', standardLimiter, authenticateTokenWithId, async (re
     } catch (error) {
         console.error('Error accepting friend request:', error);
         res.status(500).json({ error: 'An error occurred while accepting the friend request.' });
+    }
+});
+
+// Decline a friend request
+friendRouter.post('/decline', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id: recipientId, senderId } = req.body;
+
+    if (!senderId || !recipientId) return res.status(400).json({ error: 'Sender ID and recipient ID are required.' });
+
+    try {
+        const db = getDB();
+        const [result] = await db.promise().query(`DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?`, [senderId, recipientId]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Friend request not found.' });
+        }
+
+        // Notify the original sender that their request was declined
+        const [recipientRows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [recipientId]);
+        const recipientName = recipientRows[0]?.user_name;
+        if (recipientName) {
+            sendEventToClient(senderId, {
+                type: 'friend-request-declined',
+                from: recipientId,
+                name: recipientName
+            });
+        }
+
+        res.status(200).json({ message: 'Friend request declined successfully.' });
+    } catch (error) {
+        console.error('Error declining friend request:', error);
+        res.status(500).json({ error: 'An error occurred while declining the friend request.' });
     }
 });
 
@@ -243,50 +277,13 @@ friendRouter.post('/requests', standardLimiter, authenticateTokenWithId, async (
         `;
         const [requests] = await db.promise().query(getRequestsQuery, [recipientId]);
 
-        const updateRecipientQuery = `
-            UPDATE users SET new_request = 0 WHERE id = ?
-        `;
-        await db.promise().query(updateRecipientQuery, [recipientId]);
+        // Reset new request to seen
+        await db.promise().query(`UPDATE users SET new_request = 0 WHERE id = ?`, [recipientId]);
 
         res.status(200).json({ requests });
     } catch (error) {
         console.error('Error loading friend requests:', error);
         res.status(500).json({ error: 'An error occurred while loading friend requests.' });
-    }
-});
-
-// Decline a friend request
-friendRouter.post('/decline', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: recipientId, senderId } = req.body;
-
-    if (!senderId || !recipientId) return res.status(400).json({ error: 'Sender ID and recipient ID are required.' });
-
-    try {
-        const db = getDB();
-        const deleteRequestQuery = `
-            DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?
-        `;
-        const [result] = await db.promise().query(deleteRequestQuery, [senderId, recipientId]);
-
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Friend request not found.' });
-        }
-
-        // Notify the original sender that their request was declined
-        const [recipientRows] = await db.promise().query(`SELECT user_name FROM users WHERE id = ?`, [recipientId]);
-        const recipientName = recipientRows[0]?.user_name;
-        if (recipientName) {
-            sendEventToClient(senderId, {
-                type: 'friend-request-declined',
-                from: recipientId,
-                name: recipientName
-            });
-        }
-
-        res.status(200).json({ message: 'Friend request declined successfully.' });
-    } catch (error) {
-        console.error('Error declining friend request:', error);
-        res.status(500).json({ error: 'An error occurred while declining the friend request.' });
     }
 });
 
@@ -299,10 +296,7 @@ friendRouter.post('/remove', standardLimiter, authenticateTokenWithId, async (re
     const db = getDB();
 
     try {
-        const deleteFriendshipQuery = `
-            DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
-        `;
-        const [result] = await db.promise().query(deleteFriendshipQuery, [userId, friendId, friendId, userId]);
+        const [result] = await db.promise().query(`DELETE FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)`, [userId, friendId, friendId, userId]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: 'Friendship not found.' });
@@ -315,7 +309,7 @@ friendRouter.post('/remove', standardLimiter, authenticateTokenWithId, async (re
     }
 });
 
-// Invites ----------------------------------------------------------------------------------------------------
+// Room invites ----------------------------------------------------------------------------------------------------
 friendRouter.post('/send-invite', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: senderId, friend_id: recipientId, roomcode } = req.body;
 

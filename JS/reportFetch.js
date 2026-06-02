@@ -1,6 +1,5 @@
 import { reportSecret, reportAppId } from './config.js';
 
-
 export async function fetchReportData(table = "blacklist", type, referenceId) {
     try {
         const response = await fetch("https://api.openreport.dev/report/get-entry", {

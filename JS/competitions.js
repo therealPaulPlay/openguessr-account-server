@@ -63,7 +63,7 @@ const createDailyCompetition = async () => {
             restriction: 'standard',
             duration: getSecondsUntilNextUTC(),
             round_length: 120,
-            description: "Formerly known as the Daily Challenge, this competition presents you with a new random location every day.",
+            description: "This competition presents you with a new random location every day.",
             location_amount: 1,
             locations: JSON.stringify({ locations: [randomLocation] }),
             private: true

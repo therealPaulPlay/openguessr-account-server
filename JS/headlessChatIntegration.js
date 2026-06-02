@@ -10,6 +10,7 @@ import { fetchReportData } from './reportFetch.js';
 import { authenticateTokenWithId } from './authUtils.js';
 
 const headlessChatRouter = express.Router();
+
 export default headlessChatRouter;
 
 // SSE channel as the server -> client transport, keyed by userId
@@ -444,7 +445,6 @@ headlessChatServer.onCreateMessage(async (message) => {
 });
 
 // Bulk-insert "messagesRemoved" system messages, skip per-conversation if the current oldest message is already one
-// Two queries in one transaction: a dedup-find with FOR UPDATE on the candidate rows, then a single multi-row INSERT for the survivors
 headlessChatServer.onCreateMessagesSystemRemoved(async (messages) => {
     if (messages.length === 0) return { oldestMessagesByConversationId: new Map() };
     const conversationIds = messages.map(m => m.conversationId);
@@ -455,7 +455,7 @@ headlessChatServer.onCreateMessagesSystemRemoved(async (messages) => {
         await conn.beginTransaction();
 
         // Find each conversation's existing oldest "messagesRemoved" system message, those conversations get skipped (dedup) and their existing system message is what we return as the resulting oldest
-        // Outer alias `m` is needed so the subquery's correlation references the outer row, not its own - FOR UPDATE locks the matched dedup-candidate rows, guards within a single cleanup process but isn't a true cross-instance lock against external writers
+        // Outer alias m is needed so the subquery's correlation references the outer row, not its own
         const [skipRows] = await conn.query(
             `SELECT m.* FROM hc_messages m
              WHERE m.conversation_id IN (${placeholders}) AND m.system_event_type = 'messagesRemoved'
@@ -533,7 +533,7 @@ headlessChatServer.onReadConversationLastMessageMetadata(async (conversationId) 
 });
 
 headlessChatServer.onReadMessages(async (conversationId, cursorMessageId, after, amount) => {
-    // .query() rather than .execute() because mysql2's prepared-statement protocol rejects LIMIT ? (tested on MySQL 8)
+    // Using query and not execute because mysql2's prepared-statement protocol rejects LIMIT as ? parameter
     let messages;
     if (cursorMessageId === null) {
         // Newest page returned in ascending order, tiebreak on message_id for determinism
@@ -648,8 +648,7 @@ headlessChatServer.onDeleteReaction(async (reactionId) => {
 headlessChatServer.onCreateInvite(async (invite, inviteLimitPerParticipant) => {
     const conversationId = invite.conversation.conversationId;
 
-    // One query upfront: count existing users (must be 2), check whether the recipient is already a participant, and count the sender's pending outgoing invites
-    // The cap check is best-effort under concurrency, two concurrent inserts at the boundary can both pass, but the deviation is bounded by the number of concurrent senders
+    // One query upfront to count existing users (must be 2), check whether the recipient is already a participant, and count the sender's pending outgoing invites
     const [precheck] = await getDB().promise().execute(
         `SELECT
             (SELECT COUNT(*) FROM users WHERE id IN (?, ?)) AS user_count,
@@ -847,11 +846,14 @@ async function reactionsByMessage(messageIds) {
 }
 
 function rowToConversation(row, reactionsByMessageId) {
-    // mysql2 only auto-parses columns of declared JSON type; JSON_ARRAYAGG in a correlated subquery may surface as a string
+    // mysql2 only auto-parses columns of JSON type
     let rawParticipants = row.participants;
+
     if (typeof rawParticipants === 'string') rawParticipants = JSON.parse(rawParticipants);
     const participants = (rawParticipants ?? []).map(String);
+
     let lastMessage = null;
+
     if (row.message_id) {
         lastMessage = {
             messageId: row.message_id,
