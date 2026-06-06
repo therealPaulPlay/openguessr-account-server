@@ -447,7 +447,8 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
 });
 
 // Delete Account Endpoint ---------------------------------------------------------------------------------------------------------------------------
-accountRouter.delete('/delete', loginLimiter, async (req, res) => {
+// Guarded with authenticateTokenWithId to protect against password-guessing (means a valid session, which requires email address or oAuth, is needed)
+accountRouter.delete('/delete', loginLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { id, password } = req.body;
 
