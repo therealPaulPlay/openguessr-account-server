@@ -12,7 +12,7 @@ import { check } from 'fast-profanity-filter';
 
 const communityMapRouter = express.Router();
 
-function clearMapListCaches() {
+function clearMapPageCaches() {
     clearResponseCache("maps-index");
     clearResponseCache("maps-category");
     clearResponseCache("maps-favourites");
@@ -336,7 +336,7 @@ communityMapRouter.post('/', [
             [storageKey, mapId]
         );
 
-        clearMapListCaches();
+        clearMapPageCaches();
         res.status(201).json({ message: 'Map submitted successfully!' });
 
     } catch (err) {
@@ -400,7 +400,7 @@ communityMapRouter.put('/', [
         // Remove from cache so that the new version will be pulled
         removeMapFromCache("community_" + name.toLowerCase());
 
-        clearMapListCaches();
+        clearMapPageCaches();
         res.status(200).json({ message: 'Map updated successfully!' });
     } catch (err) {
         console.error('Error updating map:', err);
@@ -410,13 +410,13 @@ communityMapRouter.put('/', [
 
 // Delete map
 communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const name = req.params.name.toLowerCase();
+    const nameLowercase = req.params.name.toLowerCase();
     const author_id = req.body.id;
     const db = getDB();
 
     try {
         // Check if the map exists and if the author_id matches
-        const [results] = await db.promise().execute('SELECT id, storage_key FROM maps WHERE LOWER(name) = ? AND author_id = ?', [name, author_id]);
+        const [results] = await db.promise().execute('SELECT id, storage_key FROM maps WHERE LOWER(name) = ? AND author_id = ?', [nameLowercase, author_id]);
 
         if (results.length === 0) {
             return res.status(404).json({ error: 'Map not found or you do not have permission to delete this map.' });
@@ -441,7 +441,10 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, as
         // Delete from the database
         await db.promise().execute('DELETE FROM maps WHERE id = ?', [id]);
 
-        clearMapListCaches();
+        // Remove from cache so locations aren't served after deletion
+        removeMapFromCache("community_" + nameLowercase);
+
+        clearMapPageCaches();
         res.status(200).json({ message: 'Map deleted successfully.' });
     } catch (err) {
         console.error('Error deleting map:', err);

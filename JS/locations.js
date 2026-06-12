@@ -13,6 +13,8 @@ let mapCache = {};
 
 async function getMap(name) {
     if (!name || typeof name !== "string") throw new Error("Map name is not a valid string! Value: " + name);
+    name = name.toLowerCase(); // Lowercase as map names are case insensitive
+
     const cacheEntry = mapCache[name];
 
     if (cacheEntry) return cacheEntry;
@@ -29,7 +31,7 @@ async function getMap(name) {
             if (results.length === 0) throw new Error("Map not found!");
             storageKey = results[0]?.storage_key;
         } else {
-            storageKey = "openguessr-official-maps/" + name.toLowerCase().replaceAll(" ", "_") + ".json";
+            storageKey = "openguessr-official-maps/" + name.replaceAll(" ", "_") + ".json";
         }
 
         // Get from S3
@@ -55,7 +57,7 @@ async function getMap(name) {
 }
 
 export function removeMapFromCache(name) {
-    delete mapCache[name];
+    delete mapCache[name.toLowerCase()]; // Cache keys are always lowercase
 }
 
 let keyLocationsCache = {};
