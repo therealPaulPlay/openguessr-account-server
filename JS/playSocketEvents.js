@@ -542,7 +542,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 0) storage.teamAmount = 1;
     if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
     if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
-    if (!["standard", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "standard";
+    if (!["none", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "none";
     if (typeof storage.map !== "string") storage.map = "World";
     if (typeof storage.divisionRoom !== "boolean") storage.divisionRoom = false;
     if (typeof storage.matchmakingRoom !== "boolean") storage.matchmakingRoom = false;

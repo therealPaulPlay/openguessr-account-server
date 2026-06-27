@@ -60,7 +60,7 @@ const createDailyCompetition = async () => {
             name: 'Daily Competition',
             author: 'PaulPlay',
             author_id: null,
-            restriction: 'standard',
+            restriction: 'none',
             duration: getSecondsUntilNextUTC(),
             round_length: 120,
             description: "This competition presents you with a new random location every day.",
