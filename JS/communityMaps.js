@@ -20,6 +20,55 @@ function clearMapPageCaches() {
     clearResponseCache("maps-by-name");
 }
 
+function buildMapsResult(results) {
+    return results.map(map => ({
+        name: map.name,
+        author: map.author,
+        authorId: map.author_id,
+        description: map.description,
+        favourite: Boolean(map.favourite),
+        category: map.category,
+        likes: map.likes
+    }));
+}
+
+function returnSortColumnByQuery(req, res) {
+    const sort = req.query["sort"] || "likes";
+
+    if (!["likes", "newest", "oldest", "a-z"].includes(sort)) {
+        res.status(400).json({ error: "Invalid sort option." });
+        return { isReturn: true };
+    }
+
+    let columnName;
+    let isDesc;
+
+    switch (sort) {
+        case "likes": {
+            columnName = "likes";
+            isDesc = true;
+            break;
+        }
+        case "newest": {
+            columnName = "created_at";
+            isDesc = true;
+            break;
+        }
+        case "oldest": {
+            columnName = "created_at";
+            isDesc = false;
+            break;
+        }
+        case "a-z": {
+            columnName = "name";
+            isDesc = false;
+            break;
+        }
+    }
+
+    return { columnName, direction: isDesc ? "DESC" : "ASC", isReturn: false };
+}
+
 // Return the next 50 maps starting from a given index (without map data!)
 communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-index"), (req, res) => {
     const db = getDB();
@@ -28,23 +77,17 @@ communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-ind
     const startIndex = parseInt(req.params.index, 10);
     if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
+    const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
+    if (isReturn) return;
+
     // the questionmarks in the sql are then being filled in by the array's content!
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY likes DESC LIMIT ?, ?', [startIndex, limit], (err, results) => {
+    db.query(`SELECT name, author, description, favourite, category, author_id, likes FROM maps ORDER BY ${columnName} ${direction} LIMIT ?, ?`, [startIndex, limit], (err, results) => {
         if (err) {
             console.error('Error fetching maps:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
         }
 
-        const communityMaps = results.map(map => ({
-            name: map.name,
-            author: map.author,
-            authorId: map.author_id,
-            description: map.description,
-            favourite: !!map.favourite,
-            category: map.category,
-            likes: map.likes
-        }));
-
+        const communityMaps = buildMapsResult(results);
         res.json({ communityMaps });
     });
 });
@@ -52,29 +95,22 @@ communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-ind
 // Filter maps by category with pagination
 communityMapRouter.get('/category/:category/:index', standardLimiter, cacheResponse("maps-category"), (req, res) => {
     const db = getDB();
+    const limit = 50;
 
     const category = req.params.category;
     const startIndex = parseInt(req.params.index, 10);
     if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
-    const limit = 50;
+    const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
+    if (isReturn) return;
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY likes DESC LIMIT ? OFFSET ?', [category, limit, startIndex], (err, results) => {
+    db.query(`SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE category = ? ORDER BY ${columnName} ${direction} LIMIT ? OFFSET ?`, [category, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error fetching maps by category:', err);
             return res.status(500).json({ error: 'Failed to fetch maps.' });
         }
 
-        const communityMaps = results.map(map => ({
-            name: map.name,
-            author: map.author,
-            authorId: map.author_id,
-            description: map.description,
-            favourite: !!map.favourite,
-            category: map.category,
-            likes: map.likes
-        }));
-
+        const communityMaps = buildMapsResult(results);
         res.json({ communityMaps });
     });
 });
@@ -89,9 +125,12 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
     if (isNaN(authorId) || authorId < 0) return res.status(400).json({ error: 'Invalid author ID' });
     if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
+    const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
+    if (isReturn) return;
+
     // Filter by author_id and maintain the same ordering by likes
     db.query(
-        'SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE author_id = ? ORDER BY likes DESC LIMIT ?, ?',
+        `SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE author_id = ? ORDER BY ${columnName} ${direction} LIMIT ?, ?`,
         [authorId, startIndex, limit],
         (err, results) => {
             if (err) {
@@ -99,16 +138,7 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
                 return res.status(500).json({ error: 'Failed to fetch maps.' });
             }
 
-            const communityMaps = results.map(map => ({
-                name: map.name,
-                author: map.author,
-                authorId: map.author_id,
-                description: map.description,
-                favourite: !!map.favourite,
-                category: map.category,
-                likes: map.likes
-            }));
-
+            const communityMaps = buildMapsResult(results);
             res.json({ communityMaps });
         }
     );
@@ -117,30 +147,23 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
 // Search maps by query with pagination
 communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const db = getDB();
+    const limit = 50;
 
     const rawQuery = req.params.query.slice(0, 255);
     const query = `%${rawQuery}%`;
     const startIndex = parseInt(req.params.index, 10);
     if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
 
-    const limit = 50;
+    const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
+    if (isReturn) return;
 
-    db.query('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY likes DESC LIMIT ? OFFSET ?', [query, query, limit, startIndex], (err, results) => {
+    db.query(`SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE name LIKE ? OR author LIKE ? ORDER BY ${columnName} ${direction} LIMIT ? OFFSET ?`, [query, query, limit, startIndex], (err, results) => {
         if (err) {
             console.error('Error searching maps:', err);
             return res.status(500).json({ error: 'Failed to search maps.' });
         }
 
-        const communityMaps = results.map(map => ({
-            name: map.name,
-            author: map.author,
-            authorId: map.author_id,
-            description: map.description,
-            favourite: !!map.favourite,
-            category: map.category,
-            likes: map.likes
-        }));
-
+        const communityMaps = buildMapsResult(results);
         res.json({ communityMaps });
     });
 });
@@ -155,16 +178,7 @@ communityMapRouter.get('/favourites', standardLimiter, cacheResponse("maps-favou
             return res.status(500).json({ error: 'Failed to fetch favourite maps.' });
         }
 
-        const communityMaps = results.map(map => ({
-            name: map.name,
-            author: map.author,
-            authorId: map.author_id,
-            description: map.description,
-            favourite: !!map.favourite, // convert to boolean
-            category: map.category, // include category
-            likes: map.likes
-        }));
-
+        const communityMaps = buildMapsResult(results);
         res.json({ communityMaps });
     });
 });
@@ -187,7 +201,7 @@ communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"),
             author,
             authorId,
             description,
-            favourite: !!favourite, // Boolean conversion
+            favourite: Boolean(favourite),
             category,
             likes,
             map_data_url: mapDataUrl // Include file url
@@ -487,7 +501,7 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
     }
 });
 
-// 3.3) Get map like amount & personal like status if id passed 
+// Get map like amount & personal like status if id passed 
 communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const playerId = req.body.id;
