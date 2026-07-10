@@ -446,7 +446,7 @@ headlessChatServer.onCreateMessage(async (message) => {
 
 // Bulk-insert "messagesRemoved" system messages, skip per-conversation if the current oldest message is already one
 headlessChatServer.onCreateMessagesSystemRemoved(async (messages) => {
-    if (messages.length === 0) return { oldestMessagesByConversationId: new Map() };
+    if (messages.length === 0) return { oldestMessagesByConversationId: new Map(), updatedParticipantActivities: [] };
     const conversationIds = messages.map(m => m.conversationId);
     const placeholders = conversationIds.map(() => '?').join(',');
 
@@ -475,15 +475,32 @@ headlessChatServer.onCreateMessagesSystemRemoved(async (messages) => {
             );
         }
 
-        await conn.commit();
-
-        // For every input conversationId, return its resulting oldest system message: the pre-existing one (if dedup-skipped) or the one we just inserted
+        // For every input conversationId, the resulting oldest system message: the pre-existing one (if dedup-skipped) or the one we just inserted
         const oldestMessagesByConversationId = new Map();
         for (const message of messages) {
             const existing = skipByConversationId.get(message.conversationId);
             oldestMessagesByConversationId.set(message.conversationId, existing ?? message);
         }
-        return { oldestMessagesByConversationId };
+
+        // Clamp older participant activities onto the resulting oldest so the backdated marker never counts as unread, return the updated rows
+        const updatedParticipantActivities = [];
+        for (const [conversationId, oldest] of oldestMessagesByConversationId) {
+            const [staleRows] = await conn.execute(
+                `SELECT participant_id FROM hc_participant_activities WHERE conversation_id = ? AND last_read_message_created_at < ? FOR UPDATE`,
+                [conversationId, oldest.createdAt],
+            );
+            if (staleRows.length === 0) continue;
+            await conn.execute(
+                `UPDATE hc_participant_activities SET last_read_message_id = ?, last_read_message_created_at = ? WHERE conversation_id = ? AND last_read_message_created_at < ?`,
+                [oldest.messageId, oldest.createdAt, conversationId, oldest.createdAt],
+            );
+            for (const row of staleRows) {
+                updatedParticipantActivities.push({ conversationId, participantId: String(row.participant_id), lastReadMessageId: oldest.messageId, lastReadMessageCreatedAt: oldest.createdAt });
+            }
+        }
+
+        await conn.commit();
+        return { oldestMessagesByConversationId, updatedParticipantActivities };
     } catch (error) {
         await conn.rollback();
         throw error;
@@ -592,18 +609,28 @@ headlessChatServer.onDeleteMessagesBefore(async (thresholdDate) => {
     try {
         await conn.beginTransaction();
 
-        // Capture the conversations with at least one expiring message, deduped via DISTINCT, so the lib posts only one "messagesRemoved" marker per conversation
+        // Capture the conversations with at least one expiring real message, deduped via DISTINCT, so the lib posts only one "messagesRemoved" system message per conversation
+        // An expiring "messagesRemoved" system message alone doesn't count as affected, otherwise dormant conversations would re-post it daily
         const [affectedRows] = await conn.execute(
-            `SELECT DISTINCT conversation_id FROM hc_messages WHERE created_at < ? FOR UPDATE`,
+            `SELECT DISTINCT conversation_id FROM hc_messages WHERE created_at < ? AND (system_event_type IS NULL OR system_event_type != 'messagesRemoved') FOR UPDATE`,
             [thresholdDate],
         );
         const affectedConversationIds = affectedRows.map(r => String(r.conversation_id));
 
+        // Deletions are restricted to affected conversations via the derived table, so expired "messagesRemoved" system messages roll forward to the new cut point there but stay put in dormant conversations
         await conn.execute(
-            `DELETE r FROM hc_reactions r JOIN hc_messages m ON r.message_id = m.message_id WHERE m.created_at < ?`,
-            [thresholdDate],
+            `DELETE r FROM hc_reactions r
+             JOIN hc_messages m ON r.message_id = m.message_id
+             JOIN (SELECT DISTINCT conversation_id FROM hc_messages WHERE created_at < ? AND (system_event_type IS NULL OR system_event_type != 'messagesRemoved')) a ON a.conversation_id = m.conversation_id
+             WHERE m.created_at < ?`,
+            [thresholdDate, thresholdDate],
         );
-        await conn.execute(`DELETE FROM hc_messages WHERE created_at < ?`, [thresholdDate]);
+        await conn.execute(
+            `DELETE m FROM hc_messages m
+             JOIN (SELECT DISTINCT conversation_id FROM hc_messages WHERE created_at < ? AND (system_event_type IS NULL OR system_event_type != 'messagesRemoved')) a ON a.conversation_id = m.conversation_id
+             WHERE m.created_at < ?`,
+            [thresholdDate, thresholdDate],
+        );
         await conn.commit();
         return { affectedConversationIds };
     } catch (error) {
