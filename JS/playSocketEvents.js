@@ -369,12 +369,12 @@ function goToNextRound(roomId) {
                 const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.clientId === g.id);
                 return { userId: player?.userId ?? null, username: g.username, lat: g.lat, lon: g.lon, totalPoints: player?.score || 0 };
             });
-            const round = {
+            const roundData = {
                 round: playSocketServer.getRoomStorage(roomId)?.currentRound,
-                location: { lat: playSocketServer.getRoomStorage(roomId)?.location?.[0], lon: playSocketServer.getRoomStorage(roomId)?.location?.[1] },
+                location: playSocketServer.getRoomStorage(roomId)?.location,
                 guesses
             };
-            saveDuelRoundResults(playSocketServer.getRoomStorage(roomId)?.duelUuid, round);
+            saveDuelRoundResults(playSocketServer.getRoomStorage(roomId)?.duelUuid, roundData);
         }
 
         playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses

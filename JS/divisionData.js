@@ -79,7 +79,7 @@ divisionDataRouter.get('/duel-rounds/:uuid', standardLimiter, cacheResponse("due
 
     try {
         const [rows] = await pool.promise().query(
-            `SELECT round, lat, lon, guesses
+            `SELECT round, location, guesses
              FROM duel_entries_rounds
              WHERE duel_entry_uuid = ?
              ORDER BY round ASC`,
@@ -88,7 +88,7 @@ divisionDataRouter.get('/duel-rounds/:uuid', standardLimiter, cacheResponse("due
 
         const rounds = rows.map((row) => ({
             round: row.round,
-            location: { lat: row.lat, lon: row.lon },
+            location: row.location,
             guesses: typeof row.guesses === "string" ? JSON.parse(row.guesses) : (row.guesses || [])
         }));
 

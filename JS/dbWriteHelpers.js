@@ -76,20 +76,19 @@ async function applyValidationChecks(db, userId, column, value) {
 }
 
 // Save a single round result for a duel
-//   round: { round, location: { lat, lon }, guesses: [{ userId, username, lat, lon, totalPoints }] }
+// round: { round, location: [lat, lon, additionalData?], guesses: [{ userId, username, lat, lon, totalPoints }] }
 async function saveDuelRoundResults(duelEntryUuid, round) {
     try {
         if (!duelEntryUuid) throw new Error("Error in saveDuelRoundResults – duelEntryUuid is required");
         if (typeof round?.round !== "number") throw new Error("Error in saveDuelRoundResults – round.round must be a number");
 
         const db = getDB();
-        const lat = round.location?.lat ?? null;
-        const lon = round.location?.lon ?? null;
+        const location = Array.isArray(round.location) ? round.location : null;
         const guesses = Array.isArray(round.guesses) ? round.guesses : [];
 
         await db.promise().execute(
-            `INSERT INTO duel_entries_rounds (duel_entry_uuid, round, lat, lon, guesses) VALUES (?, ?, ?, ?, ?)`,
-            [duelEntryUuid, round.round, lat, lon, JSON.stringify(guesses)]
+            `INSERT INTO duel_entries_rounds (duel_entry_uuid, round, location, guesses) VALUES (?, ?, ?, ?)`,
+            [duelEntryUuid, round.round, location ? JSON.stringify(location) : null, JSON.stringify(guesses)]
         );
         return { success: true };
 

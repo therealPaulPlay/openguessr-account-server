@@ -8,6 +8,7 @@ import { updateProfileData } from './dbWriteHelpers.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
+import { isValidMap } from './communityMaps.js';
 
 const competitionsRouter = express.Router();
 
@@ -15,23 +16,6 @@ function clearCompetitionListCaches() {
     clearResponseCache("competitions-active");
     clearResponseCache("competitions-expired");
 }
-
-// Map Validation function
-const isValidMap = (map) => {
-    try {
-        if (!map.locations || !Array.isArray(map.locations)) return 'Locations must be a non-empty array.';
-        if (map.locations.length < 1 || map.locations.length > 20) return `Location count must be between 1 and 20 (got ${map.locations.length}).`;
-
-        for (let location of map.locations) {
-            if (!Array.isArray(location) || location.length !== 2) return 'Each location must be an array of two values.';
-            if (typeof location[0] !== 'number' || typeof location[1] !== 'number') return 'Location coordinates must be numbers.';
-        }
-        return null;
-    } catch (error) {
-        console.error("Error during map validation:", error);
-        return 'An error occurred during map validation.';
-    }
-};
 
 // Helper functions
 const getSecondsUntilNextUTC = () => {
@@ -293,12 +277,12 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
 
         const author = userResults[0].user_name;
 
-        const parsedMapData = JSON.parse(rawLocations);
-        const locations = parsedMapData.locations.map(coord => [parseFloat(coord[0]), parseFloat(coord[1])]);
-        const locationAmount = locations.length;
+        const locations = JSON.parse(rawLocations).locations;
 
-        const mapError = isValidMap({ locations });
+        const mapError = isValidMap({ locations }, { minLocations: 1, maxLocations: 20 });
         if (mapError) return res.status(400).json({ status: 400, error: mapError });
+
+        const locationAmount = locations.length;
 
         const [result] = await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',

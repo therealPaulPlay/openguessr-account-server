@@ -215,27 +215,36 @@ communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"),
 });
 
 
-// Helper function to validate map structure
-const isValidMap = (map) => {
+// Helper function to validate map structure, also used by competitions with stricter limits
+export const isValidMap = (map, { minLocations = 50, maxLocations = null } = {}) => {
     try {
-        if (!map.locations || !Array.isArray(map.locations)) {
-            return 'Map locations must be a non-empty array.';
-        }
-        if (map.locations.length < 50) {
-            return `Map must contain at least 50 locations (got ${map.locations.length}).`;
-        }
+        if (!map.locations || !Array.isArray(map.locations)) return 'Map locations must be a non-empty array.';
+        if (map.locations.length < minLocations) return `Map must contain at least ${minLocations} location${minLocations === 1 ? '' : 's'} (got ${map.locations.length}).`;
+        if (maxLocations && map.locations.length > maxLocations) return `Map cannot contain more than ${maxLocations} locations (got ${map.locations.length}).`;
+
         const seenLocations = new Set();
+
         for (let location of map.locations) {
-            if (!Array.isArray(location) || location.length !== 2) {
-                return 'Each location must be an array of two values.';
+            if (!Array.isArray(location) || location.length < 2 || location.length > 3) return 'Each location must be an array of two coordinates and an optional data object.';
+            if (!Number.isFinite(location[0]) || !Number.isFinite(location[1])) return 'Location coordinates must be numbers.';
+
+            const additionalData = location[2]; // Optional third entry
+
+            // Validate additional data if provided
+            if (additionalData !== undefined) {
+                if (!additionalData || typeof additionalData !== 'object' || Array.isArray(additionalData)) return 'Invalid location data provided, must be an object.';
+                if (Object.keys(additionalData).length === 0) return 'The location data object cannot be empty.';
+                for (const key of Object.keys(additionalData)) {
+                    if (!["heading", "pitch", "panoramaId"].includes(key)) return `Unknown key "${key}" in the location data object.`;
+                }
+                if ("heading" in additionalData && additionalData.heading !== null && !Number.isFinite(additionalData.heading)) return 'Heading must be a number or null.';
+                if ("pitch" in additionalData && additionalData.pitch !== null && !Number.isFinite(additionalData.pitch)) return 'Pitch must be a number or null.';
+                if ("panoramaId" in additionalData && additionalData.panoramaId !== null && (typeof additionalData.panoramaId !== 'string' || !additionalData.panoramaId.length || additionalData.panoramaId.length > 64)) return 'Panorama ID must be a string of at most 64 characters or null.';
             }
-            if (typeof location[0] !== 'number' || typeof location[1] !== 'number') {
-                return 'Location coordinates must be numbers.';
-            }
-            const locationKey = JSON.stringify(location);
-            if (seenLocations.has(locationKey)) {
-                return `Map contains duplicate location: [${location[0]}, ${location[1]}]`;
-            }
+
+            // Check for duplicates
+            const locationKey = `${location[0]},${location[1]}`;
+            if (seenLocations.has(locationKey)) return `Map contains duplicate location: [${location[0]}, ${location[1]}]`;
             seenLocations.add(locationKey);
         }
         return null;
@@ -285,15 +294,10 @@ communityMapRouter.post('/', [
         let description = rawDescription.trim();
         description = /[.?!]$/.test(description) ? description : `${description}.`;
 
-        let parsedMapData;
-        let locations; // here locations are converted to numbers in case they are strings
+        let locations;
 
         try {
-            parsedMapData = JSON.parse(mapData);
-            locations = parsedMapData.locations.map(coord => [
-                parseFloat(coord[0]),
-                parseFloat(coord[1])
-            ]);
+            locations = JSON.parse(mapData).locations;
 
             const mapError = isValidMap({ locations });
             if (mapError) return res.status(400).json({ error: mapError });
@@ -372,15 +376,10 @@ communityMapRouter.put('/', [
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     if (!player_id || !name || !mapData) return res.status(400).json({ error: 'Name, player ID and data is required.' });
 
-    let parsedMapData;
-    let locations; // Here, locations are converted to numbers in case they are strings
+    let locations;
 
     try {
-        parsedMapData = JSON.parse(mapData);
-        locations = parsedMapData.locations.map(coord => [
-            parseFloat(coord[0]),
-            parseFloat(coord[1])
-        ]);
+        locations = JSON.parse(mapData).locations;
 
         const mapError = isValidMap({ locations });
         if (mapError) return res.status(400).json({ error: mapError });
