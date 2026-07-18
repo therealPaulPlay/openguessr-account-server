@@ -72,8 +72,8 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
     if (!id || !username) return res.status(400).json({ error: 'User ID and username are required.' });
 
     try {
-        // Check if the username consists only of spaces
-        username = username.trim();
+        // Collapse whitespace and trim
+        username = username.replace(/\s+/g, ' ').trim();
 
         if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
         if (!check(username)) return res.status(400).json({ error: 'Username must not contain profanity.' });
@@ -142,8 +142,8 @@ accountRouter.post('/register', registerLimiter, validateCaptcha, async (req, re
     if (!username || !email || !password) return res.status(400).json({ error: 'Username, email, and password are required.' });
 
     try {
-        username = username.trim(); // remove whitespaces from username
-        email = email.trim().toLowerCase(); // remove whitespaces from email and make it lowercase
+        username = username.replace(/\s+/g, ' ').trim(); // Collapse whitespace and trim
+        email = email.trim().toLowerCase(); // Remove whitespaces from email and make it lowercase
 
         if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Username contains unsupported characters.' });
         if (username.length > 255) return res.status(400).json({ error: 'Username is too long.' });

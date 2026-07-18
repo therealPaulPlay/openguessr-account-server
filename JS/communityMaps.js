@@ -257,23 +257,25 @@ export const isValidMap = (map, { minLocations = 50, maxLocations = null } = {})
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
     failedMapSubmissionLimiter, authenticateTokenWithId,
-    body('name').isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
-        return true;
-    }),
-    body('description').isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
+    body('name').isString().withMessage('Map name must be a string.').bail()
+        .customSanitizer((value) => value.replace(/[_/+&#?]/g, ' ').replace(/\s+/g, ' ').trim())
+        .isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
+            if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
+            return true;
+        }),
+    body('description').isString().withMessage('Description must be a string.').bail().isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
         if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
         return true;
     }),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
-    const { id: player_id, name: rawName, description: rawDescription, mapData, category } = req.body;
+    const { id: player_id, name, description: rawDescription, mapData, category } = req.body;
 
     const db = getDB();
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    if (!player_id || !rawName || !rawDescription || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
+    if (!player_id || !name || !rawDescription || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
 
     try {
         // Fetch the user to get the actual username
@@ -281,15 +283,6 @@ communityMapRouter.post('/', [
         if (userResults.length === 0) return res.status(404).json({ error: 'User not found.' });
 
         const author = userResults[0].user_name;
-
-        // Remove illegal link symbols
-        let name = rawName.split("_").join(" ");
-        name = name.split("/").join(" ");
-        name = name.split("+").join(" ");
-        name = name.split("&").join(" ");
-        name = name.split("#").join(" ");
-        name = name.split("?").join(" ");
-        name = name.replace(/\s+/g, " ").trim();
 
         let description = rawDescription.trim();
         description = /[.?!]$/.test(description) ? description : `${description}.`;
