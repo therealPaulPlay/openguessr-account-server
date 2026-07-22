@@ -68,19 +68,19 @@ function attachPlaySocketEvents(server) {
                     else resolve(decoded);
                 });
             });
-            if (!decoded?.userId) return "The authentication token lacks a user ID.";
+            if (!decoded?.userId) return "The authentication token lacks a user ID";
             const userId = Number(decoded.userId);
 
             // Fetch OpenReport status
             const banStatus = await fetchReportData("blacklist", "user", "user-" + userId);
-            if (banStatus?.listed) return `You are banned for "${banStatus?.entry?.reason}" until ${new Date(banStatus?.entry?.expires_at)?.toLocaleDateString() || "forever"}. Please contact the moderators via Discord for help.`;
+            if (banStatus?.listed) return `You are banned for "${banStatus?.entry?.reason}" until ${new Date(banStatus?.entry?.expires_at)?.toLocaleDateString() || "forever"} – If you need help, please contact the moderators via Discord`;
 
             // Store auth mapping after successful validation
             authedMultiplayerClients.set(clientId, userId); // Client id -> User id
             authedMultiplayerUserIds.set(userId, clientId); // User id -> Client id
 
         } catch (error) {
-            return "An error occured decoding your authentication token.";
+            return "An error occured decoding the authentication token";
         }
     });
 
@@ -133,9 +133,9 @@ function attachPlaySocketEvents(server) {
     });
 
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
-        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game.";
-        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late.";
-        if (server.getRoomStorage(roomId)?.locked) return "This room is locked.";
+        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game";
+        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
+        if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
     });
 
     server.onEvent("clientJoinedRoom", (clientId, roomId) => {
@@ -312,7 +312,7 @@ function attachPlaySocketEvents(server) {
         if (name === "kickClient") {
             if (server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return "Cannot kick player from matchmaking or tournament rooms";
             if (clientId !== server.rooms[roomId]?.host) return "Must be room host";
-            server.kick(data, "Removed by host.");
+            server.kick(data, "Removed by host");
         }
     });
 

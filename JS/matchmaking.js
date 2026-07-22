@@ -254,7 +254,7 @@ matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) 
             if (type === "blacklist-entry-added" || type === "blacklist-entry-added-manually") {
                 const userId = Number(data.referenceId?.replace("user-", ""));
                 const clientId = authedMultiplayerUserIds.get(userId);
-                if (clientId) playSocketServer?.kick(clientId, "Banned.");
+                if (clientId) playSocketServer?.kick(clientId, "Banned");
 
                 // For manual bans, refund elo
                 if (type === "blacklist-entry-added-manually") processEloRefunds(userId); // Not awaited here
