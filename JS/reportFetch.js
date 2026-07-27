@@ -2,7 +2,7 @@ import { reportSecret, reportAppId } from './config.js';
 
 export async function fetchReportData(table = "blacklist", type, referenceId) {
     try {
-        const response = await fetch("https://api.openreport.dev/report/get-entry", {
+        const response = await fetch("https://openreport-api.paulplay.studio/report/get-entry", {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
