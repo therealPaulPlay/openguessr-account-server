@@ -144,10 +144,9 @@ function attachPlaySocketEvents(server) {
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
         const { key, type, value, secondValue } = server.getUpdateDetails(update);
-        if (key === 'players') return false; // Block client's 'players' updates
 
         // Block room configuration updates
-        if (key === "roundAmount" || key === "style" || key === "roundLength" || key === "restriction") return false;
+        if (key === "roundAmount" || key === "style" || key === "roundLength" || key === "restriction" || key === "teamAmount") return false;
         if (key === "map") return false;
         if (key === "duelUuid") return false;
         if (key === "divisionRoom") return false;
@@ -157,6 +156,8 @@ function attachPlaySocketEvents(server) {
         if (key === "duelProcessed") return false;
 
         // Block server-side-only game control updates
+        if (key === "players") return false;
+        if (key === "teamScores") return false;
         if (key === "countdownActive") return false;
         if (key === "currentRound") return false;
         if (key === "firstRoundPlayed") return false;
@@ -234,19 +235,30 @@ function attachPlaySocketEvents(server) {
             const storage = server.getRoomStorage(roomId);
             const players = storage?.players;
             const player = players?.find(p => p.clientId === clientId);
-            if (!player) return "Player not found";
-            if (typeof data !== "number") return "Invalid score value";
+            if (!player) return "Player not found"; // Bail if player doesn't exist
+            if (!Number.isFinite(data)) return "Invalid score value";
             if (storage?.style == "duel" && storage?.currentRound >= 4) data = Math.round(data * 1.5); // Duel multiplier for last 2 rounds
             const newPlayer = { ...player };
             newPlayer.score += data;
             server.updateRoomStorage(roomId, "players", "array-update-matching", player, newPlayer);
+
+            // Update team score (closest guess from each round counts towards the team score)
+            const teamScoresEntry = server.getRoomStorage(roomId)?.teamScores?.[player.teamIndex];
+            if (!teamScoresEntry) return "Team scores entry missing";
+            if (data > teamScoresEntry.roundBest) {
+                teamScoresEntry.score += data - teamScoresEntry.roundBest; // Add the difference to the previous best
+                teamScoresEntry.roundBest = data;
+                server.updateRoomStorage(roomId, "teamScores", "object-set-key", player.teamIndex, teamScoresEntry);
+            }
         }
 
         if (name === 'updateTeam') {
+            if (clientId !== server.rooms[roomId]?.host) return "Must be room host";
             const players = server.getRoomStorage(roomId)?.players;
             const player = players?.find(p => p.clientId === data.playerClientId);
             if (!player) return "Player not found";
-            if (typeof data.newTeamIndex !== 'number') return "Invalid team index value";
+            if (!Number.isInteger(data.newTeamIndex)) return "Invalid team index value";
+            if (data.newTeamIndex < 0 || data.newTeamIndex >= (server.getRoomStorage(roomId)?.teamAmount ?? 0)) return "Team index out of range";
             const newPlayer = { ...player };
             newPlayer.teamIndex = data.newTeamIndex;
             server.updateRoomStorage(roomId, "players", "array-update-matching", player, newPlayer);
@@ -348,6 +360,10 @@ export function rematch(roomId) {
             playSocketServer.updateRoomStorage(roomId, "players", "set", resetPlayers);
         }
 
+        // Reset team scores
+        const teamAmount = playSocketServer.getRoomStorage(roomId)?.teamAmount ?? 1;
+        playSocketServer.updateRoomStorage(roomId, "teamScores", "set", Object.fromEntries(Array.from({ length: teamAmount }, (_, i) => [i, { roundBest: 0, score: 0 }])));
+
         // Generate round
         startRound(roomId);
     } catch (error) {
@@ -379,6 +395,14 @@ function goToNextRound(roomId) {
 
         playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
         playSocketServer.updateRoomStorage(roomId, "overlay", "set", true);
+
+        // Reset every team's roundBest for the new round
+        const teamScores = playSocketServer.getRoomStorage(roomId)?.teamScores;
+        if (teamScores) {
+            const resetTeamScores = {};
+            for (const teamIndex in teamScores) resetTeamScores[teamIndex] = { ...teamScores[teamIndex], roundBest: 0 };
+            playSocketServer.updateRoomStorage(roomId, "teamScores", "set", resetTeamScores);
+        }
 
         // Check if this is a division room that has ended and hasn't been processed yet
         if (playSocketServer.getRoomStorage(roomId)?.gameEnded) {
@@ -539,7 +563,7 @@ export function validateTeamDuelRoom(roomId) {
 export function reviewAndConstructInitialRoomStorage(requestorClientId, storage) {
     if (typeof storage.roundAmount !== "number" || storage.roundAmount < 1 || storage.roundAmount > 10) storage.roundAmount = 3;
     if (typeof storage.roundLength !== "number" || storage.roundLength < 10 || storage.roundLength > 300) storage.roundLength = 60;
-    if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 0) storage.teamAmount = 1;
+    if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 1) storage.teamAmount = 1;
     if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
     if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
     if (!["none", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "none";
@@ -567,6 +591,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.duelProcessed = false;
     storage.mapBounds = null;
     storage.locked = false;
+    storage.teamScores = Object.fromEntries(Array.from({ length: storage.teamAmount }, (_, i) => [i, { roundBest: 0, score: 0 }]));
 
     return storage;
 }
