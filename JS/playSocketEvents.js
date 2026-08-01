@@ -10,6 +10,7 @@ import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
 import { processTournamentMatchResults } from './tournaments.js';
 import { deleteMatchmakingRoom } from './matchmaking.js';
+import { censor } from 'fast-profanity-filter';
 
 export let playSocketServer;
 
@@ -52,36 +53,38 @@ export async function initPlaySocket(httpServer) {
     attachPlaySocketEvents(playSocketServer); // Attach events AFTER initialization
 }
 
-const authedMultiplayerClients = new Map(); // Client Id (from PlaySocket) -> User id
-export const authedMultiplayerUserIds = new Map(); // User id -> client id
+const clientTokens = new Map(); // Client ID -> client token
+const authedMultiplayerClients = new Map(); // Client ID -> User ID (a user can have several clients, e.g. when playing on multiple devices)
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // Assign server
 
     server.onEvent("clientRegistrationRequested", async (clientId, data) => {
-        if (!data?.bearer) return;
-
-        try {
-            const decoded = await new Promise((resolve, reject) => {
-                jwt.verify(data.bearer, SECRET_KEY, (err, decoded) => {
-                    if (err) reject(err);
-                    else resolve(decoded);
+        // Authenticated users carry a bearer in the registration custom data
+        if (data?.bearer) {
+            try {
+                const decoded = await new Promise((resolve, reject) => {
+                    jwt.verify(data.bearer, SECRET_KEY, (err, decoded) => {
+                        if (err) reject(err);
+                        else resolve(decoded);
+                    });
                 });
-            });
-            if (!decoded?.userId) return "The authentication token lacks a user ID";
-            const userId = Number(decoded.userId);
+                if (!decoded?.userId) return "The authentication token lacks a user ID";
+                const userId = Number(decoded.userId);
 
-            // Fetch OpenReport status
-            const banStatus = await fetchReportData("blacklist", "user", "user-" + userId);
-            if (banStatus?.listed) return `You are banned for "${banStatus?.entry?.reason}" until ${new Date(banStatus?.entry?.expires_at)?.toLocaleDateString() || "forever"} – If you need help, please contact the moderators via Discord`;
+                // Fetch OpenReport status
+                const banStatus = await fetchReportData("blacklist", "user", "user-" + userId);
+                if (banStatus?.listed) return `You are banned for "${banStatus?.entry?.reason}" until ${new Date(banStatus?.entry?.expires_at)?.toLocaleDateString() || "forever"} – If you need help, please contact the moderators via Discord`;
 
-            // Store auth mapping after successful validation
-            authedMultiplayerClients.set(clientId, userId); // Client id -> User id
-            authedMultiplayerUserIds.set(userId, clientId); // User id -> Client id
+                // Store auth mapping after successful validation
+                authedMultiplayerClients.set(clientId, userId);
 
-        } catch (error) {
-            return "An error occured decoding the authentication token";
+            } catch (error) {
+                return "An error occured decoding the authentication token";
+            }
         }
+        // All clients carry a clientToken so that guests can prove they own that client ID
+        if (data?.clientToken && typeof data?.clientToken === "string" && data?.clientToken.length <= 64) clientTokens.set(clientId, data.clientToken);
     });
 
     server.onEvent("clientLeftRoom", async (clientId, roomId) => {
@@ -120,20 +123,12 @@ function attachPlaySocketEvents(server) {
     });
 
     server.onEvent("clientDisconnected", async (clientId) => {
-        if (authedMultiplayerClients.has(clientId)) {
-            const userId = authedMultiplayerClients.get(clientId);
-
-            // Only remove from user ID -> client ID map if this is the current/latest client from this user
-            const currentClientForUser = authedMultiplayerUserIds.get(userId);
-            if (currentClientForUser == clientId) authedMultiplayerUserIds.delete(userId);
-
-            // Always remove from client -> user ID maps
-            authedMultiplayerClients.delete(clientId);
-        }
+        authedMultiplayerClients.delete(clientId);
+        clientTokens.delete(clientId);
     });
 
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
-        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game";
+        if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game";
         if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
     });
@@ -222,9 +217,13 @@ function attachPlaySocketEvents(server) {
                 }
             }
 
+            // Sanitize the guest name, as it is client-provided and shown to strangers in matchmaking (censoring mirrors the client's guest name picker, min 3 & max 30 chars)
+            let guestName = typeof data?.guestName === "string" ? censor(data.guestName).replace(/\s+/g, " ").trim().slice(0, 30).trim() : null;
+            if (guestName?.length < 3) guestName = null;
+
             const playerData = user
                 ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false }
-                : { clientId, username: data.guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
+                : { clientId, username: guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
 
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
@@ -533,15 +532,27 @@ async function getUser(userId) {
     return rows[0];
 }
 
-export function checkIfUserIsAuthedAndInRoom(roomId, userId) {
+export function kickAllClientsOfUser(userId, reason) {
+    const clientIds = [...authedMultiplayerClients.entries()].filter(([_, id]) => id === Number(userId)).map(([clientId]) => clientId);
+    clientIds.forEach(clientId => playSocketServer?.kick(clientId, reason));
+}
+
+export function checkIfUserIdIsAssignedClientId(userId, clientId) {
+    const userIdForClient = authedMultiplayerClients.get(clientId);
+    if (userIdForClient == null || userIdForClient !== Number(userId)) return false;
+    return true;
+}
+
+export function checkIfTokenMatchesAndInRoom(roomId, clientId, clientToken) {
     // Check if room exists and get participants
     const roomParticipants = playSocketServer?.rooms?.[roomId]?.participants;
     if (!roomParticipants) return false;
 
-    // Get client id for the provided user id
-    let clientIdForUserId = authedMultiplayerUserIds.get(Number(userId));
-    if (clientIdForUserId == null) return false;
-    return roomParticipants.includes(clientIdForUserId); // True or false
+    // Verify client token matches
+    const registeredClientToken = clientTokens.get(clientId);
+    if (!registeredClientToken || registeredClientToken !== clientToken) return false;
+
+    return roomParticipants.includes(clientId); // True if in room, false if not
 }
 
 export function validateDivisionDuelRoom(roomId) {
@@ -554,6 +565,7 @@ export function validateDivisionDuelRoom(roomId) {
 
 export function validateTeamDuelRoom(roomId) {
     if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
     if (playSocketServer.getRoomStorage(roomId)?.teamAmount < 2) return false;
     if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
     if (playSocketServer.getRoomStorage(roomId)?.gameStarted) return false;

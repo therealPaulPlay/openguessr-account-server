@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { authedMultiplayerUserIds, checkIfUserIsAuthedAndInRoom, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, startRoom } from './playSocketEvents.js';
+import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, startRoom, checkIfTokenMatchesAndInRoom } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 import { processEloRefunds } from './processDivisionResult.js';
@@ -13,42 +13,63 @@ const matchmakingRouter = express.Router();
 // Room structure: { code, createdAt, userId, userElo, skillBased, map, type, username }
 const matchmakingRoomCodes = [];
 
-matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+// Players who provide a user ID must be guaranteed to actually be that user
+const authenticateIfUserIDProvided = (req, res, next) => {
+    if (req.body.id == null) next();
+    else authenticateTokenWithId(req, res, next);
+}
+
+matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUserIDProvided, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
-    const { id: userId, skillBased, type, map = "World" } = req.body;
+    const { id: userId, skillBased, type, map = "World", clientId, clientToken } = req.body;
 
-    if (!code || !userId || !map || !type) return res.status(400).json({ error: 'Code, user ID, map, and type are required.' });
+    if (userId == null && type !== "team-duel") return res.status(400).json({ error: "This room type cannot be submitted by guests." });
     if (typeof code !== "string" || code.length > 10) return res.status(400).json({ error: 'Invalid code format.' });
+    if (typeof clientToken !== "string" || clientToken.length > 64) return res.status(400).json({ error: 'Invalid client token format.' });
+    if (!code || !map || !type || clientId == null || !clientToken) return res.status(400).json({ error: 'Code, map, type, client ID and client token are required.' });
 
     try {
-        // Get user's ELO and username
-        const getUserEloQuery = 'SELECT elo, user_name FROM users WHERE id = ?';
-        const userData = await new Promise((resolve, reject) => {
-            db.execute(getUserEloQuery, [userId], (err, results) => {
-                if (err) return reject(err);
-                resolve(results[0]);
-            });
-        });
+        let userElo = null;
+        let username = null;
 
-        if (!userData) return res.status(404).json({ error: 'User not found.' });
-        const userElo = userData.elo;
-        const username = userData.user_name;
+        if (userId != null) {
+            // Get user's ELO and username
+            const getUserEloQuery = 'SELECT elo, user_name FROM users WHERE id = ?';
+            const userData = await new Promise((resolve, reject) => {
+                db.execute(getUserEloQuery, [userId], (err, results) => {
+                    if (err) return reject(err);
+                    resolve(results[0]);
+                });
+            });
+
+            if (!userData) return res.status(404).json({ error: 'User not found.' });
+            userElo = userData.elo;
+            username = userData.user_name;
+
+            // Ensure user is authed as the provided client ID
+            if (!checkIfUserIdIsAssignedClientId(userId, clientId)) return res.status(400).json({ error: 'Client is authenticated as another user ID or unauthenticated.' });
+        }
+
+        // Ensure that this client is actually in the room with the provided room code
+        // This check is performed both for guests as well as authenticated users, since both the guest as well as the auth path should be valid for room deletion
+        if (!checkIfTokenMatchesAndInRoom(code, clientId, clientToken)) return res.status(400).json({ error: "Room does not exist, you are not a part of it, or the provided client ID or client token are incorrect." });
 
         // Validate room & push to matchmaking synchronously (nothing async in between!)
-        if (!checkIfUserIsAuthedAndInRoom(code, userId)) return res.status(400).json({ error: 'Room does not exist, you are not part of it, or you are not authenticated.' });
         if (type == "division-duel" && !validateDivisionDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid division-duel room.' });
         if (type == "team-duel" && !validateTeamDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid team-duel room.' });
 
-        // Delete any existing room from this user
-        const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.userId === Number(userId));
+        // Delete any existing room with this roomId (deduplication)
+        const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.code === code);
         if (existingRoomIndex !== -1) matchmakingRoomCodes.splice(existingRoomIndex, 1);
 
         // Add new room to in-memory store
         matchmakingRoomCodes.push({
             code,
             createdAt: new Date(),
-            userId: Number(userId),
+            userId: userId ? Number(userId) : null,
+            clientId,
+            clientToken,
             userElo,
             skillBased: Boolean(skillBased),
             map,
@@ -63,7 +84,7 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateTokenW
     }
 });
 
-matchmakingRouter.put('/get-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
+matchmakingRouter.put('/get-division-duel-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: userId, elo = 1000, type, skillBased = false } = req.body;
     const index = parseInt(req.params.index, 10);
 
@@ -104,19 +125,19 @@ matchmakingRouter.put('/get-room/:index', standardLimiter, authenticateTokenWith
 });
 
 // Find and form a team duel (2v2) match by combining rooms
-matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: userId } = req.body;
+matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
+    const { code, clientToken } = req.body;
 
     try {
         // Find the requesting user's room in the matchmaking queue
-        const requestingRoom = matchmakingRoomCodes.find(room => room.userId === Number(userId) && room.type === 'team-duel');
-        if (!requestingRoom) return res.status(400).json({ error: 'You do not have a team-duel room in the matchmaking queue.' });
+        const requestingRoom = matchmakingRoomCodes.find(room => room.code === code && room.type === 'team-duel');
+        if (!requestingRoom) return res.status(400).json({ error: 'There is no team-duel room in the matchmaking queue matching that room code.' });
+        if (requestingRoom.clientToken !== clientToken) return res.status(400).json({ error: 'Client token mismatch.' });
 
-        const requestingRoomId = requestingRoom.code;
-        const roomCapacity = playSocketServer.rooms[requestingRoomId].size;
-        const teamAmount = playSocketServer.getRoomStorage(requestingRoomId)?.teamAmount || 2;
+        const roomCapacity = playSocketServer.rooms[code].size;
+        const teamAmount = playSocketServer.getRoomStorage(code)?.teamAmount || 2;
         const maxPlayersPerTeam = Math.floor(roomCapacity / teamAmount);
-        const requestingRoomPlayerCount = playSocketServer.rooms[requestingRoomId].participants.length;
+        const requestingRoomPlayerCount = playSocketServer.rooms[code].participants.length;
 
         // Validate that this room doesn't have more players than allowed per team
         if (requestingRoomPlayerCount > maxPlayersPerTeam) {
@@ -124,7 +145,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
         }
 
         // Lock the room to prevent additional players from joining after having started matchmaking
-        playSocketServer.updateRoomStorage(requestingRoomId, "locked", "set", true);
+        playSocketServer.updateRoomStorage(code, "locked", "set", true);
 
         // Get all team-duel rooms with their current player counts
         const teamDuelRooms = matchmakingRoomCodes
@@ -136,7 +157,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
 
         // Sort other rooms by player count (largest first) to find matches
         const otherRooms = teamDuelRooms
-            .filter(r => r.code !== requestingRoomId)
+            .filter(r => r.code !== code)
             .sort((a, b) => b.playerCount - a.playerCount);
 
         // Find combination that reaches exactly target player count
@@ -177,18 +198,23 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, authenticateTokenWith
 });
 
 // Safely cancel matchmaking by removing the room from the queue and destroying it
-// Clients use this instead of leaving directly, since leaving a room that was just matched
-// (but not yet reflected client-side) would count as a loss
+// Clients use this instead of leaving directly, since leaving a room that was just matched (but not yet reflected client-side) would be a loss
 // Returns { removed } so the client knows whether cancellation succeeded or the game was already matched
-matchmakingRouter.delete('/delete-room/:code', standardLimiter, authenticateTokenWithId, async (req, res) => {
+matchmakingRouter.delete('/delete-room/:code', standardLimiter, authenticateIfUserIDProvided, async (req, res) => {
     try {
         const code = req.params.code;
-        const userId = Number(req.body.id);
+        const { clientId, clientToken } = req.body;
+        const userId = req.body.id != null ? Number(req.body.id) : null;
 
         // Check if the room is still in matchmaking and owned by this user
         const room = matchmakingRoomCodes.find(room => room.code === code);
-        if (room && room.userId !== userId) return res.status(403).json({ error: 'You are not the owner of this room.' });
         if (!room) return res.json({ removed: false });
+
+        // Two paths to authenticate & delete a room, either via authenticated user ID, or via client ID + client token
+        // Since client IDs can be re-assigned when the previous client disconnected, we store the clientToken from creation-time on the matchmaking room itself
+        const isCreatedByThisUser = room.userId != null && room.userId === userId;
+        const isCreatedByThisClient = room.clientId === clientId && clientToken && room.clientToken === clientToken;
+        if (!isCreatedByThisUser && !isCreatedByThisClient) return res.status(403).json({ error: 'Not the owner of this room.' });
 
         // Destroying the room also removes it from matchmakingRoomCodes via the roomDestroyed event
         playSocketServer.destroyRoom(code);
@@ -253,8 +279,7 @@ matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) 
             const { type, data = {} } = req.body;
             if (type === "blacklist-entry-added" || type === "blacklist-entry-added-manually") {
                 const userId = Number(data.referenceId?.replace("user-", ""));
-                const clientId = authedMultiplayerUserIds.get(userId);
-                if (clientId) playSocketServer?.kick(clientId, "Banned");
+                kickAllClientsOfUser(userId, "Banned");
 
                 // For manual bans, refund elo
                 if (type === "blacklist-entry-added-manually") processEloRefunds(userId); // Not awaited here
