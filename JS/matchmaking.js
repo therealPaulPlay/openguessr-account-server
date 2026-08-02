@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, startRoom, checkIfTokenMatchesAndInRoom } from './playSocketEvents.js';
+import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, lockRoomForMatchmaking, startRoom, checkIfTokenMatchesAndInRoom } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 import { processEloRefunds } from './processDivisionResult.js';
@@ -14,12 +14,12 @@ const matchmakingRouter = express.Router();
 const matchmakingRoomCodes = [];
 
 // Players who provide a user ID must be guaranteed to actually be that user
-const authenticateIfUserIDProvided = (req, res, next) => {
+const authenticateIfUserIdProvided = (req, res, next) => {
     if (req.body.id == null) next();
     else authenticateTokenWithId(req, res, next);
 }
 
-matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUserIDProvided, async (req, res) => {
+matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUserIdProvided, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
     const { id: userId, skillBased, type, map = "World", clientId, clientToken } = req.body;
@@ -55,9 +55,17 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
         // This check is performed both for guests as well as authenticated users, since both the guest as well as the auth path should be valid for room deletion
         if (!checkIfTokenMatchesAndInRoom(code, clientId, clientToken)) return res.status(400).json({ error: "Room does not exist, you are not a part of it, or the provided client ID or client token are incorrect." });
 
-        // Validate room & push to matchmaking synchronously (nothing async in between!)
-        if (type == "division-duel" && !validateDivisionDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid division-duel room.' });
-        if (type == "team-duel" && !validateTeamDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid team-duel room.' });
+        // Validate room, lock it & push to matchmaking synchronously (nothing async in between!)
+        switch (type) {
+            case "division-duel":
+                if (!validateDivisionDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid division-duel room.' });
+                lockRoomForMatchmaking(code, true);
+                break;
+            case "team-duel":
+                if (!validateTeamDuelRoom(code)) return res.status(400).json({ error: 'This is not a valid team-duel room.' });
+                lockRoomForMatchmaking(code, false);
+                break;
+        }
 
         // Delete any existing room with this roomId (deduplication)
         const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.code === code);
@@ -84,43 +92,43 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
     }
 });
 
-matchmakingRouter.put('/get-division-duel-room/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { id: userId, elo = 1000, type, skillBased = false } = req.body;
-    const index = parseInt(req.params.index, 10);
-
-    if (isNaN(index) || index < 0) return res.status(400).json({ error: 'Invalid index.' });
-    if (!type) return res.status(400).json({ error: 'Room type is required.' });
-    if (elo && isNaN(elo)) return res.status(400).json({ error: 'Elo must be a number.' });
+matchmakingRouter.post('/find-division-duel', standardLimiter, async (req, res) => {
+    const { code, clientToken } = req.body;
 
     try {
-        // Find user's ELO division
+        // Find the requesting user's room in the matchmaking queue
+        const requestingRoom = matchmakingRoomCodes.find(room => room.code === code && room.type === 'division-duel');
+        if (!requestingRoom) return res.status(400).json({ error: 'There is no division-duel room in the matchmaking queue matching that room code.' });
+        if (requestingRoom.clientToken !== clientToken) return res.status(400).json({ error: 'Client token mismatch.' });
+        if (playSocketServer.rooms[code]?.participants?.length !== 1) return res.status(400).json({ error: 'Room has too many players for matchmaking.' });
+
+        // Find the requesting user's ELO division
         const breakpoints = [0, 1200, 1400, 1600, 2000, 100000];
         let divIndex = 0;
-        while (divIndex < breakpoints.length - 1 && elo >= breakpoints[divIndex + 1]) divIndex++;
+        while (divIndex < breakpoints.length - 1 && requestingRoom.userElo >= breakpoints[divIndex + 1]) divIndex++;
 
         const minElo = breakpoints[divIndex];
         const maxElo = breakpoints[divIndex + 1];
 
-        // Filter rooms based on skill-based matching rules
-        let filteredRooms = matchmakingRoomCodes.filter(room => {
-            if (room.userId === Number(userId)) return false; // Don't match with own room
-            if (room.type !== type) return false; // Must be same type
+        // Find the compatible player that has been queueing the longest
+        const opponentRoom = matchmakingRoomCodes
+            .filter(room => room.type === 'division-duel' && room.userId !== requestingRoom.userId) // The user ID also rules out the requesting user's own room
+            .filter(room => (requestingRoom.skillBased || room.skillBased) ? (room.userElo >= minElo && room.userElo < maxElo) : true) // Skill-based is opt-in, but binding for both sides
+            .sort((a, b) => a.createdAt - b.createdAt)[0];
 
-            if (skillBased) return room.userElo >= minElo && room.userElo < maxElo; // Skill-based: Only match with players in user's ELO range
-            else return !room.skillBased || (room.userElo >= minElo && room.userElo < maxElo); // Match with non-skill-based players AND skill-based players in their range
-        });
+        if (!opponentRoom) return res.json({ matched: false });
 
-        // Sort by creation time (oldest first)
-        filteredRooms.sort((a, b) => a.createdAt - b.createdAt);
+        // The room that was queued first becomes the target room - the other one empties out, which destroys it
+        const [targetRoom, roomToEmpty] = opponentRoom.createdAt <= requestingRoom.createdAt ? [opponentRoom, requestingRoom] : [requestingRoom, opponentRoom];
+        playSocketServer.move(playSocketServer.rooms[roomToEmpty.code].participants[0], targetRoom.code);
 
-        // Get room at specified index
-        const room = filteredRooms[index] || null;
-        const roomCode = room ? room.code : null;
+        // Start the game and delete target room from matchmaking (delete is called inside startRoom)
+        startRoom(targetRoom.code);
 
-        res.json({ code: roomCode });
+        return res.json({ matched: true, targetRoom: targetRoom.code });
     } catch (error) {
-        console.error('Error fetching room code:', error);
-        res.status(500).json({ error: 'An error occurred while fetching the room code.' });
+        console.error('Error during division duel match formation:', error);
+        return res.status(500).json({ error: 'Failed to form match.' });
     }
 });
 
@@ -140,12 +148,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
         const requestingRoomPlayerCount = playSocketServer.rooms[code].participants.length;
 
         // Validate that this room doesn't have more players than allowed per team
-        if (requestingRoomPlayerCount > maxPlayersPerTeam) {
-            return res.status(400).json({ error: 'Your room has too many players for matchmaking.' });
-        }
-
-        // Lock the room to prevent additional players from joining after having started matchmaking
-        playSocketServer.updateRoomStorage(code, "locked", "set", true);
+        if (requestingRoomPlayerCount > maxPlayersPerTeam) return res.status(400).json({ error: 'Room has too many players for matchmaking.' });
 
         // Get all team-duel rooms with their current player counts
         const teamDuelRooms = matchmakingRoomCodes
@@ -200,21 +203,17 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
 // Safely cancel matchmaking by removing the room from the queue and destroying it
 // Clients use this instead of leaving directly, since leaving a room that was just matched (but not yet reflected client-side) would be a loss
 // Returns { removed } so the client knows whether cancellation succeeded or the game was already matched
-matchmakingRouter.delete('/delete-room/:code', standardLimiter, authenticateIfUserIDProvided, async (req, res) => {
+matchmakingRouter.delete('/delete-room/:code', standardLimiter, async (req, res) => {
     try {
         const code = req.params.code;
         const { clientId, clientToken } = req.body;
-        const userId = req.body.id != null ? Number(req.body.id) : null;
 
-        // Check if the room is still in matchmaking and owned by this user
+        // Check if the room is still in matchmaking and owned by this client
         const room = matchmakingRoomCodes.find(room => room.code === code);
         if (!room) return res.json({ removed: false });
 
-        // Two paths to authenticate & delete a room, either via authenticated user ID, or via client ID + client token
         // Since client IDs can be re-assigned when the previous client disconnected, we store the clientToken from creation-time on the matchmaking room itself
-        const isCreatedByThisUser = room.userId != null && room.userId === userId;
-        const isCreatedByThisClient = room.clientId === clientId && clientToken && room.clientToken === clientToken;
-        if (!isCreatedByThisUser && !isCreatedByThisClient) return res.status(403).json({ error: 'Not the owner of this room.' });
+        if (room.clientId !== clientId || room.clientToken !== clientToken) return res.status(403).json({ error: 'Not the owner of this room.' });
 
         // Destroying the room also removes it from matchmakingRoomCodes via the roomDestroyed event
         playSocketServer.destroyRoom(code);

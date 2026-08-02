@@ -133,10 +133,6 @@ function attachPlaySocketEvents(server) {
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
     });
 
-    server.onEvent("clientJoinedRoom", (clientId, roomId) => {
-        if (server.getRoomStorage(roomId)?.divisionRoom && server?.rooms?.[roomId]?.participants.length >= 2) startRoom(roomId);
-    });
-
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
         const { key, type, value, secondValue } = server.getUpdateDetails(update);
 
@@ -555,21 +551,36 @@ export function checkIfTokenMatchesAndInRoom(roomId, clientId, clientToken) {
     return roomParticipants.includes(clientId); // True if in room, false if not
 }
 
+function validateMatchmakingRoomStorage(roomId) {
+    const storage = playSocketServer.getRoomStorage(roomId);
+    if (!storage) return false;
+    if (!storage.matchmakingRoom) return false;
+    if (storage.divisionRoom || storage.tournamentRoom || storage.locked) return false;
+    if (storage.gameStarted) return false;
+    if (storage.style !== "duel") return false;
+    return true;
+}
+
 export function validateDivisionDuelRoom(roomId) {
-    if (!playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
-    if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
-    if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
-    if (playSocketServer.getRoomStorage(roomId)?.gameStarted) return false;
+    if (!validateMatchmakingRoomStorage(roomId)) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.teamAmount !== 1) return false;
+    if (playSocketServer.rooms[roomId]?.size !== 2) return false;
+    if (playSocketServer.rooms[roomId]?.participants?.length !== 1) return false;
     return true;
 }
 
 export function validateTeamDuelRoom(roomId) {
-    if (!playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) return false;
-    if (playSocketServer.getRoomStorage(roomId)?.divisionRoom) return false;
-    if (playSocketServer.getRoomStorage(roomId)?.teamAmount < 2) return false;
-    if (playSocketServer.getRoomStorage(roomId)?.style !== "duel") return false;
-    if (playSocketServer.getRoomStorage(roomId)?.gameStarted) return false;
+    if (!validateMatchmakingRoomStorage(roomId)) return false;
+    if (playSocketServer.getRoomStorage(roomId)?.teamAmount !== 2) return false;
+    if (playSocketServer.rooms[roomId]?.size !== 4) return false;
+    if (playSocketServer.rooms[roomId]?.participants?.length > 2) return false;
     return true;
+}
+
+// Locking makes the game attributable to matchmaking (the only way in now is the server moving a matched player in)
+export function lockRoomForMatchmaking(roomId, divisionRoom = false) {
+    if (divisionRoom) playSocketServer.updateRoomStorage(roomId, "divisionRoom", "set", true);
+    playSocketServer.updateRoomStorage(roomId, "locked", "set", true);
 }
 
 export function reviewAndConstructInitialRoomStorage(requestorClientId, storage) {
@@ -580,7 +591,6 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
     if (!["none", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "none";
     if (typeof storage.map !== "string") storage.map = "World";
-    if (typeof storage.divisionRoom !== "boolean") storage.divisionRoom = false;
     if (typeof storage.matchmakingRoom !== "boolean") storage.matchmakingRoom = false;
     if (requestorClientId !== "server") storage.tournamentRoom = false;
     if (requestorClientId !== "server") storage.tournamentId = null;
@@ -603,6 +613,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.duelProcessed = false;
     storage.mapBounds = null;
     storage.locked = false;
+    storage.divisionRoom = false;
     storage.teamScores = Object.fromEntries(Array.from({ length: storage.teamAmount }, (_, i) => [i, { roundBest: 0, score: 0 }]));
 
     return storage;
