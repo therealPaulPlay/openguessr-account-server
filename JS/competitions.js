@@ -381,17 +381,18 @@ competitionsRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("compe
         };
 
         if (userId) {
-            const [userRankResults] = await db.promise().execute(`
+            const [friendsResults] = await db.promise().execute(`
                 SELECT id, userName, score, position, supporter_level FROM (
                   SELECT user_id AS id, username AS userName, score, supporter_level,
                     RANK() OVER (ORDER BY score DESC) AS position
                   FROM competition_entries
                   WHERE competition_id = ?
                 ) AS subquery
-                WHERE id = ?
-            `, [id, userId]);
+                WHERE id = ? OR id IN (SELECT friend_id FROM friends WHERE user_id = ?)
+                ORDER BY position ASC
+            `, [id, userId, userId]);
 
-            response.userRank = userRankResults[0] || null;
+            response.friendsLeaderboard = friendsResults;
         }
 
         res.json(response);
