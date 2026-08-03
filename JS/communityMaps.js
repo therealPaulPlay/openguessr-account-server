@@ -462,7 +462,10 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, as
 communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const player_id = req.body.id;
+    const like = req.body.like;
     const db = getDB();
+
+    if (typeof like !== 'boolean') return res.status(400).json({ error: 'Like state is required.' });
 
     try {
         // Check if the map exists
@@ -472,21 +475,15 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
         const map = mapResults[0];
         const mapId = map.id;
 
-        // Check if the player has already liked the map
-        const [likeResults] = await db.promise().execute('SELECT * FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
-
-        if (likeResults.length > 0) {
-            // Player already liked the map, so this is a dislike
-            await db.promise().execute('DELETE FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
-            await db.promise().execute('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]); // Decrement the map's like count, ensuring it doesn't go below 0
-
-            return res.status(200).json({ message: 'Map disliked successfully.' });
+        if (like) {
+            const [result] = await db.promise().execute('INSERT IGNORE INTO map_likes (map_id, map_name, player_id) VALUES (?, ?, ?)', [mapId, map.name, player_id]);
+            if (result.affectedRows > 0) await db.promise().execute('UPDATE maps SET likes = IFNULL(likes, 0) + 1 WHERE id = ?', [mapId]); // Increment the map's like count
         } else {
-            // Player hasn't liked the map yet, so this is a like
-            await db.promise().execute('INSERT INTO map_likes (map_id, map_name, player_id) VALUES (?, ?, ?)', [mapId, map.name, player_id]);
-            await db.promise().execute('UPDATE maps SET likes = IFNULL(likes, 0) + 1 WHERE id = ?', [mapId]); // Increment the map's like count
-            return res.status(200).json({ message: 'Map liked successfully.' });
+            const [result] = await db.promise().execute('DELETE FROM map_likes WHERE map_id = ? AND player_id = ?', [mapId, player_id]);
+            if (result.affectedRows > 0) await db.promise().execute('UPDATE maps SET likes = GREATEST(likes - 1, 0) WHERE id = ?', [mapId]); // Decrement the map's like count, ensuring it doesn't go below 0
         }
+
+        return res.status(200).json({ liked: like });
     } catch (error) {
         console.error("Error during map like/dislike:", error);
         return res.status(500).json({ error: 'An error occurred while liking or disliking the map.' });
