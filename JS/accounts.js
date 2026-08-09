@@ -76,12 +76,25 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         username = username.replace(/\s+/g, ' ').trim();
 
         if (!validUsernameRegex.test(username) || username.length === 0) return res.status(400).json({ error: 'Invalid username. Please avoid using unsupported characters or empty spaces.' });
+        if (username.length > 255) return res.status(400).json({ error: 'Username is too long.' });
         if (!check(username)) return res.status(400).json({ error: 'Username must not contain profanity.' });
 
-        // Check if username already exists
-        const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ?';
+        // Reject a no-op rename before the limiter runs, so it doesn't count towards the weekly limit
+        const currentNameQuery = 'SELECT user_name FROM users WHERE id = ?';
+        const currentUser = await new Promise((resolve, reject) => {
+            db.execute(currentNameQuery, [id], (err, results) => {
+                if (err) return reject(err);
+                resolve(results[0]);
+            });
+        });
+
+        if (!currentUser) return res.status(404).json({ error: 'User not found.' });
+        if (currentUser.user_name === username) return res.status(400).json({ error: 'This is already your username.' });
+
+        // Check if username already exists, excluding the user's own row so casing-only changes are allowed
+        const userNameExistsQuery = 'SELECT id FROM users WHERE user_name = ? AND id != ?';
         const existingUserNameUser = await new Promise((resolve, reject) => {
-            db.execute(userNameExistsQuery, [username], (err, results) => {
+            db.execute(userNameExistsQuery, [username, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results[0]);
             });
@@ -93,36 +106,40 @@ accountRouter.put('/update/username', standardLimiter, authenticateTokenWithId, 
         nameChangeLimiter(req, res, async (err) => {
             if (err) return res.status(429).json({ error: 'You can only change your username once per week.' });
 
-            // Update query to change the username
-            let updateQuery = `
-            UPDATE users
-            SET user_name = ?
-            WHERE id = ?
-        `;
+            try {
+                // Update query to change the username
+                let updateQuery = `
+                UPDATE users
+                SET user_name = ?
+                WHERE id = ?
+            `;
 
-            await new Promise((resolve, reject) => {
-                db.execute(updateQuery, [username, id], (err, results) => {
-                    if (err) return reject(err);
-                    resolve(results);
+                await new Promise((resolve, reject) => {
+                    db.execute(updateQuery, [username, id], (err, results) => {
+                        if (err) return reject(err);
+                        resolve(results);
+                    });
                 });
-            });
 
-            // Query to fetch updated user details
-            let userQuery = `
-            SELECT user_name AS username
-            FROM users
-            WHERE id = ?
-        `;
+                // Query to fetch updated user details
+                let userQuery = `
+                SELECT user_name AS username
+                FROM users
+                WHERE id = ?
+            `;
 
-            const user = await new Promise((resolve, reject) => {
-                db.execute(userQuery, [id], (err, results) => {
-                    if (err) return reject(err);
-                    resolve(results[0]);
+                const user = await new Promise((resolve, reject) => {
+                    db.execute(userQuery, [id], (err, results) => {
+                        if (err) return reject(err);
+                        resolve(results[0]);
+                    });
                 });
-            });
 
-            if (user) res.json({ user });
-            else res.status(404).json({ error: 'User not found.' });
+                if (user) res.json({ user });
+                else res.status(404).json({ error: 'User not found.' });
+            } catch {
+                res.status(500).json({ error: 'An error occurred while updating the username.' });
+            }
         });
 
     } catch (error) {
