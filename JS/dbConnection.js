@@ -32,7 +32,7 @@ export function connectDB() {
             return;
         }
 
-        console.log('Connected to MySQL pool');
+        console.log('Connected to MySQL pool.');
         connection.release(); // Release the test connection back to the pool
     });
 
