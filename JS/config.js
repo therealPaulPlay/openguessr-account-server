@@ -60,3 +60,6 @@ export const s3Config = {
     secretAccessKey: process.env.SPACES_SECRET_ACCESS_KEY,
     bucketName: process.env.SPACES_BUCKET_NAME
 };
+
+export const openRouterKey = process.env.OPENROUTER_API_KEY;
+export const openRouterModel = process.env.OPENROUTER_MODEL;

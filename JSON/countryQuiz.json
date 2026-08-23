@@ -1,0 +1,1513 @@
+{
+    "source": "Questions are taken from the OpenTriviaQA dataset (https://github.com/uberspot/OpenTriviaQA) which uses the Attribution-ShareAlike license (https://creativecommons.org/licenses/by-sa/4.0/).",
+    "questions": [
+        {
+            "question": "The rivers - the Tajo, the Ebro, the Duero, and the Guadiana, are located in this country.",
+            "answer": "Spain"
+        },
+        {
+            "question": "The volcanoes - Akan, Aso, Mount Fuji and Rausu are located in this country.",
+            "answer": "Japan"
+        },
+        {
+            "question": "Onega, Khanka and Chudskoye are three of the many lakes in this country.",
+            "answer": "Russia"
+        },
+        {
+            "question": "The valleys of the Yellow River and the Pearl River are two of the seven main national valleys in this country.",
+            "answer": "China"
+        },
+        {
+            "question": "Pico da Bandeira, Pico do Cruzeiro and Pedra da Mina are three of the numerous mountains located in this South American country.",
+            "answer": "Brazil"
+        },
+        {
+            "question": "Kainji Lake and Lake Chad are considered lakes of this country.",
+            "answer": "Nigeria"
+        },
+        {
+            "question": "Mitchell, Jardine, Staaten, Flinders, Leichhardt, and Nicholson are just few of the rivers in this country.",
+            "answer": "Australia"
+        },
+        {
+            "question": "Kaskaspakte, Akka and Sielmmacohkka are three mountains in this country.",
+            "answer": "Sweden"
+        },
+        {
+            "question": "Dasht-e Kavir and Kavir-e Lut are deserts located in this Asian country.",
+            "answer": "Iran"
+        },
+        {
+            "question": "Which country held the record for the highest birth rate in the 2005 world statistics?",
+            "answer": "Niger"
+        },
+        {
+            "question": "The people of which country watched the most TV per week in 2005?",
+            "answer": "Thailand"
+        },
+        {
+            "question": "The highest mountain peak on our planet is Mount Everest. It was first climbed by Edmund Hillary and Tenzing Norgay on May 29, 1953. What is the home country of Sir Edmund Hillary?",
+            "answer": "New Zealand"
+        },
+        {
+            "question": "This country, situated in North Europe, has almost 200 000 lakes - more than any other country in the world.",
+            "answer": "Finland"
+        },
+        {
+            "question": "This country has more than 60% of worlds lakes due to its special drainage system.",
+            "answer": "Canada"
+        },
+        {
+            "question": "This island is well known in scientific fields for being home of five percent of the worlds plant and animal species, with 80% of them unique to it. The island is also the fourth biggest on Earth, with population of about 17,500,000 people.",
+            "answer": "Madagascar"
+        },
+        {
+            "question": "In Greek mythology, this island is the legendary birthplace of the goddess of beauty, love, and passion, the charming Aphrodite, where according to the legend, she emerged from the sea foam.",
+            "answer": "Cyprus"
+        },
+        {
+            "question": "Because of its spectacular nature forms, one of this insular country's islands has been a set for the filming of many movie productions, including the highly successful, Lord of the Rings and The Chronicles of Narnia.",
+            "answer": "New Zealand"
+        },
+        {
+            "question": "Despite being the largest in the world, this island is sparsely populated, due to its unfavourable climate.",
+            "answer": "Greenland"
+        },
+        {
+            "question": "The gowni is a typical national costume in which African country?",
+            "answer": "Tanzania"
+        },
+        {
+            "question": "Which country has the river Danube as most of its northern border?",
+            "answer": "Bulgaria"
+        },
+        {
+            "question": "Which EU member is divided into a Greek and a Turkish part?",
+            "answer": "Cyprus"
+        },
+        {
+            "question": "Which Nordic country was first to enter the European Union?",
+            "answer": "Denmark"
+        },
+        {
+            "question": "Which European Union member is home to Santa Claus?",
+            "answer": "Finland"
+        },
+        {
+            "question": "Which European Union member has the greatest number of islands?",
+            "answer": "Greece"
+        },
+        {
+            "question": "Which country is the only member of the European Union that is partly located in Africa?",
+            "answer": "Spain"
+        },
+        {
+            "question": "This European Union member was once known for huge migration of its people, mainly to the US and UK. Nowadays, however, it attracts many immigrants from new EU members.",
+            "answer": "Ireland"
+        },
+        {
+            "question": "Which EU member was the largest country in Europe in XIV century, but now has land area of just 65 000 sq. km?",
+            "answer": "Lithuania"
+        },
+        {
+            "question": "Which mini country was among the European Union founding members?",
+            "answer": "Luxembourg"
+        },
+        {
+            "question": "In which European Union member the native people make up only 60% of the total population?",
+            "answer": "Latvia"
+        },
+        {
+            "question": "Which former British colony joined the European Union in 2004?",
+            "answer": "Malta"
+        },
+        {
+            "question": "Which country is the biggest contributor to the European Union budget?",
+            "answer": "Germany"
+        },
+        {
+            "question": "Which country has twice rejected European Union membership in national referendums?",
+            "answer": "Norway"
+        },
+        {
+            "question": "Which European Union member was the first country to reject communist rule and thus sparkle the liberation of so called Eastern Block?",
+            "answer": "Poland"
+        },
+        {
+            "question": "In May 2004 the European Union accepted 10 new countries. Which of them was first to adopt the Euro as its national currency?",
+            "answer": "Slovenia"
+        },
+        {
+            "question": "Which Muslim country was recognized as a candidate for accession in the EU on December 12th, 1999 at the Helsinki summit of the European Council?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "Which member of the European Union completely surrounds two countries that are outside of the club?",
+            "answer": "Italy"
+        },
+        {
+            "question": "Riga is the capital of which Baltic country?",
+            "answer": "Latvia"
+        },
+        {
+            "question": "What country gained independence from the British Mandate for Palestine in 1948?",
+            "answer": "Israel"
+        },
+        {
+            "question": "In what South American country was Che Ernesto Guevara born?",
+            "answer": "Argentina"
+        },
+        {
+            "question": "After World War II, this country was split into two states which were not reunited until 1990.",
+            "answer": "Germany"
+        },
+        {
+            "question": "Mount Erebus is a volcano located on this continent.",
+            "answer": "Antarctica"
+        },
+        {
+            "question": "Rastafarianism is a religion that venerates Haile Selassie as a god. Haile Selassie was the emperor of the third most populous country in Africa. Name that country.",
+            "answer": "Ethiopia"
+        },
+        {
+            "question": "What European island is partially occupied by a neighbouring island nation, which has led to centuries of dispute?",
+            "answer": "Ireland"
+        },
+        {
+            "question": "The island of Sebatik, located east of Borneo, is shared by Indonesia and what other nation?",
+            "answer": "Malaysia"
+        },
+        {
+            "question": "Rokko island, constructed between 1973 and 1992, is an artificial island situated in which country?",
+            "answer": "Japan"
+        },
+        {
+            "question": "The citizens of which country rejected the idea of joining the EU in 1972 and again in 1994?",
+            "answer": "Norway"
+        },
+        {
+            "question": "Which former Yugoslavian republic was the first to be admitted to the European Union?",
+            "answer": "Slovenia"
+        },
+        {
+            "question": "Six countries are located along the Black Sea border. Which one among them has the longest Black Sea coast line (not including the Sea of Azov coast line)?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "The names of three large rivers flowing into the Black Sea begin with a letter D. Danube, the largest of the three, flows through ten European countries and enters the Black Sea in Romania. The other two end their flow in this country.",
+            "answer": "Ukraine"
+        },
+        {
+            "question": "The Crimean peninsula has been under the control of multiple powers over the centuries. Although it is considered to be an autonomous republic, it is a part of this nation.",
+            "answer": "Ukraine"
+        },
+        {
+            "question": "Edmund Hillary, the first mountaineer to reach mount Everest, was from what country?",
+            "answer": "New Zealand"
+        },
+        {
+            "question": "What is the largest island on the planet in terms of territory?",
+            "answer": "Greenland"
+        },
+        {
+            "question": "This is the fourth-largest island in the world, and it is home to 5% of the plant and animal species on the planet.",
+            "answer": "Madagascar"
+        },
+        {
+            "question": "This island is located in the Indian Ocean and is also known as Ceylon.",
+            "answer": "Sri Lanka"
+        },
+        {
+            "question": "The capital of this island country is Kingston.",
+            "answer": "Jamaica"
+        },
+        {
+            "question": "Where are the origins of the Rhine?",
+            "answer": "Switzerland"
+        },
+        {
+            "question": "In what country does the River Po rise?",
+            "answer": "Italy"
+        },
+        {
+            "question": "In what country will you find the impressive Neuschwanstein Castle, which was the inspiration for Sleeping Beauty Castle at Disneyland Park?",
+            "answer": "Germany"
+        },
+        {
+            "question": "The city of Casablanca, which is the setting of the classic 1942 movie, starring Humphrey Bogart and Ingrid Bergman, is located in what African country?",
+            "answer": "Morocco"
+        },
+        {
+            "question": "This island, located in the Caribbean Sea, is the largest island of an archipelago called Greater Antilles. The city of Havana is located on it.",
+            "answer": "Cuba"
+        },
+        {
+            "question": "This island, also known as Formosa, is the largest island of the Republic of China.",
+            "answer": "Taiwan"
+        },
+        {
+            "question": "This island country whose capital is Nicosia is the third-largest Mediterranean island.",
+            "answer": "Cyprus"
+        },
+        {
+            "question": "This European island is situated in the North Atlantic Ocean, south of the Arctic Circle. Its largest city is Reykjavik.",
+            "answer": "Iceland"
+        },
+        {
+            "question": "Valletta is the capital city of this island country in the Mediterranean.",
+            "answer": "Malta"
+        },
+        {
+            "question": "Which country borders both Slovenia and Slovakia?",
+            "answer": "Austria"
+        },
+        {
+            "question": "The national motto of what country is A Mari Usque Ad Mare, meaning From Sea to Sea in Latin?",
+            "answer": "Canada"
+        },
+        {
+            "question": "The national motto of what country is Peace at Home, Peace in the World?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "The national motto of this South American country is Libertad o muerte, Spanish for Liberty or Death.",
+            "answer": "Uruguay"
+        },
+        {
+            "question": "The slogan Sub Umbra Floreo, or Under the Shade I Flourish is the national motto of what Central American country?",
+            "answer": "Belize"
+        },
+        {
+            "question": "The national motto of what island country is Ever Conscious of God We Aspire, Build and Advance as One People?",
+            "answer": "Grenada"
+        },
+        {
+            "question": "The national motto of this Arabic country is God is the greatest.",
+            "answer": "Iraq"
+        },
+        {
+            "question": "In what country is the Angel Falls, the highest waterfall on the planet, located?",
+            "answer": "Venezuela"
+        },
+        {
+            "question": "Jog Falls is the highest plunge waterfall in this Asian country.",
+            "answer": "India"
+        },
+        {
+            "question": "In what European country are the Rhine Falls located?",
+            "answer": "Switzerland"
+        },
+        {
+            "question": "In what country is Jurong Falls, the tallest artificial waterfall in the world, located?",
+            "answer": "Singapore"
+        },
+        {
+            "question": "The country of Papua New Guinea gained its independence from this country in 1975.",
+            "answer": "Australia"
+        },
+        {
+            "question": "The Egyptian territory is calculated to be roughly twice as large as the territory of this European country.",
+            "answer": "Spain"
+        },
+        {
+            "question": "In what country is Virginia Falls located?",
+            "answer": "Canada"
+        },
+        {
+            "question": "In what country is Yumbilla Falls, the fifth-tallest waterfall on the planet, located?",
+            "answer": "Peru"
+        },
+        {
+            "question": "Where is the third-tallest waterfall on the planet, Ramnefjellsfossen, located?",
+            "answer": "Norway"
+        },
+        {
+            "question": "In what country is Gocta Waterfall located?",
+            "answer": "Peru"
+        },
+        {
+            "question": "In what Asian country is the Mount Unzen volcanic group located?",
+            "answer": "Japan"
+        },
+        {
+            "question": "The Santorini volcanic islands are part of what European country?",
+            "answer": "Greece"
+        },
+        {
+            "question": "The African kingdom of Dahomey was powerful in the XVIII century. Which modern day country did it cover?",
+            "answer": "Benin"
+        },
+        {
+            "question": "The Ottoman Empire used to rule over North Africa, the Middle East and south-eastern Europe. Which modern day country is the successor of the empire?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "Which independent country was not a Soviet republic?",
+            "answer": "Albania"
+        },
+        {
+            "question": "Tegucigalpa is the capital and largest city of this country.",
+            "answer": "Honduras"
+        },
+        {
+            "question": "Addis Ababa is the capital of what country?",
+            "answer": "Ethiopia"
+        },
+        {
+            "question": "Kathmandu is the capital city of what country?",
+            "answer": "Nepal"
+        },
+        {
+            "question": "The capital city of what country is called Quito?",
+            "answer": "Ecuador"
+        },
+        {
+            "question": "The Cross Channel Euroregion includes France, the UK and what other country?",
+            "answer": "Belgium"
+        },
+        {
+            "question": "In what country is the active volcano Sakurajima located?",
+            "answer": "Japan"
+        },
+        {
+            "question": "In what country is the active volcano Koryaksky located?",
+            "answer": "Russia"
+        },
+        {
+            "question": "During World War II, this country was able to successfully defend its freedom and resist invasions by the Soviet Union - despite some loss of territory. It joined the European Union in 1995.",
+            "answer": "Finland"
+        },
+        {
+            "question": "After gaining its independence in 1991, it has retained closer political and economic ties to Russia than any of the other former Soviet republics.",
+            "answer": "Belarus"
+        },
+        {
+            "question": "This country is home to the northernmost capital in mainland Europe?",
+            "answer": "Finland"
+        },
+        {
+            "question": "It is the sixth largest country and home of The Doctor breeze.",
+            "answer": "Australia"
+        },
+        {
+            "question": "Its three-year-old Socialist government was overthrown in 1973 by a dictatorial military regime led by Augusto Pinochet.",
+            "answer": "Chile"
+        },
+        {
+            "question": "This country dominates the Aegian Sea and possesses an archipelago of about 2,000 islands.",
+            "answer": "Greece"
+        },
+        {
+            "question": "This country controls the Sinai Peninsula. Following the completion of the Suez Canal in 1869, it became an important world transportation hub.",
+            "answer": "Egypt"
+        },
+        {
+            "question": "This city situated south of China is made up of 230 islands, Lantau Island being the largest.",
+            "answer": "Hong Kong"
+        },
+        {
+            "question": "Although Angel Falls bear the notion of something angelic, the phenomenon is named after Jimmy Angel, a barnstorming pilot from Missouri, who has become a modern legend.",
+            "answer": "Venezuela"
+        },
+        {
+            "question": "Mount Fuji is a nearly perfectly shaped volcano. It has been worshipped as a sacred mountain.",
+            "answer": "Japan"
+        },
+        {
+            "question": "Through thousands of years in existence, Niagara Falls has been eroding at a rate of 4 feet (1.5 meters) per year.",
+            "answer": "Canada"
+        },
+        {
+            "question": "The name of mount Kilimanjaro comes from Swahili and means the mountain that glitters.",
+            "answer": "Tanzania"
+        },
+        {
+            "question": "The Great Barrier Reef consists of many colonies of corals. That is why it is sometimes referred to as the largest living animal in the world.",
+            "answer": "Australia"
+        },
+        {
+            "question": "Krakatoa volcano caused the most violent volcanic eruption recorded in worlds history. In 1883, it destroyed 75 % of the territory of its island.",
+            "answer": "Indonesia"
+        },
+        {
+            "question": "Madrid is the largest city and capital of this country, whose the most valuable natural resource is the soil - nearly one-third of the land is suitable for cultivation.",
+            "answer": "Spain"
+        },
+        {
+            "question": "Bern is the capital of this country, where most rivers are not suitable for navigation due to their great falls and swift currents.",
+            "answer": "Switzerland"
+        },
+        {
+            "question": "Ulaan Baator is the capital of this sparsely populated country, where domesticated animals outnumber people.",
+            "answer": "Mongolia"
+        },
+        {
+            "question": "Vientiane is the capital of this country, which has more than 50 ethnic groups, divided into three broad categories.",
+            "answer": "Laos"
+        },
+        {
+            "question": "Phnom Penh is the capital of this country, whose official language is Khmer.",
+            "answer": "Cambodia"
+        },
+        {
+            "question": "Vienna is the capital of this landlocked country, which became a member of the European Union in 1995.",
+            "answer": "Austria"
+        },
+        {
+            "question": "Montevideo is the capital of this second smallest country in South America, after Suriname.",
+            "answer": "Uruguay"
+        },
+        {
+            "question": "Caracas is the capital of this country, a Spanish colony for more than 300 years, before it declared its independence in the early 19th century.",
+            "answer": "Venezuela"
+        },
+        {
+            "question": "Over 125 million people of more than 250 ethnic groups share the territory of this African country. This constitutes 1/5 of the population of the entire continent.",
+            "answer": "Nigeria"
+        },
+        {
+            "question": "There is a vending machine for every 23 of the almost 130 million people that live in this country.",
+            "answer": "Japan"
+        },
+        {
+            "question": "Dhaka, formerly Dacca, is the capital and largest city of this country with over 140 million citizens. Families there are large, unfortunately so is infant mortality.",
+            "answer": "Bangladesh"
+        },
+        {
+            "question": "This home to 144 million spans 11 time zones and its territory takes up 1/8th of the entire Earth surface.",
+            "answer": "Russia"
+        },
+        {
+            "question": "Islam, Christianity and Hinduism all coexist in this country of 160 million.",
+            "answer": "Pakistan"
+        },
+        {
+            "question": "About 75% of the 185 million citizens of this country live in the cities. The largest city is Sao Paulo with a population of 16 million.",
+            "answer": "Brazil"
+        },
+        {
+            "question": "Constituted of 17,508 islands this country gives home to about 240 million. Its tropical rain forest accounts for 10% of the worlds rain forests.",
+            "answer": "Indonesia"
+        },
+        {
+            "question": "The first medical school, Ayurveda was founded in this populous country.",
+            "answer": "India"
+        },
+        {
+            "question": "This is the most populated country in the world - 1.3 billion people live there. The native language, Mandarin, is most widely spoken, with 885 million speakers.",
+            "answer": "China"
+        },
+        {
+            "question": "This country, a victor in both World War I and World War II is the largest West European nation.",
+            "answer": "France"
+        },
+        {
+            "question": "After multiple agreements between 1772 and 1795, Russia, Prussia, and Austria divided this central European country among themselves. It finally regained its independence in 1918.",
+            "answer": "Poland"
+        },
+        {
+            "question": "This Central America country, slightly smaller than South Carolina, withdrew from Colombia in 1903 with the help of US support.",
+            "answer": "Panama"
+        },
+        {
+            "question": "In 1895, military defeat forced China to cede this country to Japan. China re-gained control after World War II.",
+            "answer": "Taiwan"
+        },
+        {
+            "question": "This kingdom was a founding member of NATO and the EU. It remained neutral during World War I, but was invaded and occupied by Germany during World War II.",
+            "answer": "Netherlands"
+        },
+        {
+            "question": "This island country tried to gain its independence from Spain in 1821, but was conquered and ruled by the Haitians for 22 years. It finally became independent in 1844.",
+            "answer": "Dominican Republic"
+        },
+        {
+            "question": "This independent country, located in Southeastern Asia was first colonized by Portugal in the 16th century. Between 1976 and 1999 it was a provice of Indonesia.",
+            "answer": "East Timor"
+        },
+        {
+            "question": "This Southeast European country allied with the Axis powers and participated in the 1941 German invasion of the USSR. In 1947, overrun by the Soviets, it bacame a Communist peoples republic.",
+            "answer": "Romania"
+        },
+        {
+            "question": "This powerful world empire of the 16th and 17th centuries borders Andorra, France, Gibraltar, Portugal and Morocco.",
+            "answer": "Spain"
+        },
+        {
+            "question": "Frances conquest of this country began in 1858 and was completed by 1884. Independence was declared after World War II, but the French continued to rule until 1954.",
+            "answer": "Vietnam"
+        },
+        {
+            "question": "The origins of the widespread tradition of decorating a Christmas tree can be traced back to the 16th century, in this country.",
+            "answer": "Germany"
+        },
+        {
+            "question": "What country gave the Statue of Liberty to America?",
+            "answer": "France"
+        },
+        {
+            "question": "Burma, the former name of this Southern Asian republic, was changed by the military government which took over political authority in 1988. Nevertheless, Burma is still often used to refer to this country.",
+            "answer": "Myanmar"
+        },
+        {
+            "question": "This southern African constitutional monarchy is entirely surrounded by the Republic of South Africa.",
+            "answer": "Lesotho"
+        },
+        {
+            "question": "389 sq. km (150 sq. miles) is the entire territory of this country, situated in the Caribbean. Agriculture is the most important sector of its economy, more specifically, bananas.",
+            "answer": "Saint Vincent and the Grenadines"
+        },
+        {
+            "question": "This 316 sq. km (122 sq. miles) country is an island south of Italy. It has no mountains or rivers. Its university is one of the oldest in the world, founded in 1592.",
+            "answer": "Malta"
+        },
+        {
+            "question": "This country is comprised of 1190 coral islands southwest of the southern tip of India. They constitute 300 sq. kilometers (115 sq. miles). The official language is Dhivehi, but English is also spoken.",
+            "answer": "Maldives"
+        },
+        {
+            "question": "This country, situated in the eastern Caribbean, stretches over 261 sq. km. (104 sq. miles). The two islands were first settled by the British in 1623 and gained their autonomy in 1967. Independence came in 1983.",
+            "answer": "Saint Kitts and Nevis"
+        },
+        {
+            "question": "Situated in central Europe, this country takes up 160 sq. km. (62 sq. miles). It is a famous winter resort, also known for its low tax rates.",
+            "answer": "Liechtenstein"
+        },
+        {
+            "question": "This country is an enclave in central Italy. Its territory is 61.2 sq. km. (24 sq. miles). It claims to be the worlds oldest republic still in existence, founded in 301 A.D.",
+            "answer": "San Marino"
+        },
+        {
+            "question": "This 1.95 sq. km. (0.7 sq. miles) country is a famous constitutional monarchy. It relies largely on foreign currency for an economic base. There are no farms and the main industry is tourism.",
+            "answer": "Monaco"
+        },
+        {
+            "question": "Excluding continents, which island is considered to be the largest island on Earth?",
+            "answer": "Greenland"
+        },
+        {
+            "question": "Arica, a place in this country, gets the least rainfall - only 0.03 inches (0.76 millimeters) per year.",
+            "answer": "Chile"
+        },
+        {
+            "question": "The lowest temperature on earth was recorded on this continent in 1983, when the termometer locked at -129F (- 88 C).",
+            "answer": "Antarctica"
+        },
+        {
+            "question": "In some parts of this country, Halloween is called Pooky Night.",
+            "answer": "Ireland"
+        },
+        {
+            "question": "Santa Claus is a mispronunciation of the word Sinterklaas, by the English settlers of New York. The word Sinterklaas traces its origins to which country?",
+            "answer": "Netherlands"
+        },
+        {
+            "question": "What country is called Polska in its native language?",
+            "answer": "Poland"
+        },
+        {
+            "question": "What country in West-central Europe is called Deutschland in its native language?",
+            "answer": "Germany"
+        },
+        {
+            "question": "What former Yugoslavian republic is called Crna Gora in its native language?",
+            "answer": "Montenegro"
+        },
+        {
+            "question": "What country is called Suomi in its native language?",
+            "answer": "Finland"
+        },
+        {
+            "question": "What country is called Sverige in its native language?",
+            "answer": "Sweden"
+        },
+        {
+            "question": "What country is called Magyarorszag in its native language?",
+            "answer": "Hungary"
+        },
+        {
+            "question": "What country is called Eire in its native language?",
+            "answer": "Ireland"
+        },
+        {
+            "question": "What Balkan country is called Shqiperia in its native language?",
+            "answer": "Albania"
+        },
+        {
+            "question": "This country on the Balkan Peninsula is called Ellada in its native language?",
+            "answer": "Greece"
+        },
+        {
+            "question": "What country is called Hrvatska in its native language?",
+            "answer": "Croatia"
+        },
+        {
+            "question": "What country is called Slovensko in its native language?",
+            "answer": "Slovakia"
+        },
+        {
+            "question": "This country is located in Africa. Here you may get a hotel room for approximately $5/person, soft drinks are 20c, and dinner with drinks for $7. The worlds largest artifical lake, Lake Volta, is located here.",
+            "answer": "Ghana"
+        },
+        {
+            "question": "This country has the Balboa as currency, which is the same as the Dollar. Actually the bills are US dollars and the coins are a mixture of Balboas and US coins.",
+            "answer": "Panama"
+        },
+        {
+            "question": "Christian Nativity scenes are very popular during the Christmas holidays. However, a life-sized Nativity scene is on permanent display in Piazza San Pietro, in this city.",
+            "answer": "Vatican City"
+        },
+        {
+            "question": "On December 24 and 25, 1974, tropical cyclone Tracy devastated Darwin, a city located on this country's far north-western coastline.",
+            "answer": "Australia"
+        },
+        {
+            "question": "Until recent years this strange custom was practiced: when a husband died, his wife would walk into the funeral pyre and burn to death. Where did they perform it?",
+            "answer": "India"
+        },
+        {
+            "question": "Where were eyeglasses known and worn 500 years before they became popular in Europe and America?",
+            "answer": "China"
+        },
+        {
+            "question": "About 1,400 years ago, a British girl named Bathilde was sold to King Clovis II as a slave. The king fell in love with her and they got married. He made her queen. This is how slavery ended in this country.",
+            "answer": "France"
+        },
+        {
+            "question": "Belgrade was the capital of former Yugoslavia. Which country has the city as its capital today?",
+            "answer": "Serbia"
+        },
+        {
+            "question": "Which country has Valletta as its capital?",
+            "answer": "Malta"
+        },
+        {
+            "question": "On September 7, Brazil commemorates its independence from this country.",
+            "answer": "Portugal"
+        },
+        {
+            "question": "ANZAC Day is a public holiday celebrated on April 25th, in this country.",
+            "answer": "Australia"
+        },
+        {
+            "question": "Every year, this country traditionally presents a Christmas tree to the London citizens to express appreciation for the British support during World War II.",
+            "answer": "Norway"
+        },
+        {
+            "question": "This South-Asian country has Dili as a capital and largest city. Its two official languages are Tetum and Portuguese.",
+            "answer": "East Timor"
+        },
+        {
+            "question": "This country won its independence from France. Its currency is Gourde (HTG) and capital - Port-au-Prince.",
+            "answer": "Haiti"
+        },
+        {
+            "question": "Before the Spanish arrived, this country was home to various Pre-Inca cultures and later, to the Inca Empire. Francisco Pizarro landed on its coast in 1532.",
+            "answer": "Peru"
+        },
+        {
+            "question": "The name of this small African country means lioness mountains. Its written history begins in 1462 when Portuguese explorers first landed there.",
+            "answer": "Sierra Leone"
+        },
+        {
+            "question": "In which Central European country will you find Munich (Muenchen)?",
+            "answer": "Germany"
+        },
+        {
+            "question": "Aalborg is the main city of the region of North Jutland which is located in this country.",
+            "answer": "Denmark"
+        },
+        {
+            "question": "In which German-speaking country will you find the city of Linz?",
+            "answer": "Austria"
+        },
+        {
+            "question": "In which Baltic country will you find the city of Kaunas?",
+            "answer": "Lithuania"
+        },
+        {
+            "question": "In what country will you find the Adriatic town of Trieste (Trst, Triest)?",
+            "answer": "Italy"
+        },
+        {
+            "question": "Which country's second largest port is Turku?",
+            "answer": "Finland"
+        },
+        {
+            "question": "In what country will you find the city of Narvik?",
+            "answer": "Norway"
+        },
+        {
+            "question": "The Titanic was the second of a trio of giant liners, designed to dominate the transatlantic travel business. It was owned by the White Star Line. Where was the Titanic built?",
+            "answer": "Ireland"
+        },
+        {
+            "question": "Which country's name can be translated as God fights?",
+            "answer": "Israel"
+        },
+        {
+            "question": "Which country has a lion in its name?",
+            "answer": "Sierra Leone"
+        },
+        {
+            "question": "Which African nation is country of the blacks?",
+            "answer": "Sudan"
+        },
+        {
+            "question": "People in which country used to decorate Christmas trees with artificial roses and set them on fire?",
+            "answer": "Estonia"
+        },
+        {
+            "question": "You wouldnt want to be a bride in this country - the honey moon lasts three months and according to custom, the bride covers all expenses.",
+            "answer": "Thailand"
+        },
+        {
+            "question": "It is customary in this country to put an artificial spider and a web on the Christmas tree.",
+            "answer": "Ukraine"
+        },
+        {
+            "question": "Folk hero Santa Claus is a variant of a European folk tale based on the historical figure of Saint Nicholas, who lived on the territory of what present-day country?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "At Christmas, Christians in the tropical areas of this country decorate banana or mango trees .",
+            "answer": "India"
+        },
+        {
+            "question": "This country's Christmas tree decorations traditionally include an artificial spider web.",
+            "answer": "Ukraine"
+        },
+        {
+            "question": "Where does the earliest evidence of Christmas celebrations come from?",
+            "answer": "Egypt"
+        },
+        {
+            "question": "The tradition of the Christmas tree, which can be traced back to the 16th century, comes from which country?",
+            "answer": "Germany"
+        },
+        {
+            "question": "On May 22, 1960, an earthquake with magnitude of 9.5 was recorded in which country?",
+            "answer": "Chile"
+        },
+        {
+            "question": "Pharaoh Khufu was burried in the Great Pyramid of Giza. Where can we find that pyramid?",
+            "answer": "Egypt"
+        },
+        {
+            "question": "This palace was built for love. It is what what every women wants her husband to do for her. The Taj Mahal is located in what country?",
+            "answer": "India"
+        },
+        {
+            "question": "The Borobudur Temple is in what country?",
+            "answer": "Indonesia"
+        },
+        {
+            "question": "New Jersey was settled first by this nation in the early 1630s.",
+            "answer": "Netherlands"
+        },
+        {
+            "question": "The Bay of Pigs is located on the coast of this country.",
+            "answer": "Cuba"
+        },
+        {
+            "question": "Which country used to rule vast areas from South America through Africa to East Asia?",
+            "answer": "Portugal"
+        },
+        {
+            "question": "Which country is divided by a canal connecting the Pacific and Atlantic Oceans?",
+            "answer": "Panama"
+        },
+        {
+            "question": "The name of which country means Rich Harbour?",
+            "answer": "Puerto Rico"
+        },
+        {
+            "question": "Which is the only mostly Christian country in Asia?",
+            "answer": "Philippines"
+        },
+        {
+            "question": "Where is the biggest EU lake located?",
+            "answer": "Sweden"
+        },
+        {
+            "question": "Which country has the most EU neighbours?",
+            "answer": "Germany"
+        },
+        {
+            "question": "Ice caves are large caverns filled with ice. The Dachstein Giant Ice Cave is located in which country?",
+            "answer": "Austria"
+        },
+        {
+            "question": "The Moskstraumen strait, famous for its whirlpools, is located in which country?",
+            "answer": "Norway"
+        },
+        {
+            "question": "It is the 72nd largest country of the world located in Southeast- Asia. Its capital is Manila.",
+            "answer": "Philippines"
+        },
+        {
+            "question": "Located north of Israel. With the area of 10,452 , it is the 166th largest country of the world. Its capital is Beirut.",
+            "answer": "Lebanon"
+        },
+        {
+            "question": "It was formed when Somaliland, Puntland, and Galdumug collided to form it. It is also part of Greater Middle East. Its capital and largest city is Mogadishu.",
+            "answer": "Somalia"
+        },
+        {
+            "question": "It is a country bordering Red Sea to the south-west, Saudi Arabia to the south and Iraq in the East. Its capital and largest city is Amman.",
+            "answer": "Jordan"
+        },
+        {
+            "question": "It borders Russia to the north and China to the south, east and west.",
+            "answer": "Mongolia"
+        },
+        {
+            "question": "What African nation lost its coastal access on the Red Sea (and became landlocked) when Eritrea gained independence in 1993?",
+            "answer": "Ethiopia"
+        },
+        {
+            "question": "South Africa entirely surrounds this small landlocked country.",
+            "answer": "Lesotho"
+        },
+        {
+            "question": "There are two countries in the world which are double-landlocked meaning they are surrounded by other landlocked countries. One is Uzbekistan. Name the other one which is a small principality in the European Alps.",
+            "answer": "Liechtenstein"
+        },
+        {
+            "question": "In the movie The Sound of Music one of the main characters was a captain in the Navy of what landlocked country?",
+            "answer": "Austria"
+        },
+        {
+            "question": "This African landlocked nation was once known as Upper Volta (or Haute Volta). What is it called now?",
+            "answer": "Burkina Faso"
+        },
+        {
+            "question": "Almost all landlocked countries are in Europe, Africa and Central Asia. What is the only landlocked country in Southeast Asia?",
+            "answer": "Laos"
+        },
+        {
+            "question": "Which country uses the yen as its national currency?",
+            "answer": "Japan"
+        },
+        {
+            "question": "Rubles are used in which Eastern European country?",
+            "answer": "Russia"
+        },
+        {
+            "question": "This nation, which became independent in 2002, shares an island with Indonesia. Part of its territory, the district of Oecussi-Ambeno, is separated from the rest of the country by a part of the Indonesian province of East Nusa Tenggara.",
+            "answer": "East Timor"
+        },
+        {
+            "question": "The towns of Ceuta and Melilla in northern Morocco are autonomous cities of what nation?",
+            "answer": "Spain"
+        },
+        {
+            "question": "Nakhichevan is an landlocked exclave, bordered by Armenia, Iran and Turkey. What nation is it a part of?",
+            "answer": "Azerbaijan"
+        },
+        {
+            "question": "The exclave of Cabinda in Africa is separated from the rest of the country it is part of by the Atlantic coastal portion of the Democratic Republic of the Congo. What nation does Cabinda belong to?",
+            "answer": "Angola"
+        },
+        {
+            "question": "The Musandam peninsula on the southern side of the entrance to the Persian Gulf is an exclave of what country, separated from the rest of the country by the United Arab Emirates?",
+            "answer": "Oman"
+        },
+        {
+            "question": "In this country, the new year begins between January 21 and February 21, at new moon.",
+            "answer": "China"
+        },
+        {
+            "question": "Which African country is bordered by Nigeria, Cameroon, Niger, Libya, Sudan and the Central African Republic?",
+            "answer": "Chad"
+        },
+        {
+            "question": "This country, bordering the Arabian Sea on the south, also has land borders with Iran, Afghanistan, China and India.",
+            "answer": "Pakistan"
+        },
+        {
+            "question": "Switzerland has borders with France, Germany, Italy, Austria and which other country?",
+            "answer": "Liechtenstein"
+        },
+        {
+            "question": "On what continent is the Great Victoria Desert located?",
+            "answer": "Australia"
+        },
+        {
+            "question": "On what continent is the largest fresh water reserve on the planet located?",
+            "answer": "Antarctica"
+        },
+        {
+            "question": "At the record altitude of 3,600 meters (11,811 feet), La Paz, serves as capital of which South American country?",
+            "answer": "Bolivia"
+        },
+        {
+            "question": "In what country can the remains of St. Valentine be viewed every February 14?",
+            "answer": "Ireland"
+        },
+        {
+            "question": "Which country governs Christmas Island?",
+            "answer": "Australia"
+        },
+        {
+            "question": "To which country does the term Holy Land refer?",
+            "answer": "Israel"
+        },
+        {
+            "question": "Which saint country is the oldest functioning republic in the world?",
+            "answer": "San Marino"
+        },
+        {
+            "question": "Strasbourg is the main city of the Alsace region which is located in this country.",
+            "answer": "France"
+        },
+        {
+            "question": "It is generally accepted that the April Fools Day tradition started in this country.",
+            "answer": "France"
+        },
+        {
+            "question": "In December 1981, General Leopoldo Galtieri seized power in this South American country.",
+            "answer": "Argentina"
+        },
+        {
+            "question": "Vidkun Quisling was leader of this country during World War II.",
+            "answer": "Norway"
+        },
+        {
+            "question": "Which country's flag has the Latin motto Ordem e Progresso (Order and Progress) on it?",
+            "answer": "Brazil"
+        },
+        {
+            "question": "Which country has a plain green flag?",
+            "answer": "Libya"
+        },
+        {
+            "question": "St. Patricks Day is traditionally a feast day celebrating the Patron Saint of what country?",
+            "answer": "Ireland"
+        },
+        {
+            "question": "This country opted to stay out of the European Community during a referendum in 1972. On the next referendum, held in 1994, its people rejected the proposal to join the European Union.",
+            "answer": "Norway"
+        },
+        {
+            "question": "The European Court of Justice, the Supreme Court of the European Union, is based in which country?",
+            "answer": "Luxembourg"
+        },
+        {
+            "question": "Port Moresby is the capital city of this country.",
+            "answer": "Papua New Guinea"
+        },
+        {
+            "question": "Khartoum is the capital city of this country.",
+            "answer": "Sudan"
+        },
+        {
+            "question": "Niamey is the capital city of what country?",
+            "answer": "Niger"
+        },
+        {
+            "question": "Freetown is the capital city of what country?",
+            "answer": "Sierra Leone"
+        },
+        {
+            "question": "In which South American country was the Nazi murderer Adolph Eichman captured?",
+            "answer": "Argentina"
+        },
+        {
+            "question": "Juan Santamaria, Franklin Chang-Diaz, Oscar Aria Sanchez, and Claudia Poll are famous people from which Latin American country?",
+            "answer": "Costa Rica"
+        },
+        {
+            "question": "The famous soprano Yma Sumac is from which Latin American country?",
+            "answer": "Peru"
+        },
+        {
+            "question": "Guarani is one of the official languages of which Latin American country?",
+            "answer": "Paraguay"
+        },
+        {
+            "question": "On 11 October 1942, the United States defeated this country in the Battle of Esperance.",
+            "answer": "Japan"
+        },
+        {
+            "question": "This West African country's capital is Conakry; it borders the Atlantic Ocean, and the official language is French.",
+            "answer": "Guinea"
+        },
+        {
+            "question": "This democratic parliamentary republics capital is Tallinn, and its national flag consists of three horizontal stripes of blue, black and white color.",
+            "answer": "Estonia"
+        },
+        {
+            "question": "This country is located in Central America, its capital is San Jose, its official language is Spanish.",
+            "answer": "Costa Rica"
+        },
+        {
+            "question": "This country, located in the South Pacific Ocean, comprises of about 322 larger islands, its capital is Suva, and one of the official languages is Hindi.",
+            "answer": "Fiji"
+        },
+        {
+            "question": "This constitutional monarchy is located in Western Asia, its capital is Amman, and its official language is Arabic.",
+            "answer": "Jordan"
+        },
+        {
+            "question": "This is the largest country both in Africa and in the Arab World in terms territory, and the tenth largest country in the world. Its capital is Khartoum.",
+            "answer": "Sudan"
+        },
+        {
+            "question": "This republic is located in northwestern South America, it is named after a European explorer and its capital city is Bogota.",
+            "answer": "Colombia"
+        },
+        {
+            "question": "This is an island country consisting of almost one thousand islands, it is located east of Papua New Guinea and its capital is Honiara.",
+            "answer": "Solomon Islands"
+        },
+        {
+            "question": "This island country is located east of the Caribbean Sea, it was a colony of the United Kingdom until 1966. Its flag features a trident.",
+            "answer": "Barbados"
+        },
+        {
+            "question": "Which country is home to the huge and spectacular statue of Jesus Christ the Redeemer, constructed in 1931?",
+            "answer": "Brazil"
+        },
+        {
+            "question": "Which country was terribly devastated by Hurricane Mitch in 1998?",
+            "answer": "Honduras"
+        },
+        {
+            "question": "Managua is the capital of this country whose currency is called cordoba.",
+            "answer": "Nicaragua"
+        },
+        {
+            "question": "The homeland of the Mayans stretched from Mexicos Yucatan peninsula southward into Belize and what other country?",
+            "answer": "Guatemala"
+        },
+        {
+            "question": "The lost city of the Incas, Machu Picchu stands high above the gorges of the Urubamba, which is located in this country.",
+            "answer": "Peru"
+        },
+        {
+            "question": "What South American country borders Guyana to the east, Brazil to the south, and Columbia to the west?",
+            "answer": "Venezuela"
+        },
+        {
+            "question": "Which South American country has two capitals, named La Paz and Sucre?",
+            "answer": "Bolivia"
+        },
+        {
+            "question": "Which country elected Felipe Calderon President on September 6, 2006?",
+            "answer": "Mexico"
+        },
+        {
+            "question": "According to legend, on November 18 in 1307 William Tell shot an arrow through an apple on top of his sons head. Tell is a national hero of which country?",
+            "answer": "Switzerland"
+        },
+        {
+            "question": "On November 18 in 1978, Jim Jones and his followers committed mass suicide in Jonestown. Where was Jonestown?",
+            "answer": "Guyana"
+        },
+        {
+            "question": "Which was the second Western Hemisphere country (after the USA) to gain its independence after winning an important battle on November 18 in 1803?",
+            "answer": "Haiti"
+        },
+        {
+            "question": "Gotland, the largest island in the Baltic Sea, is also a province of this Baltic country.",
+            "answer": "Sweden"
+        },
+        {
+            "question": "A disaster that took the lives of 852 people occurred in September of 1994 when the ferry ship named after this country sank in the Baltic Sea.",
+            "answer": "Estonia"
+        },
+        {
+            "question": "The Urn of Fate is part of the traditional Christmas celebrations in what country?",
+            "answer": "Italy"
+        },
+        {
+            "question": "According to the tradition, on Christmas Eve, Christians in this country go to church wearing a completely new outfit.",
+            "answer": "Egypt"
+        },
+        {
+            "question": "In which country was the first Christmas stamp released?",
+            "answer": "Canada"
+        },
+        {
+            "question": "In which country does Santa visit children twice, once on December 4th and once on December 6th?",
+            "answer": "Belgium"
+        },
+        {
+            "question": "In which country are presents brought to children by a camel instead of by Santa Claus?",
+            "answer": "Syria"
+        },
+        {
+            "question": "Stefan Drzewiecki was the creator of the first submarine built in series - in 1881, 50 units were built for the Russian government. What country was Drzewiecki from?",
+            "answer": "Poland"
+        },
+        {
+            "question": "Peoples Republic of Kampuchea is a former name of what country?",
+            "answer": "Cambodia"
+        },
+        {
+            "question": "Mesopotamia is the former name of what country?",
+            "answer": "Iraq"
+        },
+        {
+            "question": "Basutoland is a former name of what country?",
+            "answer": "Lesotho"
+        },
+        {
+            "question": "Spanish East Indies is the former name of what country?",
+            "answer": "Philippines"
+        },
+        {
+            "question": "The castle of Almourol is situated on a small island, in the middle of the Tagus river in which country?",
+            "answer": "Portugal"
+        },
+        {
+            "question": "The final point of the Dakar Rally, the capital city of Dakar, is located in hat country?",
+            "answer": "Senegal"
+        },
+        {
+            "question": "In August 1947, this country bordered by the Arabian Sea on the west, the Indian Ocean on the south and the Bay of Bengal on the east, gained its independence from Britain.",
+            "answer": "India"
+        },
+        {
+            "question": "In August 1965, this country, comprised of 63 islands including the main island, gained its independence from Malaysia that was ruled by Britain at the time.",
+            "answer": "Singapore"
+        },
+        {
+            "question": "Name the Asian country whose official motto is the Islamic creed: There is no god but Allah and Muhammad is the Messenger of Allah.",
+            "answer": "Saudi Arabia"
+        },
+        {
+            "question": "In 1980, U.S. President Jimmy Carter tried to free American hostages via a helicopter attack. Where were these hostages held?",
+            "answer": "Iran"
+        },
+        {
+            "question": "In which part of Africa could you most likely hear Gelukkige nuwe jaar when a New Year celebrations start?",
+            "answer": "South Africa"
+        },
+        {
+            "question": "On what continent are Queen Maud Land, Wilkes Land and Marie Byrd Land located?",
+            "answer": "Antarctica"
+        },
+        {
+            "question": "What country was once called Abyssinia?",
+            "answer": "Ethiopia"
+        },
+        {
+            "question": "What is the largest country in Africa and in the Arab world in terms of area?",
+            "answer": "Sudan"
+        },
+        {
+            "question": "What is the largest landlocked country in the world in terms of area?",
+            "answer": "Kazakhstan"
+        },
+        {
+            "question": "What is the largest country in South America in terms of territory?",
+            "answer": "Brazil"
+        },
+        {
+            "question": "What is the largest country in the Americas in terms of territory?",
+            "answer": "Canada"
+        },
+        {
+            "question": "What is the largest country on the planet in terms of territory?",
+            "answer": "Russia"
+        },
+        {
+            "question": "This territory, located between the Arctic and Atlantic Oceans, is warmed up by the magical Northern Lights.",
+            "answer": "Greenland"
+        },
+        {
+            "question": "This self-governing British overseas territory, located on the Iberian Peninsula, shares a border with Spain to the north.",
+            "answer": "Gibraltar"
+        },
+        {
+            "question": "In which South American country is there a small population that speaks only Spanish and Welsh?",
+            "answer": "Argentina"
+        },
+        {
+            "question": "The first bills (banknotes) appeared in this country.",
+            "answer": "China"
+        },
+        {
+            "question": "In 1956 the Freedom Fighters of this country won Time magazines Man of the Year award.",
+            "answer": "Hungary"
+        },
+        {
+            "question": "Victoria Land is a region located on this continent.",
+            "answer": "Antarctica"
+        },
+        {
+            "question": "In 1569 Poland united with this country to form a Commonwealth that covered an area of almost one million square kilometers.",
+            "answer": "Lithuania"
+        },
+        {
+            "question": "Gamzigrad is an ancient Roman complex of palaces located in this European country.",
+            "answer": "Serbia"
+        },
+        {
+            "question": "In 1991, Israel was attacked and for the first time did not retaliate. Which country was the attacker?",
+            "answer": "Iraq"
+        },
+        {
+            "question": "Which was the second country after Egypt to normalize its relations with Israel with a peace treaty of 1994?",
+            "answer": "Jordan"
+        },
+        {
+            "question": "What modern-day country includes most of ancient Mesopotamia?",
+            "answer": "Iraq"
+        },
+        {
+            "question": "In what country is Lake Nyos located?",
+            "answer": "Cameroon"
+        },
+        {
+            "question": "Iquitos, a major port city on the Amazon River, is located east of the Andes in what country?",
+            "answer": "Peru"
+        },
+        {
+            "question": "To what nation do the Faroe Islands belong?",
+            "answer": "Denmark"
+        },
+        {
+            "question": "Blagoevgrad BT is this country's largest cigarette company. Kremikovtzi is its largest metalworking company. Mobiltel is one of its largest communications companies.",
+            "answer": "Bulgaria"
+        },
+        {
+            "question": "During Spanish times Philippine foreign trade with Spain was carried out through this country.",
+            "answer": "Mexico"
+        },
+        {
+            "question": "From which country was the Japanese writing system imported and adapted for the Japanese language?",
+            "answer": "China"
+        },
+        {
+            "question": "The African Union is a confederation of all African countries except one. Which is the only African country that is NOT a member of the African Union?",
+            "answer": "Morocco"
+        },
+        {
+            "question": "This landlocked African country is one of the 10 poorest countries in the world. Its capital, Bujumbura, is located on Lake Tanganyika.",
+            "answer": "Burundi"
+        },
+        {
+            "question": "This country in the Indian Ocean, comprising some 115 islands, is officially considered an African country.",
+            "answer": "Seychelles"
+        },
+        {
+            "question": "The national flag of what country consists of three horizontal bands in red, black and white?",
+            "answer": "Yemen"
+        },
+        {
+            "question": "What country's national flag simply consists of a blue and a yellow horizontal bands?",
+            "answer": "Ukraine"
+        },
+        {
+            "question": "The flag of what country is a red rectangle with a white crescent moon and a star in the center?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "The national flag of what country consists of a smaller white area and a larger purple section?",
+            "answer": "Qatar"
+        },
+        {
+            "question": "Pristina is the capital of this country which gained its independence from Serbia on February 17 2008.",
+            "answer": "Kosovo"
+        },
+        {
+            "question": "This autonomous region is located in the Horn of Africa and is part of the Somali Republic.",
+            "answer": "Somaliland"
+        },
+        {
+            "question": "This small country in Southeast Asia, also known as Timor-Leste, is located about 640 km (400 mi) northwest of Darwin, Australia.",
+            "answer": "East Timor"
+        },
+        {
+            "question": "According to legend, in what present day country was El Dorado, the lost city of gold, located?",
+            "answer": "Colombia"
+        },
+        {
+            "question": "In what country is the greeting wai, (slight bow, with the palms pressed together) used to welcome, thank , apologize, or say goodbye?",
+            "answer": "Thailand"
+        },
+        {
+            "question": "In what country did the greeting gesture Anjali Mudra originate?",
+            "answer": "India"
+        },
+        {
+            "question": "The Thanksgiving Song, performed and co-written by Adam Sandler, revolves around the repetition of what word?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "On April 1, 1867 this country became a British crown colony.",
+            "answer": "Singapore"
+        },
+        {
+            "question": "In what country were the 2008 Summer Olympics held?",
+            "answer": "China"
+        },
+        {
+            "question": "What is the location of the Panagyurishte treasure, one of the best known surviving artifacts of Thracian culture?",
+            "answer": "Bulgaria"
+        },
+        {
+            "question": "What country's National Day is celebrated on 14th of July, commemorating an event which occurred on the morning of 14 July 1789?",
+            "answer": "France"
+        },
+        {
+            "question": "On Christmas Eve, children from this country leave their shoes by the fireplace to be filled with gifts from Pere Noel.",
+            "answer": "France"
+        },
+        {
+            "question": "In this country the Christmas period is generally referred to as Navidad.",
+            "answer": "Spain"
+        },
+        {
+            "question": "Greenland became an autonomous administrative division of this European country in 1979.",
+            "answer": "Denmark"
+        },
+        {
+            "question": "In what country is the annual Harbin International Ice and Snow Sculpture Festival held?",
+            "answer": "China"
+        },
+        {
+            "question": "The Oyapock River Bridge, built in 2010, is the first land connection between Brazil and what other country?",
+            "answer": "France"
+        },
+        {
+            "question": "Against which country did Bolivia fight in the Chaco War?",
+            "answer": "Paraguay"
+        },
+        {
+            "question": "Nelson Mandela, the 1993 Nobel Peace Prize laureate, was President of this African country from 10 May 1994 to 14 June 1999.",
+            "answer": "South Africa"
+        },
+        {
+            "question": "In what country is January 1 known as Capodanno?",
+            "answer": "Italy"
+        },
+        {
+            "question": "In which country do you find Masuria, sometimes called the Land of a Thousand Lakes?",
+            "answer": "Poland"
+        },
+        {
+            "question": "Mozambique was colonized in 1505 by which European country?",
+            "answer": "Portugal"
+        },
+        {
+            "question": "NDjamena is the capital of this African country.",
+            "answer": "Chad"
+        },
+        {
+            "question": "Maseru is the capital of which African country?",
+            "answer": "Lesotho"
+        },
+        {
+            "question": "Lusaka is the capital of which African country?",
+            "answer": "Zambia"
+        },
+        {
+            "question": "The Sun of May is one of the national symbols of Argentina and what other South American country?",
+            "answer": "Uruguay"
+        },
+        {
+            "question": "During the War of the Triple Alliance the allied countries of Argentina, Brazil, and Uruguay fought against what country?",
+            "answer": "Paraguay"
+        },
+        {
+            "question": "In the 7th century, after the Islamic conquest of this territory many orthodox monks went to the Holy Mountain in Greece in an attempt to find another calm place.",
+            "answer": "Egypt"
+        },
+        {
+            "question": "The island of Java is part of the territory of which country?",
+            "answer": "Indonesia"
+        },
+        {
+            "question": "This island nation, which was the target of a US-led invasion in 1983, observes a national holiday of Thanksgiving Day on 25 October.",
+            "answer": "Grenada"
+        },
+        {
+            "question": "What small country is located entirely within the territory of the Republic of South Africa?",
+            "answer": "Lesotho"
+        },
+        {
+            "question": "What South American country borders Peru to the east?",
+            "answer": "Brazil"
+        },
+        {
+            "question": "Un peuple, un but, une foi, or One people, one goal, one faith, is the national motto of this African country.",
+            "answer": "Mali"
+        },
+        {
+            "question": "The Latin phrase Quo Fata Ferunt, or Whither the Fates Carry Us, is the national motto of this country.",
+            "answer": "Bermuda"
+        },
+        {
+            "question": "The national motto of what South American country is One people, one nation, one destiny?",
+            "answer": "Guyana"
+        },
+        {
+            "question": "The national motto of what European country is The strength of the nation lies in unity?",
+            "answer": "Lithuania"
+        },
+        {
+            "question": "Ibiza belongs to the Balearic Islands, an autonomous community of which European country?",
+            "answer": "Spain"
+        },
+        {
+            "question": "What meat is traditionally consumed at Christmas in Mexico?",
+            "answer": "Turkey"
+        },
+        {
+            "question": "The dessert called bibingka is traditionally prepared during Christmas in what country?",
+            "answer": "Philippines"
+        },
+        {
+            "question": "Joel Roberts Poinsett imported the popular decorative Christmas plants, poinsettias from this Central American country, where he worked as a US ambassador in the 19th century.",
+            "answer": "Mexico"
+        },
+        {
+            "question": "GEK Cobra, founded in 1972 to protect Jewish immigrants from Palestinian terrorists, is the counter-terrorist unit of this country.",
+            "answer": "Austria"
+        },
+        {
+            "question": "Which former Soviet Republic was first to declare independence from the USSR?",
+            "answer": "Lithuania"
+        },
+        {
+            "question": "All revolutions of the 1989 Autumn of Nations in Europe were rather peaceful. Which country was the only one to overthrow their communist regime violently?",
+            "answer": "Romania"
+        },
+        {
+            "question": "Which country's all three neighbors were dissolved between 1990 and 1993?",
+            "answer": "Poland"
+        },
+        {
+            "question": "What is the only country in the world whose national flag is not rectangular?",
+            "answer": "Nepal"
+        },
+        {
+            "question": "What country has a crown depicted in the upper left corner of its flag?",
+            "answer": "Liechtenstein"
+        },
+        {
+            "question": "What is the only country in the world whose flag features a building?",
+            "answer": "Cambodia"
+        },
+        {
+            "question": "The Bayamo Anthem is the title of the national anthem of this island country.",
+            "answer": "Cuba"
+        },
+        {
+            "question": "Oh, Bright Dawn of May is the national anthem of this European country.",
+            "answer": "Montenegro"
+        },
+        {
+            "question": "My Fatherland, My Happiness and Joy is the title of the national anthem of this country.",
+            "answer": "Estonia"
+        },
+        {
+            "question": "God Is Great is the title of the national anthem of this African country.",
+            "answer": "Libya"
+        }
+    ]
+}
