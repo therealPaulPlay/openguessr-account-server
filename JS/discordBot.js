@@ -291,7 +291,7 @@ const handlers = {
 
     guess: (req, res) => {
         const round = rounds.get(req.body.channel_id);
-        if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob} Use /help to learn more.`, true);
+        if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob}`, true);
 
         const typed = req.body.data.options.find(option => option.name === "country").value;
         const guess = resolveCountry(typed);
@@ -500,7 +500,7 @@ async function askLLM(question, channelId, guildId) {
 
     const systemPrompt = `${GAME_CONTEXT}\n\n## Instructions\n\n` +
         (channelNames ? `When unsure, you can read from these channels (may include a helpful FAQ): ${channelNames}\n\n` : "") +
-        `ONLY use these emojis (NO other emojis are allowed): ${Object.values(EMOJI).join(" ")}\n\n` +
+        `ONLY use these emojis (No other emojis are allowed), copied exactly including the numbers: ${Object.values(EMOJI).join(" ")}\n\n` +
         `Reply as JSON with {"answer": "<your answer to the latest question>"}, or {"answer": false} if there is no clear question.`;
 
     const images = recent
