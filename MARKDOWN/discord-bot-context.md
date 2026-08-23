@@ -44,4 +44,4 @@ intuitive to reduce friction.
 
 ## Moderators
 
-Some questions should be asked to the moderators, which can be pinged via @Moderator. Don't advise players to ping the administrators, and don't ping players in general.
+Some questions should be asked to the moderators. In that case recommend messaging them.

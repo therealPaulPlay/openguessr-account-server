@@ -15,7 +15,6 @@ import { s3Config, openRouterKey, openRouterModel } from "./config.js";
 
 const discordRouter = express.Router();
 
-export const SCREENSHOT_PREFIX = "openguessr-official-maps/discord-bot/screenshots/";
 export const SCREENSHOT_LOCATIONS = "openguessr-official-maps/discord-bot/screenshot_world.json";
 
 const COUNTRY_ALIASES = JSON.parse(fs.readFileSync("./JSON/countries.json", "utf8"));
@@ -71,12 +70,13 @@ async function InstallGlobalCommands(appId, commands) {
 const text = (content) => ({ type: MessageComponentTypes.TEXT_DISPLAY, content });
 
 // Reply with a Components V2 message in the channel the command came from
-function reply(res, content, ephemeral = false) {
+function reply(res, content, ephemeral = false, pingUserId = null) {
     return res.send({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
             flags: InteractionResponseFlags.IS_COMPONENTS_V2 | (ephemeral ? InteractionResponseFlags.EPHEMERAL : 0),
             components: Array.isArray(content) ? content : [text(content)],
+            allowed_mentions: { parse: [], users: pingUserId ? [pingUserId] : [] },
         },
     });
 }
@@ -93,6 +93,7 @@ function normalizeCountry(name) {
         .replace(/^the /, "");
 }
 
+const countryNames = new Intl.DisplayNames(["en"], { type: "region" }); // Maps stored ISO codes to names
 const countryNameToCountry = new Map(); // Country name -> country (there can be multiple acceptable names for each country)
 
 for (const [country, alternativeSpellings] of Object.entries(COUNTRY_ALIASES)) {
@@ -165,14 +166,16 @@ async function fetchPlayer(input) {
         SELECT u.id, u.user_name, u.experience, u.elo, u.created_at, p.about, p.duels_won, p.duels_lost
         FROM users u
         LEFT JOIN profile_data p ON u.id = p.user_id
-        WHERE u.id = ? OR u.user_name = ?
-    `, [id, input]);
+        WHERE u.user_name = ? OR u.id = ?
+        ORDER BY u.user_name = ? DESC
+        LIMIT 1
+    `, [input, id, input]);
 
     return player || null;
 }
 
 function playerSummary(player) {
-    const joined = new Date(player.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+    const joined = `<t:${Math.floor(new Date(player.created_at).getTime() / 1000)}:D>`;
 
     return [
         `**${escapeMarkdown(player.user_name)}** (user-${player.id})`,
@@ -190,10 +193,27 @@ const ROUND_TIMEOUT_MS = 15 * 60 * 1000;
 
 const rounds = new Map(); // One round per channel
 
-// Delete time-outed rounds
+const EXPLAIN_WINDOW_MS = 60 * 1000;
+const EXPLAIN_MAX_USES = 5;
+
+const explainUses = new Map(); // Discord user ID -> timestmamp
+
+function hasExplainUsesLeft(userId) {
+    const recent = (explainUses.get(userId) || []).filter(time => Date.now() - time < EXPLAIN_WINDOW_MS);
+    if (recent.length >= EXPLAIN_MAX_USES) return false;
+
+    explainUses.set(userId, [...recent, Date.now()]);
+    return true;
+}
+
+// Delete time-outed rounds & rate limit entries
 setInterval(() => {
     for (const [id, round] of rounds) {
         if (Date.now() >= round.expiresAt) rounds.delete(id);
+    }
+
+    for (const [id, uses] of explainUses) {
+        if (uses.every(time => Date.now() - time >= EXPLAIN_WINDOW_MS)) explainUses.delete(id);
     }
 }, 60 * 1000).unref();
 
@@ -227,7 +247,7 @@ const ALL_COMMANDS = [
     { ...commandBase, name: "test", description: "Test command" },
     { ...commandBase, name: "help", description: "List all commands" },
     { ...commandBase, name: "location", description: "Show a screenshot of a panorama to guess" },
-    { ...commandBase, name: "country-quiz", description: "Show a question to answer with a country" },
+    { ...commandBase, name: "country-quiz", description: "Show a country trivia question" },
     {
         ...commandBase, name: "guess", description: "Submit an answer to the location",
         options: [stringOption("country", "The country that you think it is")]
@@ -236,14 +256,14 @@ const ALL_COMMANDS = [
         ...commandBase, name: "profile", description: "Show a player's profile",
         options: [stringOption("player", "Username or user ID")]
     },
-    { ...commandBase, name: "leaderboard", description: "Top players" },
+    { ...commandBase, name: "leaderboard", description: "Show the top 5 players on both leaderboards" },
     {
         ...commandBase, name: "compare", description: "Compare two players and their duel history",
         options: [stringOption("player", "Username or user ID"), stringOption("opponent", "Username or user ID")]
     },
     {
         ...commandBase, name: "explain", description: "Ask a question about OpenGuessr",
-        options: [stringOption("question", "Takes the last question in this channel but allows for a direct question", false)]
+        options: [stringOption("question", "Provide a question, or omit to answer the most recent one", false)]
     }
 ];
 
@@ -253,7 +273,7 @@ export async function InstallDiscordCommands() {
 
 // Command handlers -------------------------------------------------------------------
 const handlers = {
-    test: (_req, res) => reply(res, `Beep Bop. Test successful ${EMOJI.cool}`),
+    test: (_req, res) => reply(res, `G.. Gues... Guessy? Yes, that's me. Test successful ${EMOJI.cool}`),
 
     help: (_req, res) => reply(res, ALL_COMMANDS
         .filter(command => command.name !== "test")
@@ -265,14 +285,15 @@ const handlers = {
 
     location: async (req, res) => {
         const locations = await getScreenshotLocations();
-        const location = locations[Math.floor(Math.random() * locations.length)];
+        const [lat, lng, options] = locations[Math.floor(Math.random() * locations.length)];
+
         const cancelledString = startRound(req.body.channel_id, {
-            type: "location", answer: location.country, lat: location.lat, lng: location.lng
+            type: "location", answer: resolveCountry(countryNames.of(options.country)), lat, lng
         });
 
         return reply(res, [
             text(`${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\nAnswer with \`/guess <country>\`.`),
-            { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(location.key) } }] }
+            { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(options.imageKey) } }] }
         ]);
     },
 
@@ -292,7 +313,8 @@ const handlers = {
         if (!guess) return reply(res, `Unknown country: "${escapeMarkdown(typed)}".`, true);
 
         // Guild interactions include the user under member, DMs don't
-        const player = `<@${req.body.member?.user?.id || req.body.user?.id}>`;
+        const playerId = req.body.member?.user?.id || req.body.user?.id;
+        const player = `<@${playerId}>`;
         round.attempts++;
 
         if (guess !== resolveCountry(round.answer)) return reply(res, `:x: ${player} guessed **${guess}**.`);
@@ -303,7 +325,7 @@ const handlers = {
             ? `\nhttps://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}`
             : "";
 
-        return reply(res, `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`);
+        return reply(res, `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`, false, playerId);
     },
 
     profile: async (req, res) => {
@@ -325,7 +347,7 @@ const handlers = {
             .map((row, index) => `${index + 1}. **${escapeMarkdown(row.user_name)}** - ${Number(row[column]).toLocaleString("en")} ${symbol}`)
             .join("\n");
 
-        return reply(res, `**${EMOJI.kingofthemap} Elo**\n${buildList(byElo, "elo", "Elo")}\n\n**${EMOJI.fire} XP**\n${buildList(byExperience, "experience", "XP")}`);
+        return reply(res, `**Elo**\n${buildList(byElo, "elo", "Elo")}\n\n**XP**\n${buildList(byExperience, "experience", "XP")}`);
     },
 
     compare: async (req, res) => {
@@ -337,32 +359,37 @@ const handlers = {
         if (players[0].id === players[1].id) return reply(res, `Can't compare two identical players ${EMOJI.ummactually}`, true);
 
         const [duels] = await getDB().promise().execute(`
-            SELECT user1_id, user2_id, user1_win, user2_win FROM duel_entries
+            SELECT user1_id, user2_id, user1_win, user2_win, created_at FROM duel_entries
             WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
+            ORDER BY id DESC LIMIT 10
         `, [players[0].id, players[1].id, players[1].id, players[0].id]);
 
-        const draws = duels.filter(duel => !duel.user1_win && !duel.user2_win).length;
-        const winsFor = (player) => duels.filter(duel =>
-            (duel.user1_win && Number(duel.user1_id) === Number(player.id)) ||
-            (duel.user2_win && Number(duel.user2_id) === Number(player.id))
-        ).length;
+        const nameOfPlayerId = (id) => escapeMarkdown(players.find(player => Number(player.id) === Number(id)).user_name);
 
-        const record = duels.length === 0
-            ? "N/A"
-            : `${winsFor(players[0])} - ${winsFor(players[1])}${draws ? `, ${draws} drawn` : ""} in ${duels.length} recent duels`;
+        const history = duels.map(duel => {
+            const date = `<t:${Math.floor(new Date(duel.created_at).getTime() / 1000)}:f>`;
+            const winner = duel.user1_win ? nameOfPlayerId(duel.user1_id) : duel.user2_win ? nameOfPlayerId(duel.user2_id) : null;
+            return `${date} - ${winner ? `${winner} won` : "Draw"}`;
+        }).join("\n") || `No recent duels ${EMOJI.sob}`;
 
         const versus = players.map(player => escapeMarkdown(player.user_name)).join(" vs. ");
 
-        return reply(res, `${players.map(playerSummary).join("\n\n")}\n\n**${versus}**\n${record}`);
+        return reply(res, `${players.map(playerSummary).join("\n\n")}\n\n**${versus}**\n${history}`);
     },
 
     // Since Discord times a command out after 3s we ack first
     explain: async (req, res) => {
+        if (!hasExplainUsesLeft(req.body.member?.user?.id || req.body.user?.id)) return reply(res, `Too many questions, give me a minute please ${EMOJI.gentleman}`, true);
+
         res.send({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: {} });
 
         const edit = (message) => DiscordRequest(`webhooks/${process.env.DISCORD_APP_ID}/${req.body.token}/messages/@original`, {
             method: "PATCH",
-            body: { flags: InteractionResponseFlags.IS_COMPONENTS_V2, components: [text(message.slice(0, 3900))] }
+            body: {
+                flags: InteractionResponseFlags.IS_COMPONENTS_V2,
+                components: [text(message.slice(0, 3900))],
+                allowed_mentions: { parse: [], users: [] }
+            }
         });
 
         let message;
