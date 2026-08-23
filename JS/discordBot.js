@@ -15,8 +15,7 @@ import { s3Config, openRouterKey, openRouterModel } from "./config.js";
 
 const discordRouter = express.Router();
 
-export const SCREENSHOT_LOCATIONS = "openguessr-official-maps/discord-bot/screenshot_world.json";
-
+const SCREENSHOT_LOCATIONS = "openguessr-official-maps/discord-bot/screenshot_world.json";
 const COUNTRY_ALIASES = JSON.parse(fs.readFileSync("./JSON/countries.json", "utf8"));
 const QUIZ_QUESTIONS = JSON.parse(fs.readFileSync("./JSON/countryQuiz.json", "utf8")).questions;
 const GAME_CONTEXT = fs.readFileSync("./MARKDOWN/discord-bot-context.md", "utf8");
@@ -35,7 +34,7 @@ const EMOJI = {
     fiveK: "<:5K:1541051898403229696>"
 };
 
-// Helpers ----------------------------------------------------------------------------
+// Discord API helpers ----------------------------------------------------------------------------
 async function DiscordRequest(endpoint, options) {
     const url = "https://discord.com/api/v10/" + endpoint;
     if (options.body) options.body = JSON.stringify(options.body);
@@ -84,7 +83,7 @@ function reply(res, content, ephemeral = false, pingUserId = null) {
 const escapeMarkdown = (value) => String(value ?? "").replace(/([\\`*_~|>#\-\[\]()])/g, "\\$1");
 
 // Country matching -------------------------------------------------------------------
-function normalizeCountry(name) {
+function normalizeCountryName(name) {
     return String(name ?? "")
         .toLowerCase()
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Splits "é" into "e" + accent, then drops the accent
@@ -97,7 +96,7 @@ const countryNames = new Intl.DisplayNames(["en"], { type: "region" }); // Maps 
 const countryNameToCountry = new Map(); // Country name -> country (there can be multiple acceptable names for each country)
 
 for (const [country, alternativeSpellings] of Object.entries(COUNTRY_ALIASES)) {
-    for (const name of [country, ...alternativeSpellings]) countryNameToCountry.set(normalizeCountry(name), country);
+    for (const name of [country, ...alternativeSpellings]) countryNameToCountry.set(normalizeCountryName(name), country);
 }
 
 // How many single character edits turn a into b (Levenshtein formula)
@@ -122,8 +121,8 @@ function countEdits(a, b, limit) {
 }
 
 // Resolve the country name from player input with slight tolerance for typos
-export function resolveCountry(input) {
-    const name = normalizeCountry(input);
+function resolveCountry(input) {
+    const name = normalizeCountryName(input);
     if (!name) return null;
 
     // If country exists like this, yield that
@@ -159,7 +158,7 @@ export function resolveCountry(input) {
 // Players ----------------------------------------------------------------------------
 
 // Takes a user ID as user-... or username
-async function fetchPlayer(input) {
+async function fetchUserAndProfile(input) {
     const id = input.match(/^(?:user-)?(\d+)$/)?.[1] || 0;
 
     const [[player]] = await getDB().promise().execute(`
@@ -174,16 +173,16 @@ async function fetchPlayer(input) {
     return player || null;
 }
 
-function playerSummary(player) {
-    const joined = `<t:${Math.floor(new Date(player.created_at).getTime() / 1000)}:D>`;
+function formatProfile(user) {
+    const joined = `<t:${Math.floor(new Date(user.created_at).getTime() / 1000)}:D>`;
 
     return [
-        `**${escapeMarkdown(player.user_name)}** (user-${player.id})`,
-        player.about ? `About:\n${escapeMarkdown(player.about)}\n` : "",
+        `**${escapeMarkdown(user.user_name)}** (user-${user.id})`,
+        user.about ? `About:\n${escapeMarkdown(user.about)}\n` : "",
         "Stats:",
-        `${Number(player.elo).toLocaleString("en")} Elo`,
-        `${Number(player.experience).toLocaleString("en")} XP`,
-        `${Number(player.duels_won).toLocaleString("en")}W / ${Number(player.duels_lost).toLocaleString("en")}L Duels`,
+        `${Number(user.elo).toLocaleString("en")} Elo`,
+        `${Number(user.experience).toLocaleString("en")} XP`,
+        `${Number(user.duels_won).toLocaleString("en")}W / ${Number(user.duels_lost).toLocaleString("en")}L Duels`,
         `Joined ${joined}`
     ].filter(Boolean).join("\n");
 }
@@ -193,27 +192,10 @@ const ROUND_TIMEOUT_MS = 15 * 60 * 1000;
 
 const rounds = new Map(); // One round per channel
 
-const EXPLAIN_WINDOW_MS = 60 * 1000;
-const EXPLAIN_MAX_USES = 5;
-
-const explainUses = new Map(); // Discord user ID -> timestmamp
-
-function hasExplainUsesLeft(userId) {
-    const recent = (explainUses.get(userId) || []).filter(time => Date.now() - time < EXPLAIN_WINDOW_MS);
-    if (recent.length >= EXPLAIN_MAX_USES) return false;
-
-    explainUses.set(userId, [...recent, Date.now()]);
-    return true;
-}
-
-// Delete time-outed rounds & rate limit entries
+// Delete time-outed rounds
 setInterval(() => {
     for (const [id, round] of rounds) {
         if (Date.now() >= round.expiresAt) rounds.delete(id);
-    }
-
-    for (const [id, uses] of explainUses) {
-        if (uses.every(time => Date.now() - time >= EXPLAIN_WINDOW_MS)) explainUses.delete(id);
     }
 }, 60 * 1000).unref();
 
@@ -239,7 +221,7 @@ async function getScreenshotLocations() {
     return locations;
 }
 
-// Set up available commands ----------------------------------------------------------
+// Command setup ----------------------------------------------------------
 const commandBase = { type: 1, integration_types: [0, 1], contexts: [0, 1, 2] };
 const stringOption = (name, description, required = true) => ({ type: 3, name, description, required });
 
@@ -330,10 +312,10 @@ const handlers = {
 
     profile: async (req, res) => {
         const identifier = req.body.data.options.find(option => option.name === "player").value;
-        const player = await fetchPlayer(identifier);
+        const player = await fetchUserAndProfile(identifier);
         if (!player) return reply(res, `Player "${escapeMarkdown(identifier)}" not found ${EMOJI.sadge}`, true);
 
-        return reply(res, playerSummary(player));
+        return reply(res, formatProfile(player));
     },
 
     leaderboard: async (_req, res) => {
@@ -352,7 +334,7 @@ const handlers = {
 
     compare: async (req, res) => {
         const identifiers = ["player", "opponent"].map(name => req.body.data.options.find(option => option.name === name).value);
-        const players = await Promise.all(identifiers.map(fetchPlayer));
+        const players = await Promise.all(identifiers.map(fetchUserAndProfile));
 
         const missingPlayers = identifiers.filter((_identifier, index) => !players[index]);
         if (missingPlayers.length) return reply(res, `No player found for ${missingPlayers.map(name => `"${escapeMarkdown(name)}"`).join(" and ")}.`, true);
@@ -374,7 +356,7 @@ const handlers = {
 
         const versus = players.map(player => escapeMarkdown(player.user_name)).join(" vs. ");
 
-        return reply(res, `${players.map(playerSummary).join("\n\n")}\n\n**${versus}**\n${history}`);
+        return reply(res, `${players.map(formatProfile).join("\n\n")}\n\n**${versus}**\n${history}`);
     },
 
     // Since Discord times a command out after 3s we ack first
@@ -412,6 +394,25 @@ const handlers = {
 };
 
 // Answering questions ----------------------------------------------------------------
+const EXPLAIN_WINDOW_MS = 60 * 1000;
+const EXPLAIN_MAX_USES = 5;
+
+const explainUses = new Map(); // Discord user ID -> timestamps
+
+// Delete explain rate limit entries
+setInterval(() => {
+    for (const [id, uses] of explainUses) {
+        if (uses.every(time => Date.now() - time >= EXPLAIN_WINDOW_MS)) explainUses.delete(id);
+    }
+}, 60 * 1000).unref();
+
+function hasExplainUsesLeft(userId) {
+    const recent = (explainUses.get(userId) || []).filter(time => Date.now() - time < EXPLAIN_WINDOW_MS);
+    if (recent.length >= EXPLAIN_MAX_USES) return false;
+
+    explainUses.set(userId, [...recent, Date.now()]);
+    return true;
+}
 
 // Recent channel messages that may include a question when the player didn't provide one
 async function recentMessages(id) {
@@ -463,9 +464,8 @@ async function askAboutOpenGuessr(question, id) {
     return typeof answer === "string" && answer.trim() ? answer.trim() : null;
 }
 
-// Interactions --------------------------------------------------------------------------------
+// Interactions endpoint --------------------------------------------------------------------------------
 
-// Interactions endpoint
 // Parse request body and verifies incoming requests using discord-interactions package (therefore needs to use express raw)
 discordRouter.post("/interactions", verifyKeyMiddleware(process.env.DISCORD_PUBLIC_KEY), async function (req, res) {
     const { type, data } = req.body;
