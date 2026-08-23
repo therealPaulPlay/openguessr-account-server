@@ -228,10 +228,10 @@ const stringOption = (name, description, required = true) => ({ type: 3, name, d
 const ALL_COMMANDS = [
     { ...commandBase, name: "test", description: "Test command" },
     { ...commandBase, name: "help", description: "List all commands" },
-    { ...commandBase, name: "location", description: "Show a screenshot of a panorama to guess" },
+    { ...commandBase, name: "location-quiz", description: "Show a screenshot of a panorama to guess" },
     { ...commandBase, name: "country-quiz", description: "Show a country trivia question" },
     {
-        ...commandBase, name: "guess", description: "Submit an answer to the location",
+        ...commandBase, name: "guess", description: "Submit a country as your answer",
         options: [stringOption("country", "The country that you think it is")]
     },
     {
@@ -265,12 +265,12 @@ const handlers = {
         })
         .join("\n")),
 
-    location: async (req, res) => {
+    "location-quiz": async (req, res) => {
         const locations = await getScreenshotLocations();
         const [lat, lng, options] = locations[Math.floor(Math.random() * locations.length)];
 
         const cancelledString = startRound(req.body.channel_id, {
-            type: "location", answer: resolveCountry(countryNames.of(options.country)), lat, lng
+            type: "location-quiz", answer: resolveCountry(countryNames.of(options.country)), lat, lng
         });
 
         return reply(res, [
@@ -281,7 +281,7 @@ const handlers = {
 
     "country-quiz": (req, res) => {
         const question = QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
-        const cancelledString = startRound(req.body.channel_id, { type: "quiz", answer: question.answer });
+        const cancelledString = startRound(req.body.channel_id, { type: "country-quiz", answer: question.answer });
 
         return reply(res, `${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`);
     },
@@ -303,7 +303,7 @@ const handlers = {
 
         rounds.delete(req.body.channel_id);
 
-        const streetView = round.type === "location"
+        const streetView = round.type === "location-quiz"
             ? `\nhttps://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}`
             : "";
 
