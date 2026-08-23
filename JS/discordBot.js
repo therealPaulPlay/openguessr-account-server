@@ -419,6 +419,7 @@ function hasExplainUsesLeft(userId) {
 
 const MAX_IMAGES = 3;
 const MAX_TOOL_STEPS = 3;
+const MAX_ANSWER_TOKENS = 1000;
 
 // Needs the Message Content intent
 async function readChannel(id, limit = 10) {
@@ -478,6 +479,7 @@ async function sendOpenRouterRequest(messages, tools) {
         headers: { Authorization: `Bearer ${openRouterKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
             model: openRouterModel,
+            max_tokens: MAX_ANSWER_TOKENS,
             response_format: { type: "json_object" },
             tools: tools?.length ? tools : undefined,
             messages
