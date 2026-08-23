@@ -1,4 +1,6 @@
 import "dotenv/config";
+import fs from "fs";
+import express from "express";
 import {
     InteractionResponseFlags,
     InteractionResponseType,
@@ -6,9 +8,33 @@ import {
     MessageComponentTypes,
     verifyKeyMiddleware,
 } from "discord-interactions";
-import express from "express";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { spacesClient, getPublicObjectURL } from "./spacesConnection.js";
+import { getDB } from "./dbConnection.js";
+import { s3Config, openRouterKey, openRouterModel } from "./config.js";
 
 const discordRouter = express.Router();
+
+export const SCREENSHOT_PREFIX = "openguessr-official-maps/discord-bot/screenshots/";
+export const SCREENSHOT_LOCATIONS = "openguessr-official-maps/discord-bot/screenshot_world.json";
+
+const COUNTRY_ALIASES = JSON.parse(fs.readFileSync("./JSON/countries.json", "utf8"));
+const QUIZ_QUESTIONS = JSON.parse(fs.readFileSync("./JSON/countryQuiz.json", "utf8")).questions;
+const GAME_CONTEXT = fs.readFileSync("./MARKDOWN/discord-bot-context.md", "utf8");
+
+const EMOJI = {
+    ummactually: "<:ummactually:1541051916153258115>",
+    kingofthemap: "<:kingofthemap:1541051914039599186>",
+    sadge: "<:sadge:1541051912009556058>",
+    relativism: "<:relativism:1541051910277169265>",
+    fire: "<:fire:1541051909081800735>",
+    guessy: "<:guessy:1541051906992902145>",
+    gentleman: "<:gentleman:1541051904648548474>",
+    cool: "<:cool:1541051903402709134>",
+    angry: "<:angry:1541051901855141918>",
+    sob: "<:sob:1541051900072435753>",
+    fiveK: "<:5K:1541051898403229696>"
+};
 
 // Helpers ----------------------------------------------------------------------------
 async function DiscordRequest(endpoint, options) {
@@ -19,7 +45,6 @@ async function DiscordRequest(endpoint, options) {
         headers: {
             Authorization: `Bot ${process.env.DISCORD_TOKEN}`,
             "Content-Type": "application/json; charset=UTF-8",
-            "User-Agent": "DiscordBot (https://github.com/discord/discord-example-app, 1.0.0)",
         },
         ...options
     });
@@ -43,37 +68,380 @@ async function InstallGlobalCommands(appId, commands) {
     }
 }
 
-// Reply with a Components V2 text message in the channel the command came from
-const reply = (res, content) =>
-    res.send({
+const text = (content) => ({ type: MessageComponentTypes.TEXT_DISPLAY, content });
+
+// Reply with a Components V2 message in the channel the command came from
+function reply(res, content, ephemeral = false) {
+    return res.send({
         type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
         data: {
-            flags: InteractionResponseFlags.IS_COMPONENTS_V2,
-            components: [{ type: MessageComponentTypes.TEXT_DISPLAY, content }],
+            flags: InteractionResponseFlags.IS_COMPONENTS_V2 | (ephemeral ? InteractionResponseFlags.EPHEMERAL : 0),
+            components: Array.isArray(content) ? content : [text(content)],
         },
     });
+}
+
+const escapeMarkdown = (value) => String(value ?? "").replace(/([\\`*_~|>#\-\[\]()])/g, "\\$1");
+
+// Country matching -------------------------------------------------------------------
+function normalizeCountry(name) {
+    return String(name ?? "")
+        .toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Splits "é" into "e" + accent, then drops the accent
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .replace(/^the /, "");
+}
+
+const countryNameToCountry = new Map(); // Country name -> country (there can be multiple acceptable names for each country)
+
+for (const [country, alternativeSpellings] of Object.entries(COUNTRY_ALIASES)) {
+    for (const name of [country, ...alternativeSpellings]) countryNameToCountry.set(normalizeCountry(name), country);
+}
+
+// How many single character edits turn a into b (Levenshtein formula)
+function countEdits(a, b, limit) {
+    if (Math.abs(a.length - b.length) > limit) return limit + 1;
+
+    let previousRow = Array.from({ length: b.length + 1 }, (_, index) => index);
+
+    for (let i = 1; i <= a.length; i++) {
+        const row = [i];
+
+        for (let j = 1; j <= b.length; j++) {
+            const substitution = previousRow[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1);
+            row[j] = Math.min(row[j - 1] + 1, previousRow[j] + 1, substitution);
+        }
+
+        if (Math.min(...row) > limit) return limit + 1;
+        previousRow = row;
+    }
+
+    return previousRow[b.length];
+}
+
+// Resolve the country name from player input with slight tolerance for typos
+export function resolveCountry(input) {
+    const name = normalizeCountry(input);
+    if (!name) return null;
+
+    // If country exists like this, yield that
+    if (countryNameToCountry.has(name)) return countryNameToCountry.get(name);
+    else {
+        let best = null;
+        let fewestEdits = Infinity;
+        let tied = false;
+
+        const typoTolerance = (length) => {
+            if (length <= 5) return 1;
+            if (length <= 9) return 2;
+            return 3;
+        }
+
+        for (const [candidate, country] of countryNameToCountry) {
+            const tolerance = typoTolerance(Math.max(name.length, candidate.length));
+            const edits = countEdits(name, candidate, tolerance);
+
+            if (edits > tolerance) continue;
+
+            if (edits < fewestEdits) {
+                best = country;
+                fewestEdits = edits;
+                tied = false;
+            } else if (edits === fewestEdits && country !== best) tied = true;
+        }
+
+        return tied ? null : best; // If there's a tied result don't blindly pick one, rather reject
+    }
+}
+
+// Players ----------------------------------------------------------------------------
+
+// Takes a user ID as user-... or username
+async function fetchPlayer(input) {
+    const id = input.match(/^(?:user-)?(\d+)$/)?.[1] || 0;
+
+    const [[player]] = await getDB().promise().execute(`
+        SELECT u.id, u.user_name, u.experience, u.elo, u.created_at, p.about, p.duels_won, p.duels_lost
+        FROM users u
+        LEFT JOIN profile_data p ON u.id = p.user_id
+        WHERE u.id = ? OR u.user_name = ?
+    `, [id, input]);
+
+    return player || null;
+}
+
+function playerSummary(player) {
+    const joined = new Date(player.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+    return [
+        `**${escapeMarkdown(player.user_name)}** (user-${player.id})`,
+        player.about ? `About:\n${escapeMarkdown(player.about)}\n` : "",
+        "Stats:",
+        `${Number(player.elo).toLocaleString("en")} Elo`,
+        `${Number(player.experience).toLocaleString("en")} XP`,
+        `${Number(player.duels_won).toLocaleString("en")}W / ${Number(player.duels_lost).toLocaleString("en")}L Duels`,
+        `Joined ${joined}`
+    ].filter(Boolean).join("\n");
+}
+
+// Screenshot-guessing rounds --------------------------------------------------------------------
+const ROUND_TIMEOUT_MS = 15 * 60 * 1000;
+
+const rounds = new Map(); // One round per channel
+
+// Delete time-outed rounds
+setInterval(() => {
+    for (const [id, round] of rounds) {
+        if (Date.now() >= round.expiresAt) rounds.delete(id);
+    }
+}, 60 * 1000).unref();
+
+// Starting a round replaces any previous rounds in that channel
+function startRound(id, round) {
+    const previous = rounds.get(id);
+    rounds.set(id, { ...round, attempts: 0, expiresAt: Date.now() + ROUND_TIMEOUT_MS });
+
+    if (!previous || Date.now() >= previous.expiresAt) return ""; // No active previous round
+    return `Cancelled the previous round, the country was **${previous.answer}**.\n\n`;
+}
+
+let locationsCache = null;
+
+async function getScreenshotLocations() {
+    if (locationsCache && Date.now() < locationsCache.expiresAt) return locationsCache.locations;
+
+    const response = await spacesClient.send(new GetObjectCommand({ Bucket: s3Config.bucketName, Key: SCREENSHOT_LOCATIONS }));
+    const locations = JSON.parse(await response.Body.transformToString())?.locations;
+    if (!locations?.length) throw new Error("Failed to retrieve screenshot locations");
+
+    locationsCache = { locations, expiresAt: Date.now() + 60 * 60 * 1000 }; // 1h
+    return locations;
+}
 
 // Set up available commands ----------------------------------------------------------
-const TEST_COMMAND = {
-    name: "test",
-    description: "Basic command",
-    type: 1,
-    integration_types: [0, 1],
-    contexts: [0, 1, 2],
-};
+const commandBase = { type: 1, integration_types: [0, 1], contexts: [0, 1, 2] };
+const stringOption = (name, description, required = true) => ({ type: 3, name, description, required });
 
-const ALL_COMMANDS = [TEST_COMMAND];
+const ALL_COMMANDS = [
+    { ...commandBase, name: "test", description: "Test command" },
+    { ...commandBase, name: "help", description: "List all commands" },
+    { ...commandBase, name: "location", description: "Show a screenshot of a panorama to guess" },
+    { ...commandBase, name: "country-quiz", description: "Show a question to answer with a country" },
+    {
+        ...commandBase, name: "guess", description: "Submit an answer to the location",
+        options: [stringOption("country", "The country that you think it is")]
+    },
+    {
+        ...commandBase, name: "profile", description: "Show a player's profile",
+        options: [stringOption("player", "Username or user ID")]
+    },
+    { ...commandBase, name: "leaderboard", description: "Top players" },
+    {
+        ...commandBase, name: "compare", description: "Compare two players and their duel history",
+        options: [stringOption("player", "Username or user ID"), stringOption("opponent", "Username or user ID")]
+    },
+    {
+        ...commandBase, name: "explain", description: "Ask a question about OpenGuessr",
+        options: [stringOption("question", "Takes the last question in this channel but allows for a direct question", false)]
+    }
+];
 
 export async function InstallDiscordCommands() {
     await InstallGlobalCommands(process.env.DISCORD_APP_ID, ALL_COMMANDS);
 }
 
+// Command handlers -------------------------------------------------------------------
+const handlers = {
+    test: (_req, res) => reply(res, `Beep Bop. Test successful ${EMOJI.cool}`),
+
+    help: (_req, res) => reply(res, ALL_COMMANDS
+        .filter(command => command.name !== "test")
+        .map(command => {
+            const args = (command.options || []).map(option => option.required ? ` <${option.name}>` : ` [${option.name}]`).join("");
+            return `\`/${command.name}${args}\` - ${command.description}`;
+        })
+        .join("\n")),
+
+    location: async (req, res) => {
+        const locations = await getScreenshotLocations();
+        const location = locations[Math.floor(Math.random() * locations.length)];
+        const cancelledString = startRound(req.body.channel_id, {
+            type: "location", answer: location.country, lat: location.lat, lng: location.lng
+        });
+
+        return reply(res, [
+            text(`${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\nAnswer with \`/guess <country>\`.`),
+            { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(location.key) } }] }
+        ]);
+    },
+
+    "country-quiz": (req, res) => {
+        const question = QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
+        const cancelledString = startRound(req.body.channel_id, { type: "quiz", answer: question.answer });
+
+        return reply(res, `${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`);
+    },
+
+    guess: (req, res) => {
+        const round = rounds.get(req.body.channel_id);
+        if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob} Use /help to learn more.`, true);
+
+        const typed = req.body.data.options.find(option => option.name === "country").value;
+        const guess = resolveCountry(typed);
+        if (!guess) return reply(res, `Unknown country: "${escapeMarkdown(typed)}".`, true);
+
+        // Guild interactions include the user under member, DMs don't
+        const player = `<@${req.body.member?.user?.id || req.body.user?.id}>`;
+        round.attempts++;
+
+        if (guess !== resolveCountry(round.answer)) return reply(res, `:x: ${player} guessed **${guess}**.`);
+
+        rounds.delete(req.body.channel_id);
+
+        const streetView = round.type === "location"
+            ? `\nhttps://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}`
+            : "";
+
+        return reply(res, `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`);
+    },
+
+    profile: async (req, res) => {
+        const identifier = req.body.data.options.find(option => option.name === "player").value;
+        const player = await fetchPlayer(identifier);
+        if (!player) return reply(res, `Player "${escapeMarkdown(identifier)}" not found ${EMOJI.sadge}`, true);
+
+        return reply(res, playerSummary(player));
+    },
+
+    leaderboard: async (_req, res) => {
+        const db = getDB().promise();
+        const [[byElo], [byExperience]] = await Promise.all([
+            db.execute("SELECT user_name, elo FROM users ORDER BY elo DESC LIMIT 5"),
+            db.execute("SELECT user_name, experience FROM users ORDER BY experience DESC LIMIT 5")
+        ]);
+
+        const buildList = (rows, column, symbol) => rows
+            .map((row, index) => `${index + 1}. **${escapeMarkdown(row.user_name)}** - ${Number(row[column]).toLocaleString("en")} ${symbol}`)
+            .join("\n");
+
+        return reply(res, `**${EMOJI.kingofthemap} Elo**\n${buildList(byElo, "elo", "Elo")}\n\n**${EMOJI.fire} XP**\n${buildList(byExperience, "experience", "XP")}`);
+    },
+
+    compare: async (req, res) => {
+        const identifiers = ["player", "opponent"].map(name => req.body.data.options.find(option => option.name === name).value);
+        const players = await Promise.all(identifiers.map(fetchPlayer));
+
+        const missingPlayers = identifiers.filter((_identifier, index) => !players[index]);
+        if (missingPlayers.length) return reply(res, `No player found for ${missingPlayers.map(name => `"${escapeMarkdown(name)}"`).join(" and ")}.`, true);
+        if (players[0].id === players[1].id) return reply(res, `Can't compare two identical players ${EMOJI.ummactually}`, true);
+
+        const [duels] = await getDB().promise().execute(`
+            SELECT user1_id, user2_id, user1_win, user2_win FROM duel_entries
+            WHERE (user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?)
+        `, [players[0].id, players[1].id, players[1].id, players[0].id]);
+
+        const draws = duels.filter(duel => !duel.user1_win && !duel.user2_win).length;
+        const winsFor = (player) => duels.filter(duel =>
+            (duel.user1_win && Number(duel.user1_id) === Number(player.id)) ||
+            (duel.user2_win && Number(duel.user2_id) === Number(player.id))
+        ).length;
+
+        const record = duels.length === 0
+            ? "N/A"
+            : `${winsFor(players[0])} - ${winsFor(players[1])}${draws ? `, ${draws} drawn` : ""} in ${duels.length} recent duels`;
+
+        const versus = players.map(player => escapeMarkdown(player.user_name)).join(" vs. ");
+
+        return reply(res, `${players.map(playerSummary).join("\n\n")}\n\n**${versus}**\n${record}`);
+    },
+
+    // Since Discord times a command out after 3s we ack first
+    explain: async (req, res) => {
+        res.send({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: {} });
+
+        const edit = (message) => DiscordRequest(`webhooks/${process.env.DISCORD_APP_ID}/${req.body.token}/messages/@original`, {
+            method: "PATCH",
+            body: { flags: InteractionResponseFlags.IS_COMPONENTS_V2, components: [text(message.slice(0, 3900))] }
+        });
+
+        let message;
+        try {
+            const question = req.body.data.options?.find(option => option.name === "question")?.value;
+            message = await askAboutOpenGuessr(question, req.body.channel_id)
+                || `I'm not seeing a question here ${EMOJI.gentleman}`;
+        } catch (error) {
+            console.error("Error handling /explain:", error);
+            message = "Internal error.";
+        }
+
+        try {
+            await edit(message);
+        } catch (error) {
+            console.error("Failed to send the /explain answer:", error);
+            await edit("Internal error.").catch(() => { });
+        }
+    }
+};
+
+// Answering questions ----------------------------------------------------------------
+
+// Recent channel messages that may include a question when the player didn't provide one
+async function recentMessages(id) {
+    if (!id) return [];
+
+    try {
+        const response = await DiscordRequest(`channels/${id}/messages?limit=10`, { method: "GET" });
+        const messages = await response.json();
+
+        return messages
+            .filter(message => message.content && !message.author?.bot)
+            .reverse()
+            .map(message => `${message.author?.username || "player"}: ${message.content}`);
+    } catch (error) {
+        console.error("Failed to read Discord channel history:", error);
+        return [];
+    }
+}
+
+// Returns the answer, or null when there is no question
+async function askAboutOpenGuessr(question, id) {
+    const history = question ? [] : await recentMessages(id);
+    if (!question && history.length === 0) return null;
+
+    const instructions = `You are provided a direct question OR a chat history that may include a question. If multiple questions are provided, use the latest one. Here's context regarding your role.\n\n${GAME_CONTEXT}\n\n` +
+        `Use these OpenGuessr emojis, and do NOT use other emojis: ${Object.values(EMOJI).join(" ")}\n\n` +
+        `Reply with JSON. Reply {"answer": "<your answer>"}. If there's no clear question, reply {"answer": false}`;
+
+    const prompt = question
+        ? `Direct question: ${question}`
+        : `Chat history:\n\n${history.join("\n")}`;
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${openRouterKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model: openRouterModel,
+            response_format: { type: "json_object" },
+            messages: [
+                { role: "system", content: instructions },
+                { role: "user", content: prompt }
+            ]
+        })
+    });
+
+    if (!response.ok) throw new Error(`OpenRouter returned ${response.status}: ${await response.text()}`);
+
+    const answer = JSON.parse((await response.json()).choices?.[0]?.message?.content || "{}")?.answer;
+    return typeof answer === "string" && answer.trim() ? answer.trim() : null;
+}
+
 // Interactions --------------------------------------------------------------------------------
 
-// Interactions endpoint URL where Discord will send HTTP requests
-// Parse request body and verifies incoming requests using discord-interactions package
+// Interactions endpoint
+// Parse request body and verifies incoming requests using discord-interactions package (therefore needs to use express raw)
 discordRouter.post("/interactions", verifyKeyMiddleware(process.env.DISCORD_PUBLIC_KEY), async function (req, res) {
-    const { id, type, data } = req.body;
+    const { type, data } = req.body;
 
     // Handle verification requests
     if (type === InteractionType.PING) return res.send({ type: InteractionResponseType.PONG });
@@ -81,56 +449,20 @@ discordRouter.post("/interactions", verifyKeyMiddleware(process.env.DISCORD_PUBL
     // Handle slash command requests
     // See https://discord.com/developers/docs/interactions/application-commands#slash-commands
     if (type === InteractionType.APPLICATION_COMMAND) {
-        const { name } = data;
+        const handler = handlers[data.name];
 
-        if (name === "test") return reply(res, "Beep Bop. Test successful.");
-
-        if (name === "help") {
-            // TODO list all commands
+        if (!handler) {
+            console.error(`Unknown command: ${data.name}`);
+            return res.status(400).json({ error: "Unknown command" });
         }
 
-        if (name === "location") {
-            // TODO image of new SV location
-            // Pre-generate 1000 1920x1080 jpgs from World map, store in S3 together with a json that maps screenshot png to country name
-
-            // Typing country names in the chat, without a command, case-insensitive with common misspellings/alternative names should work
-            // Bot should react X or the Checkmark icon, game finishes when correct answer was stated
-            // When game finishes bot should share Street View link to the location, @ the person that got it right, state the name of the country
-
-            // If scanning every message is too expensive, a simple /guess <country> command could make sense
-            // If /location in the same chat is used and one was already active, that other one should be cancelled
+        try {
+            return await handler(req, res);
+        } catch (error) {
+            console.error(`Error handling /${data.name}:`, error);
+            if (!res.headersSent) return reply(res, "Internal error.", true);
+            return;
         }
-
-        if (name === "profile <username|userId>") {
-            // TODO show representation of the profile + stats
-        }
-
-        if (name === "leaderboard") {
-            // TODO List top 5 Elo and top 5 XP, nicely separated
-        }
-
-        if (name === "country-quiz") {
-            // TODO ask questions -> require people to answer with the right country (similar to location, but with text-based questions)
-            // "The country I'm thinking of has/does/is/.."
-            // Should work similar to the location game where a new question aborts the guessing for the previous etc.
-            // Can re-use a lot of logic
-        }
-
-        if (name === "compare <username|userId> <username|userId>") {
-            // TODO compare the profile stats of two players
-            // Also check if they have played duels in the duel history against each other, if so list their W/L against each other, otherwise say N/A
-        }
-
-        if (name === "explain") {
-            // TODO feed an LLM the last 10 messages of the chat, it should look for the latest question that it should answer
-            // As context it gets a markdown doc with information about the game
-            // That markdown doc should live in the codebase here. Could be discord-bot-context.md. in a /MARKDOWN folder
-            // If there's no clear question it should not answer, rather the model should respond sth like { answer: false } and we reply with a generic fallback like "I'm not seeing a question here :thinking: Would you mind rephrasing?"
-            // Use GPT Luna via OpenRouter
-        }
-
-        console.error(`Unknown command: ${name}`);
-        return res.status(400).json({ error: "Unknown command" });
     }
 
     console.error("Unknown interaction type:", type);
