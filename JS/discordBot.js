@@ -249,6 +249,15 @@ const ALL_COMMANDS = [
     }
 ];
 
+// Shown by /help and also provided to the LLM
+const COMMAND_LIST = ALL_COMMANDS
+    .filter(command => command.name !== "test")
+    .map(command => {
+        const args = (command.options || []).map(option => option.required ? ` <${option.name}>` : ` [${option.name}]`).join("");
+        return `\`/${command.name}${args}\` - ${command.description}`;
+    })
+    .join("\n");
+
 export async function InstallDiscordCommands() {
     await InstallGlobalCommands(process.env.DISCORD_APP_ID, ALL_COMMANDS);
 }
@@ -257,13 +266,7 @@ export async function InstallDiscordCommands() {
 const handlers = {
     test: (_req, res) => reply(res, `G.. Gues... Guessy? Yes, that's me. Test successful ${EMOJI.cool}`),
 
-    help: (_req, res) => reply(res, ALL_COMMANDS
-        .filter(command => command.name !== "test")
-        .map(command => {
-            const args = (command.options || []).map(option => option.required ? ` <${option.name}>` : ` [${option.name}]`).join("");
-            return `\`/${command.name}${args}\` - ${command.description}`;
-        })
-        .join("\n")),
+    help: (_req, res) => reply(res, COMMAND_LIST),
 
     "location-quiz": async (req, res) => {
         const locations = await getScreenshotLocations();
@@ -274,7 +277,7 @@ const handlers = {
         });
 
         return reply(res, [
-            text(`${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\nAnswer with \`/guess <country>\`.`),
+            text(`${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\n\nAnswer with \`/guess <country>\`.`),
             { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(options.imageKey) } }] }
         ]);
     },
@@ -304,7 +307,7 @@ const handlers = {
         rounds.delete(req.body.channel_id);
 
         const streetView = round.type === "location-quiz"
-            ? `\nhttps://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}`
+            ? ` ([view location](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}))`
             : "";
 
         return reply(res, `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`, false, playerId);
@@ -377,7 +380,7 @@ const handlers = {
         let message;
         try {
             const question = req.body.data.options?.find(option => option.name === "question")?.value;
-            message = await askAboutOpenGuessr(question, req.body.channel_id)
+            message = await askLLM(question, req.body.channel_id, req.body.guild_id)
                 || `I'm not seeing a question here ${EMOJI.gentleman}`;
         } catch (error) {
             console.error("Error handling /explain:", error);
@@ -393,7 +396,7 @@ const handlers = {
     }
 };
 
-// Answering questions ----------------------------------------------------------------
+// Answering questions via an LLM ----------------------------------------------------------------
 const EXPLAIN_WINDOW_MS = 60 * 1000;
 const EXPLAIN_MAX_USES = 5;
 
@@ -414,54 +417,131 @@ function hasExplainUsesLeft(userId) {
     return true;
 }
 
-// Recent channel messages that may include a question when the player didn't provide one
-async function recentMessages(id) {
-    if (!id) return [];
+const MAX_IMAGES = 3;
+const MAX_TOOL_STEPS = 3;
 
+// Needs the Message Content intent
+async function readChannel(id, limit = 10) {
     try {
-        const response = await DiscordRequest(`channels/${id}/messages?limit=10`, { method: "GET" });
-        const messages = await response.json();
-
-        return messages
-            .filter(message => message.content && !message.author?.bot)
-            .reverse()
-            .map(message => `${message.author?.username || "player"}: ${message.content}`);
+        const response = await DiscordRequest(`channels/${id}/messages?limit=${limit}`, { method: "GET" });
+        return (await response.json()).filter(message => !message.author?.bot).reverse();
     } catch (error) {
-        console.error("Failed to read Discord channel history:", error);
+        console.error("Failed to read channel:", error);
         return [];
     }
 }
 
-// Returns the answer, or null when there is no question
-async function askAboutOpenGuessr(question, id) {
-    const history = question ? [] : await recentMessages(id);
-    if (!question && history.length === 0) return null;
+const asTranscript = (messages) => messages
+    .filter(message => message.content)
+    .map(message => `${message.author?.username || "player"}: ${message.content}`)
+    .join("\n");
 
-    const instructions = `You are provided a direct question OR a chat history that may include a question. If multiple questions are provided, use the latest one. Here's context regarding your role.\n\n${GAME_CONTEXT}\n\n` +
-        `Use these OpenGuessr emojis, and do NOT use other emojis: ${Object.values(EMOJI).join(" ")}\n\n` +
-        `Reply with JSON. Reply {"answer": "<your answer>"}. If there's no clear question, reply {"answer": false}`;
+const LIST_COMMANDS_TOOL = {
+    type: "function",
+    function: {
+        name: "list_commands",
+        description: "List the slash commands available for users of Guessy (for questions about how to use the bot).",
+        parameters: { type: "object", properties: {} }
+    }
+};
 
-    const prompt = question
-        ? `Direct question: ${question}`
-        : `Chat history:\n\n${history.join("\n")}`;
+const READ_CHANNEL_TOOL = {
+    type: "function",
+    function: {
+        name: "read_channel",
+        description: "Read the last 50 messages of a listed channel.",
+        parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] }
+    }
+};
 
+async function readableChannels(guildId) {
+    if (!guildId) return [];
+
+    try {
+        const channels = await (await DiscordRequest(`guilds/${guildId}/channels`, { method: "GET" })).json();
+        return channels.filter(channel => channel.type === 0 || channel.type === 5);
+    } catch (error) {
+        console.error("Failed to list channels:", error);
+        return [];
+    }
+}
+
+async function readChannelByName(channels, name) {
+    const match = channels.find(channel => channel.name?.toLowerCase() === String(name).toLowerCase());
+    if (!match) return "Channel does not exist.";
+    return asTranscript(await readChannel(match.id, 50)) || "Empty or not reachable.";
+}
+
+async function sendOpenRouterRequest(messages, tools) {
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: { Authorization: `Bearer ${openRouterKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
             model: openRouterModel,
             response_format: { type: "json_object" },
-            messages: [
-                { role: "system", content: instructions },
-                { role: "user", content: prompt }
-            ]
+            tools: tools?.length ? tools : undefined,
+            messages
         })
     });
 
     if (!response.ok) throw new Error(`OpenRouter returned ${response.status}: ${await response.text()}`);
+    return (await response.json()).choices?.[0]?.message;
+}
 
-    const answer = JSON.parse((await response.json()).choices?.[0]?.message?.content || "{}")?.answer;
-    return typeof answer === "string" && answer.trim() ? answer.trim() : null;
+// Returns the answer, or null when there is no question
+async function askLLM(question, channelId, guildId) {
+    const recent = channelId ? await readChannel(channelId) : [];
+    if (!question && recent.length === 0) return null;
+
+    const channels = await readableChannels(guildId);
+    const channelNames = channels.map(channel => channel.name).join(", ");
+    const tools = channels.length ? [LIST_COMMANDS_TOOL, READ_CHANNEL_TOOL] : [LIST_COMMANDS_TOOL];
+
+    const instructions = `${GAME_CONTEXT}\n\n## Instructions\n\n` +
+        (channelNames ? `When unsure, you can read from these channels (may include a helpful FAQ): ${channelNames}\n\n` : "") +
+        `ONLY use these emojis (NO other emojis are allowed): ${Object.values(EMOJI).join(" ")}\n\n` +
+        `Reply as JSON with {"answer": "<your answer to the latest question>"}, or {"answer": false} if there is no clear question.`;
+
+    const images = recent
+        .flatMap(message => (message.attachments || []).map(attachment => ({ ...attachment, from: message.author?.username || "player" })))
+        .filter(attachment => attachment.content_type?.startsWith("image/"))
+        .slice(-MAX_IMAGES);
+
+    // Include the most recent 10 messages from the channel
+    const transcript = asTranscript(recent);
+    const prompt = [transcript && `Recent messages:\n${transcript}`, question && `Question: ${question}`]
+        .filter(Boolean)
+        .join("\n\n");
+
+    const messages = [
+        { role: "system", content: instructions },
+        {
+            role: "user", content: [
+                { type: "text", text: prompt },
+                ...images.flatMap(image => [{ type: "text", text: `Image from ${image.from}:` }, { type: "image_url", image_url: { url: image.url } }])
+            ]
+        }
+    ];
+
+    for (let step = 0; step <= MAX_TOOL_STEPS; step++) {
+        const reply = await sendOpenRouterRequest(messages, step < MAX_TOOL_STEPS ? tools : undefined);
+
+        if (!reply?.tool_calls?.length) {
+            const answer = JSON.parse(reply?.content || "{}")?.answer;
+            return typeof answer === "string" && answer.trim() ? answer.trim() : null;
+        }
+
+        messages.push(reply);
+        for (const call of reply.tool_calls) {
+            const content = call.function.name === "list_commands"
+                ? COMMAND_LIST
+                : await readChannelByName(channels, JSON.parse(call.function.arguments || "{}").name);
+
+            messages.push({ role: "tool", tool_call_id: call.id, content });
+        }
+    }
+
+    throw new Error("The model kept calling tools instead of answering."); // Never falls through silently
 }
 
 // Interactions endpoint --------------------------------------------------------------------------------
