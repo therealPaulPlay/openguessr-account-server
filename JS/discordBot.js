@@ -398,7 +398,7 @@ const handlers = {
 
 // Answering questions via an LLM ----------------------------------------------------------------
 const EXPLAIN_WINDOW_MS = 60 * 1000;
-const EXPLAIN_MAX_USES = 5;
+const EXPLAIN_MAX_USES = 3;
 
 const explainUses = new Map(); // Discord user ID -> timestamps
 
@@ -412,7 +412,6 @@ setInterval(() => {
 function hasExplainUsesLeft(userId) {
     const recent = (explainUses.get(userId) || []).filter(time => Date.now() - time < EXPLAIN_WINDOW_MS);
     if (recent.length >= EXPLAIN_MAX_USES) return false;
-
     explainUses.set(userId, [...recent, Date.now()]);
     return true;
 }
@@ -420,22 +419,6 @@ function hasExplainUsesLeft(userId) {
 const MAX_IMAGES = 3;
 const MAX_TOOL_STEPS = 3;
 const MAX_ANSWER_TOKENS = 1000;
-
-// Needs the Message Content intent
-async function readChannel(id, limit = 10) {
-    try {
-        const response = await DiscordRequest(`channels/${id}/messages?limit=${limit}`, { method: "GET" });
-        return (await response.json()).filter(message => !message.author?.bot).reverse();
-    } catch (error) {
-        console.error("Failed to read channel:", error);
-        return [];
-    }
-}
-
-const asTranscript = (messages) => messages
-    .filter(message => message.content)
-    .map(message => `${message.author?.username || "player"}: ${message.content}`)
-    .join("\n");
 
 const LIST_COMMANDS_TOOL = {
     type: "function",
@@ -455,12 +438,28 @@ const READ_CHANNEL_TOOL = {
     }
 };
 
+// Needs the Message Content intent
+async function readChannel(id, limit = 10) {
+    try {
+        const response = await DiscordRequest(`channels/${id}/messages?limit=${limit}`, { method: "GET" });
+        return (await response.json()).filter(message => !message.author?.bot).reverse();
+    } catch (error) {
+        console.error("Failed to read channel:", error);
+        return [];
+    }
+}
+
+const asTranscript = (messages) => messages
+    .filter(message => message.content)
+    .map(message => `${message.author?.username || "player"}: ${message.content}`)
+    .join("\n");
+
 async function readableChannels(guildId) {
     if (!guildId) return [];
 
     try {
         const channels = await (await DiscordRequest(`guilds/${guildId}/channels`, { method: "GET" })).json();
-        return channels.filter(channel => channel.type === 0 || channel.type === 5);
+        return channels.filter(channel => channel.type === 0 || channel.type === 5); // Regular chat and announcements
     } catch (error) {
         console.error("Failed to list channels:", error);
         return [];
@@ -470,7 +469,7 @@ async function readableChannels(guildId) {
 async function readChannelByName(channels, name) {
     const match = channels.find(channel => channel.name?.toLowerCase() === String(name).toLowerCase());
     if (!match) return "Channel does not exist.";
-    return asTranscript(await readChannel(match.id, 50)) || "Empty or not reachable.";
+    return asTranscript(await readChannel(match.id, 50)) || "Empty or unreachable.";
 }
 
 async function sendOpenRouterRequest(messages, tools) {
@@ -499,7 +498,7 @@ async function askLLM(question, channelId, guildId) {
     const channelNames = channels.map(channel => channel.name).join(", ");
     const tools = channels.length ? [LIST_COMMANDS_TOOL, READ_CHANNEL_TOOL] : [LIST_COMMANDS_TOOL];
 
-    const instructions = `${GAME_CONTEXT}\n\n## Instructions\n\n` +
+    const systemPrompt = `${GAME_CONTEXT}\n\n## Instructions\n\n` +
         (channelNames ? `When unsure, you can read from these channels (may include a helpful FAQ): ${channelNames}\n\n` : "") +
         `ONLY use these emojis (NO other emojis are allowed): ${Object.values(EMOJI).join(" ")}\n\n` +
         `Reply as JSON with {"answer": "<your answer to the latest question>"}, or {"answer": false} if there is no clear question.`;
@@ -515,8 +514,9 @@ async function askLLM(question, channelId, guildId) {
         .filter(Boolean)
         .join("\n\n");
 
+    // Build the messages that the model receives
     const messages = [
-        { role: "system", content: instructions },
+        { role: "system", content: systemPrompt },
         {
             role: "user", content: [
                 { type: "text", text: prompt },
@@ -532,8 +532,8 @@ async function askLLM(question, channelId, guildId) {
             const answer = JSON.parse(reply?.content || "{}")?.answer;
             return typeof answer === "string" && answer.trim() ? answer.trim() : null;
         }
-
         messages.push(reply);
+
         for (const call of reply.tool_calls) {
             const content = call.function.name === "list_commands"
                 ? COMMAND_LIST
@@ -543,7 +543,7 @@ async function askLLM(question, channelId, guildId) {
         }
     }
 
-    throw new Error("The model kept calling tools instead of answering."); // Never falls through silently
+    throw new Error("Model stuck in tool call loop");
 }
 
 // Interactions endpoint --------------------------------------------------------------------------------
