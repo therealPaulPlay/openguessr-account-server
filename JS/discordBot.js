@@ -364,7 +364,15 @@ const handlers = {
 
     // Since Discord times a command out after 3s we ack first
     explain: async (req, res) => {
-        if (!hasExplainUsesLeft(req.body.member?.user?.id || req.body.user?.id)) return reply(res, `Too many questions, give me a minute please ${EMOJI.gentleman}`, true);
+        const rateLimitResult = checkExplainLimit(req.body.member?.user?.id || req.body.user?.id);
+        if (rateLimitResult.exhausted) {
+            if (rateLimitResult.timeframe === "minute") return reply(res, `Too many questions, give me a minute please ${EMOJI.gentleman}`, true);
+            else if (rateLimitResult.timeframe === "day") return reply(res, `Too many questions for today, please ask me in 24h ${EMOJI.gentleman}`, true);
+            else {
+                console.warn("Unknown rate limit timeframe used in /explain.");
+                return reply(res, `Too many questions for an unknown timeframe ${EMOJI.gentleman}`, true);
+            }
+        }
 
         res.send({ type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE, data: {} });
 
@@ -397,23 +405,35 @@ const handlers = {
 };
 
 // Answering questions via an LLM ----------------------------------------------------------------
-const EXPLAIN_WINDOW_MS = 60 * 1000;
-const EXPLAIN_MAX_USES = 3;
+const MINUTE_MS = 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPLAIN_MAX_MINUTE_USES = 3;
+const EXPLAIN_MAX_DAILY_USES = 50;
 
-const explainUses = new Map(); // Discord user ID -> timestamps
+const explainUses = new Map(); // Discord user ID -> { minute: [...timestamps], day: [...timestamps] }
 
-// Delete explain rate limit entries
+// Delete fully outdated explain rate limit entries
 setInterval(() => {
-    for (const [id, uses] of explainUses) {
-        if (uses.every(time => Date.now() - time >= EXPLAIN_WINDOW_MS)) explainUses.delete(id);
-    }
-}, 60 * 1000).unref();
+    for (const [id, trackers] of explainUses) {
+        const minuteUsesExpired = trackers.minute.every(time => Date.now() - time >= MINUTE_MS);
+        const dailyUsesExpired = trackers.day.every(time => Date.now() - time >= DAY_MS);
 
-function hasExplainUsesLeft(userId) {
-    const recent = (explainUses.get(userId) || []).filter(time => Date.now() - time < EXPLAIN_WINDOW_MS);
-    if (recent.length >= EXPLAIN_MAX_USES) return false;
-    explainUses.set(userId, [...recent, Date.now()]);
-    return true;
+        // Clean up entry if all timestamps are out of date
+        if (minuteUsesExpired && dailyUsesExpired) explainUses.delete(id);
+    }
+}, 5 * 60 * 1000).unref();
+
+function checkExplainLimit(userId) {
+    // Filter out expired ones
+    const recentMinute = (explainUses.get(userId)?.minute || []).filter(time => Date.now() - time < MINUTE_MS);
+    const recentDay = (explainUses.get(userId)?.day || []).filter(time => Date.now() - time < DAY_MS);
+
+    // If daily or every minute limit are exhausted
+    if (recentDay.length >= EXPLAIN_MAX_DAILY_USES) return { exhausted: true, timeframe: "day" };
+    if (recentMinute.length >= EXPLAIN_MAX_MINUTE_USES) return { exhausted: true, timeframe: "minute" };
+
+    explainUses.set(userId, { minute: [...recentMinute, Date.now()], day: [...recentDay, Date.now()] });
+    return { exhausted: false };
 }
 
 const MAX_IMAGES = 3;

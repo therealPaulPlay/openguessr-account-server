@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Create app directory
 WORKDIR /usr/src/app
@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 # Install app dependencies
 COPY package*.json ./
 
-RUN npm install
+RUN npm ci
 
 # Bundle app source
 COPY . .
