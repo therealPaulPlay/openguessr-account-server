@@ -221,7 +221,7 @@ async function getScreenshotLocations() {
     return locations;
 }
 
-async function startLocationRound(channelId, prependBlankLine = false) {
+async function startLocationRound(channelId, prefix = "") {
     const locations = await getScreenshotLocations();
     const [lat, lng, options] = locations[Math.floor(Math.random() * locations.length)];
 
@@ -230,16 +230,16 @@ async function startLocationRound(channelId, prependBlankLine = false) {
     });
 
     return [
-        text(`${prependBlankLine ? "\n\n" : ""}${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\n\nAnswer with \`/guess <country>\`.`),
+        text(`${prefix}${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\n\nAnswer with \`/guess <country>\`.`),
         { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(options.imageKey) } }] }
     ];
 }
 
-function startCountryRound(channelId, prependBlankLine = false) {
+function startCountryRound(channelId, prefix = "") {
     const question = QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
     const cancelledString = startRound(channelId, { type: "country-quiz", answer: question.answer });
 
-    return [text(`${prependBlankLine ? "\n\n" : ""}${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`)];
+    return [text(`${prefix}${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`)];
 }
 
 // Command setup ----------------------------------------------------------
@@ -306,21 +306,21 @@ const handlers = {
         const player = `<@${playerId}>`;
         round.attempts++;
 
+        // Wrong guess / right guess handling
         if (guess !== resolveCountry(round.answer)) return reply(res, `:x: ${player} guessed **${guess}**.`);
+        else {
+            rounds.delete(req.body.channel_id); // Deleted so round isn't reported as cancelled
+            const isLocation = round.type === "location-quiz";
+            const streetView = isLocation
+                ? ` ([view location](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}))`
+                : "";
 
-        rounds.delete(req.body.channel_id); // Deleted so the next round doesn't report it as cancelled
+            const correctGuessString = `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}\n\n`;
 
-        const isLocation = round.type === "location-quiz";
-        const streetView = isLocation
-            ? ` ([view location](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}))`
-            : "";
-
-        const nextRound = isLocation ? await startLocationRound(req.body.channel_id, true) : startCountryRound(req.body.channel_id, true);
-
-        return reply(res, [
-            text(`:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`),
-            ...nextRound
-        ], false, playerId);
+            return reply(res, isLocation
+                ? await startLocationRound(req.body.channel_id, correctGuessString)
+                : startCountryRound(req.body.channel_id, correctGuessString), false, playerId);
+        }
     },
 
     profile: async (req, res) => {
