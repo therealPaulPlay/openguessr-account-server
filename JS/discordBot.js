@@ -187,7 +187,7 @@ function formatProfile(user) {
     ].filter(Boolean).join("\n");
 }
 
-// Screenshot-guessing rounds --------------------------------------------------------------------
+// Quiz rounds --------------------------------------------------------------------
 const ROUND_TIMEOUT_MS = 15 * 60 * 1000;
 
 const rounds = new Map(); // One round per channel
@@ -219,6 +219,27 @@ async function getScreenshotLocations() {
 
     locationsCache = { locations, expiresAt: Date.now() + 60 * 60 * 1000 }; // 1h
     return locations;
+}
+
+async function startLocationRound(channelId, prependBlankLine = false) {
+    const locations = await getScreenshotLocations();
+    const [lat, lng, options] = locations[Math.floor(Math.random() * locations.length)];
+
+    const cancelledString = startRound(channelId, {
+        type: "location-quiz", answer: resolveCountry(countryNames.of(options.country)), lat, lng
+    });
+
+    return [
+        text(`${prependBlankLine ? "\n\n" : ""}${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\n\nAnswer with \`/guess <country>\`.`),
+        { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(options.imageKey) } }] }
+    ];
+}
+
+function startCountryRound(channelId, prependBlankLine = false) {
+    const question = QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
+    const cancelledString = startRound(channelId, { type: "country-quiz", answer: question.answer });
+
+    return [text(`${prependBlankLine ? "\n\n" : ""}${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`)];
 }
 
 // Command setup ----------------------------------------------------------
@@ -268,28 +289,11 @@ const handlers = {
 
     help: (_req, res) => reply(res, COMMAND_LIST),
 
-    "location-quiz": async (req, res) => {
-        const locations = await getScreenshotLocations();
-        const [lat, lng, options] = locations[Math.floor(Math.random() * locations.length)];
+    "location-quiz": async (req, res) => reply(res, await startLocationRound(req.body.channel_id)),
 
-        const cancelledString = startRound(req.body.channel_id, {
-            type: "location-quiz", answer: resolveCountry(countryNames.of(options.country)), lat, lng
-        });
+    "country-quiz": (req, res) => reply(res, startCountryRound(req.body.channel_id)),
 
-        return reply(res, [
-            text(`${cancelledString}**In which country is this location? ${EMOJI.ummactually}**\n\nAnswer with \`/guess <country>\`.`),
-            { type: MessageComponentTypes.MEDIA_GALLERY, items: [{ media: { url: await getPublicObjectURL(options.imageKey) } }] }
-        ]);
-    },
-
-    "country-quiz": (req, res) => {
-        const question = QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
-        const cancelledString = startRound(req.body.channel_id, { type: "country-quiz", answer: question.answer });
-
-        return reply(res, `${cancelledString}**Which country does this describe? ${EMOJI.ummactually}**\n${question.question}\n\nAnswer with \`/guess <country>\`.`);
-    },
-
-    guess: (req, res) => {
+    guess: async (req, res) => {
         const round = rounds.get(req.body.channel_id);
         if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob}`, true);
 
@@ -304,13 +308,19 @@ const handlers = {
 
         if (guess !== resolveCountry(round.answer)) return reply(res, `:x: ${player} guessed **${guess}**.`);
 
-        rounds.delete(req.body.channel_id);
+        rounds.delete(req.body.channel_id); // Deleted so the next round doesn't report it as cancelled
 
-        const streetView = round.type === "location-quiz"
+        const isLocation = round.type === "location-quiz";
+        const streetView = isLocation
             ? ` ([view location](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${round.lat},${round.lng}))`
             : "";
 
-        return reply(res, `:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`, false, playerId);
+        const nextRound = isLocation ? await startLocationRound(req.body.channel_id, true) : startCountryRound(req.body.channel_id, true);
+
+        return reply(res, [
+            text(`:white_check_mark: **${round.answer}** - ${player} got it after ${round.attempts} guess${round.attempts === 1 ? "" : "es"} ${EMOJI.fiveK}${streetView}`),
+            ...nextRound
+        ], false, playerId);
     },
 
     profile: async (req, res) => {
