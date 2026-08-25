@@ -295,7 +295,7 @@ const handlers = {
 
     guess: async (req, res) => {
         const round = rounds.get(req.body.channel_id);
-        if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob}`, true);
+        if (!round || Date.now() >= round.expiresAt) return reply(res, `There's no active game ${EMOJI.sob} Use \`/help\` to learn how to start one.`, true);
 
         const typed = req.body.data.options.find(option => option.name === "country").value;
         const guess = resolveCountry(typed);
@@ -339,7 +339,8 @@ const handlers = {
         ]);
 
         const buildList = (rows, column, symbol) => rows
-            .map((row, index) => `${index + 1}. **${escapeMarkdown(row.user_name)}** - ${Number(row[column]).toLocaleString("en")} ${symbol}`)
+            // The dot is escaped as Discord would otherwise parse this as an ordered list, which ignores the line break after the header
+            .map((row, index) => `${index + 1}\\. **${escapeMarkdown(row.user_name)}** - ${Number(row[column]).toLocaleString("en")} ${symbol}`)
             .join("\n");
 
         return reply(res, `**Elo**\n${buildList(byElo, "elo", "Elo")}\n\n**XP**\n${buildList(byExperience, "experience", "XP")}`);
