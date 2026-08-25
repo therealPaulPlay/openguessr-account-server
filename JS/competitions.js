@@ -247,14 +247,14 @@ setInterval(() => {
 
 // Create competition
 competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWithId, [
-    body('name').isString().withMessage('Name must be a string.').bail().trim().isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.').custom((value) => {
+    body('name').isString().withMessage('Name must be provided.').bail().trim().isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.').custom((value) => {
         if (!check(value)) throw new Error('Competition name is empty or contains inappropriate words.');
         return true;
     }),
     body('restriction').isLength({ max: 1000 }).withMessage('Restriction data cannot exceed 1000 characters.'),
     body('duration').isInt({ min: 600, max: 604800 }).withMessage('Duration must be between 10 minutes and 7 days.'),
     body('roundLength').isInt({ min: 3, max: 300 }).withMessage('Round length must be between 3 seconds and 5 minutes.'),
-    body('description').isString().withMessage('Description must be a string.').bail().isLength({ min: 15, max: 70 }).withMessage('Description must be between 15 and 70 characters.').custom((value) => {
+    body('description').isString().withMessage('Description must be provided.').bail().isLength({ min: 15, max: 70 }).withMessage('Description must be between 15 and 70 characters.').custom((value) => {
         if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
         return true;
     }),

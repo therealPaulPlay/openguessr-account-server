@@ -257,17 +257,19 @@ export const isValidMap = (map, { minLocations = 50, maxLocations = null } = {})
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
     failedMapSubmissionLimiter, authenticateTokenWithId,
-    body('name').isString().withMessage('Map name must be a string.').bail()
+    body('name').isString().withMessage('Map name must be provided.').bail()
         .customSanitizer((value) => value.replace(/[_/+&#?]/g, ' ').replace(/\s+/g, ' ').trim())
         .isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
             if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
             return true;
         }),
-    body('description').isString().withMessage('Description must be a string.').bail().isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
+    body('description').isString().withMessage('Description must be provided.').bail().isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
         if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
         return true;
     }),
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
+    body('category').isString().withMessage('Category must be provided.').bail()
+        .isIn(['Nature', 'Architecture', 'Urban', 'Regions', 'Sports', 'Transport', 'Miscellaneous']).withMessage('Invalid map category.'),
 ], async (req, res) => {
     const { id: player_id, name, description: rawDescription, mapData, category } = req.body;
 
@@ -275,7 +277,7 @@ communityMapRouter.post('/', [
 
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    if (!player_id || !name || !rawDescription || !mapData) return res.status(400).json({ error: 'All input fields are required.' });
+    if (!player_id || !name || !rawDescription || !mapData || !category) return res.status(400).json({ error: 'All input fields are required.' });
 
     try {
         // Fetch the user to get the actual username
@@ -317,7 +319,7 @@ communityMapRouter.post('/', [
         // Insert basic map info into the database first (without map data)
         const [result] = await db.promise().execute(
             'INSERT INTO maps (name, author, description, favourite, category, author_id, likes) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [name, author, description, false, category || null, player_id, 0]
+            [name, author, description, false, category, player_id, 0]
         );
 
         const mapId = result.insertId;
