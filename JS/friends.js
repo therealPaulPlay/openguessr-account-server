@@ -51,22 +51,54 @@ friendRouter.post('/send', friendRequestLimiter, authenticateTokenWithId, async 
         `;
         await db.promise().query(sendRequestQuery, [senderId, recipientId]);
 
-        // Notify the recipient via SSE - If they're offline, set new_request so the
-        // bubble indicator shows next time when they are online
+        // Notify the recipient via SSE - if they're online they've seen it, otherwise the request
+        // stays unseen so the new request indicator shows next time when they are online
         const delivered = sendEventToClient(recipientId, {
             type: 'friend-request-received',
             from: senderId,
             name: senderName
         });
 
-        if (!delivered) {
-            await db.promise().query(`UPDATE users SET new_request = 1 WHERE id = ?`, [recipientId]);
+        if (delivered) {
+            await db.promise().query(`UPDATE friend_requests SET seen = TRUE WHERE sender_id = ? AND recipient_id = ?`, [senderId, recipientId]);
         }
 
         res.status(201).json({ message: 'Friend request sent successfully.' });
     } catch (error) {
         console.error('Error sending friend request:', error);
         res.status(500).json({ error: 'An error occurred while sending the friend request.' });
+    }
+});
+
+// Get all outgoing friend requests for user
+friendRouter.put('/sent-requests', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id: userId } = req.body;
+
+    try {
+        const db = getDB();
+        const [outgoingRequests] = await db.promise().execute("SELECT users.id, users.user_name FROM friend_requests JOIN users ON friend_requests.recipient_id = users.id WHERE friend_requests.sender_id = ? ORDER BY friend_requests.created_at ASC", [userId]);
+
+        res.json({ sentRequests: outgoingRequests });
+    } catch (error) {
+        console.error('Error getting sent friend requests:', error);
+        res.status(500).json({ error: 'An error occurred while getting the sent friend requests for user.' });
+    }
+});
+
+// Revoke a sent friend request
+friendRouter.delete('/revoke-request', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { id: userId, recipientId } = req.body;
+    if (userId == null || recipientId == null) return res.status(400).json({ error: 'User ID and recipient ID are required.' });
+
+    try {
+        const db = getDB();
+        const [result] = await db.promise().execute("DELETE FROM friend_requests WHERE sender_id = ? AND recipient_id = ?", [userId, recipientId]);
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Friend request not found, could not be revoked.' });
+
+        res.status(200).json({ message: "Friend request revoked successfully." });
+    } catch (error) {
+        console.error('Error revoking friend request:', error);
+        res.status(500).json({ error: 'An error occurred revoking a friend request.' });
     }
 });
 
@@ -277,8 +309,8 @@ friendRouter.post('/requests', standardLimiter, authenticateTokenWithId, async (
         `;
         const [requests] = await db.promise().query(getRequestsQuery, [recipientId]);
 
-        // Reset new request to seen
-        await db.promise().query(`UPDATE users SET new_request = 0 WHERE id = ?`, [recipientId]);
+        // Mark the requests as seen, which is what the new request indicator is derived from
+        await db.promise().query(`UPDATE friend_requests SET seen = TRUE WHERE recipient_id = ? AND seen = FALSE`, [recipientId]);
 
         res.status(200).json({ requests });
     } catch (error) {

@@ -29,7 +29,7 @@ accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (
                 u.experience, 
                 u.supporter_level, 
                 u.supported_amount, 
-                u.new_request, 
+                EXISTS(SELECT 1 FROM friend_requests fr WHERE fr.recipient_id = u.id AND fr.seen = FALSE) AS new_request,
                 u.elo,
                 u.tokens,
                 p.*
@@ -584,6 +584,16 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
 });
 
 // Experience Update Endpoint -------------------------------------------------------------------------------------------------------------------------
+const lastExperienceUpdate = new Map(); // User ID -> timestamp of last XP update
+
+// Clean up stale experience timestamps every minute
+setInterval(() => {
+    const oneMinuteAgo = Date.now() - 60 * 1000;
+    lastExperienceUpdate.forEach((time, key) => {
+        if (time < oneMinuteAgo) lastExperienceUpdate.delete(key);
+    });
+}, 60 * 1000);
+
 accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const db = getDB();
     const { id, experience: addExperience } = req.body;
@@ -593,8 +603,8 @@ accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWi
     if (addExperience > 10000) return res.status(400).json({ error: 'Added experience amount is too high.' });
 
     try {
-        // Fetch current experience and last update time from the database
-        const userQuery = 'SELECT experience, last_experience_update FROM users WHERE id = ?';
+        // Fetch current experience from the database
+        const userQuery = 'SELECT experience FROM users WHERE id = ?';
         const user = await new Promise((resolve, reject) => {
             db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
@@ -603,28 +613,24 @@ accountRouter.put('/update/add-experience', standardLimiter, authenticateTokenWi
         });
         if (!user) return res.status(404).json({ error: 'User not found.' });
 
-        const { experience: currentExperience, last_experience_update } = user;
+        const { experience: currentExperience } = user;
 
         // Determine rate limit based on experience difference
         let rateLimitTimeout = (addExperience / 10000) * 6 * 1000 + 100; // 6s rate limiting for 10,000 XP difference
 
         // Check if user is allowed to make the request based on rate limiting
-        const lastUpdate = last_experience_update ? new Date(last_experience_update) : null;
+        const lastUpdate = lastExperienceUpdate.get(Number(id));
 
         if (lastUpdate) {
-            const timeElapsed = new Date() - lastUpdate; // Calculate difference in milliseconds
+            const timeElapsed = Date.now() - lastUpdate; // Calculate difference in milliseconds
             if (timeElapsed < rateLimitTimeout) return res.status(429).json({ error: `Rate limit exceeded. Try again in ${Math.ceil((rateLimitTimeout - timeElapsed) / 1000)} seconds.` });
         }
 
+        lastExperienceUpdate.set(Number(id), Date.now());
         const newExperience = currentExperience + addExperience;
 
-        // Update user experience and last experience update time in the database
-        const updateQuery = `
-            UPDATE users
-            SET experience = ?,
-                last_experience_update = UTC_TIMESTAMP()
-            WHERE id = ?
-        `;
+        // Update user experience in the database
+        const updateQuery = 'UPDATE users SET experience = ? WHERE id = ?';
         await new Promise((resolve, reject) => {
             db.execute(updateQuery, [newExperience, id], (err, results) => {
                 if (err) return reject(err);
