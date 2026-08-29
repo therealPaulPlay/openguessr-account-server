@@ -368,6 +368,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
 
     let googleUserId;
     let googleEmail;
+    let googleEmailVerified;
     let googleName;
 
     // Exchange authorization code for tokens
@@ -397,6 +398,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
 
         googleUserId = userInfo.id;
         googleEmail = userInfo.email;
+        googleEmailVerified = userInfo.verified_email === true;
         googleName = userInfo.name?.substring(0, 200); // Truncate if longer than 200 chars
     } catch (e) {
         console.error('Google OAuth token exchange failed:', e);
@@ -410,28 +412,39 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         await connection.beginTransaction();
 
         // Check if user exists by google_id
-        const [existingUsers] = await connection.execute('SELECT id FROM users WHERE google_id = ? FOR UPDATE', [googleUserId]);
-        const existingUser = existingUsers[0];
+        const [existingGoogleUsers] = await connection.execute('SELECT id FROM users WHERE google_id = ? FOR UPDATE', [googleUserId]);
+        const existingGoogleUser = existingGoogleUsers[0];
 
-        if (existingUser) {
+        if (existingGoogleUser) {
             await connection.commit();
 
-            const bearerToken = createNewJwtToken({ id: existingUser.id });
-            return res.json({ message: 'Login successful', token: bearerToken, id: existingUser.id });
+            const bearerToken = createNewJwtToken({ id: existingGoogleUser.id });
+            return res.json({ message: 'Login successful', token: bearerToken, id: existingGoogleUser.id });
         }
 
-        // Check if email is already used by a non-Google account
-        const [emailUsers] = await connection.execute('SELECT id FROM users WHERE email = ? FOR UPDATE', [googleEmail]);
-        if (emailUsers[0]) {
+        // If the email already has an account, link Google to it so both login methods work
+        const [existingEmailUsers] = await connection.execute('SELECT id, google_id FROM users WHERE email = ? FOR UPDATE', [googleEmail]);
+        const existingEmailUser = existingEmailUsers[0];
+
+        if (existingEmailUser) {
+            // Refuse if email is unverified, or if the account is linked to a different Google account
+            if (!googleEmailVerified || (existingEmailUser.google_id && existingEmailUser.google_id !== googleUserId)) {
+                await connection.commit();
+                return res.status(409).json({ error: 'Please use email login for this account.' });
+            }
+
+            await connection.execute('UPDATE users SET google_id = ? WHERE id = ?', [googleUserId, existingEmailUser.id]);
             await connection.commit();
-            return res.status(409).json({ error: 'Please use email login for this account.' });
+
+            const bearerToken = createNewJwtToken({ id: existingEmailUser.id });
+            return res.json({ message: 'Login successful', token: bearerToken, id: existingEmailUser.id });
         }
 
         let username = googleName || `User_GO${generateRandomSuffix()}`;
 
         // Google names are not unique, so try progressively longer suffixes
-        const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-        if (existingUserNames[0]) {
+        const [existingNameUsers] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
+        if (existingNameUsers[0]) {
             username = `${googleName || 'User'}_GO${generateRandomSuffix()}`;
 
             const [secondCheck] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
