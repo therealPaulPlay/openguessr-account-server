@@ -273,11 +273,19 @@ function attachPlaySocketEvents(server) {
 
             // Time reduced overlay
             const remainingTimerTime = server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp); // In ms
+
+            // Show the time reduced overlay if there are more than 3s left in the round, otherwise it would just be distraction
             if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length === 1 && remainingTimerTime > 3000) {
                 server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
-                if (remainingTimerTime > 15000) {
+                if (remainingTimerTime > 15_000) {
                     server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
-                    roomTimer.adjust(roomId, 15000);
+                    if (roomTimer.isRunning(roomId)) roomTimer.adjust(roomId, 15_000);
+                    else {
+                        // For rooms without a timer, start one
+                        roomTimer.set(roomId, 15_000, () => {
+                            endRound(roomId);
+                        });
+                    }
                 }
 
                 // Wait shortly, hide overlay
@@ -505,10 +513,12 @@ async function startRound(roomId) {
             // Timer information for clients
             playSocketServer.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: playSocketServer.getRoomStorage(roomId).roundLength });
 
-            // Server-side timer
-            roomTimer.set(roomId, playSocketServer.getRoomStorage(roomId).roundLength * 1000, () => {
-                endRound(roomId);
-            });
+            // Server-side timer (Infinity means no timer)
+            if (playSocketServer.getRoomStorage(roomId).roundLength !== Infinity) {
+                roomTimer.set(roomId, playSocketServer.getRoomStorage(roomId).roundLength * 1000, () => {
+                    endRound(roomId);
+                });
+            }
         } catch (error) {
             console.error("Error in timeout within round start:", error);
         }
@@ -584,9 +594,9 @@ export function lockRoomForMatchmaking(roomId, divisionRoom = false) {
 }
 
 export function reviewAndConstructInitialRoomStorage(requestorClientId, storage) {
-    if (typeof storage.roundAmount !== "number" || storage.roundAmount < 1 || storage.roundAmount > 10) storage.roundAmount = 3;
-    if (typeof storage.roundLength !== "number" || storage.roundLength < 10 || storage.roundLength > 300) storage.roundLength = 60;
-    if (typeof storage.teamAmount !== "number" || storage.teamAmount > 10 || storage.teamAmount < 1) storage.teamAmount = 1;
+    if (typeof storage.roundAmount !== "number" || Number.isNaN(storage.roundAmount) || storage.roundAmount < 1 || storage.roundAmount > 10) storage.roundAmount = 3;
+    if (typeof storage.roundLength !== "number" || Number.isNaN(storage.roundLength) || storage.roundLength < 10 || (storage.roundLength > 300 && storage.roundLength !== Infinity)) storage.roundLength = 60; // Infinity means no timer and is allowed
+    if (typeof storage.teamAmount !== "number" || Number.isNaN(storage.teamAmount) || storage.teamAmount > 10 || storage.teamAmount < 1) storage.teamAmount = 1;
     if (!["standard", "duel"].includes(storage.style)) storage.style = "standard";
     if (typeof storage.highestSupporterLevel !== "number" || storage.highestSupporterLevel > 4 || storage.highestSupporterLevel < 0) storage.highestSupporterLevel = 0;
     if (!["none", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "none";
