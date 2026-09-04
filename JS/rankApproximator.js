@@ -5,12 +5,13 @@ import { getDB } from "./dbConnection.js";
 export class RankApproximator {
     #refreshPromise = null;
 
-    constructor(column, { bucketExpr, toBucket, toUpperBound, baseline = 0 }) {
+    constructor(column, { bucketExpr, toBucket, toUpperBound, baseline = 0, join = '' }) {
         this.column = column;
         this.bucketExpr = bucketExpr;
         this.toBucket = toBucket;
         this.toUpperBound = toUpperBound;
         this.baseline = baseline;
+        this.join = join ? ` ${join}` : '';
         this.buckets = new Map();
     }
 
@@ -18,7 +19,7 @@ export class RankApproximator {
         const db = getDB();
 
         const [rows] = await db.promise().query(
-            `SELECT ${this.bucketExpr} AS bucket, COUNT(*) AS cnt FROM users WHERE ${this.column} != ? GROUP BY bucket`,
+            `SELECT ${this.bucketExpr} AS bucket, COUNT(*) AS cnt FROM users${this.join} WHERE ${this.column} != ? GROUP BY bucket`,
             [this.baseline]
         );
 
@@ -26,7 +27,7 @@ export class RankApproximator {
         for (const row of rows) buckets.set(Number(row.bucket), Number(row.cnt));
 
         const [[{ cnt }]] = await db.promise().query(
-            `SELECT COUNT(*) AS cnt FROM users WHERE ${this.column} = ?`,
+            `SELECT COUNT(*) AS cnt FROM users${this.join} WHERE ${this.column} = ?`,
             [this.baseline]
         );
         const baselineBucket = this.toBucket(this.baseline);

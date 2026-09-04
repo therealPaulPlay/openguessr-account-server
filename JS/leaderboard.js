@@ -16,11 +16,18 @@ const xpRank = new RankApproximator('experience', {
 });
 
 // Fixed-width 25-point buckets for elo
-const eloRank = new RankApproximator('elo', {
+const eloBuckets = {
     bucketExpr: 'FLOOR(elo / 25)',
     toBucket: v => Math.floor(v / 25),
     toUpperBound: v => (Math.floor(v / 25) + 1) * 25,
     baseline: 1000,
+};
+
+const eloRank = new RankApproximator('elo', eloBuckets);
+const eloActiveRank = new RankApproximator('elo', {
+    ...eloBuckets,
+    join: `JOIN (SELECT user1_id AS id FROM duel_entries UNION SELECT user2_id FROM duel_entries) active
+        ON active.id = users.id`
 });
 
 // Endpoint for Top 100 leaderboard by experience
@@ -76,8 +83,8 @@ leaderboardRouter.put('/experience-user-section', standardLimiter, authenticateT
             { ...user, position: userPosition, id: userId }
         ]);
     } catch (err) {
-        console.error(`Error fetching leaderboard for user ${userId}:`, err);
-        res.status(500).json({ error: 'An error occurred while fetching the user leaderboard.' });
+        console.error(`Error fetching experience leaderboard for user ${userId}:`, err);
+        res.status(500).json({ error: 'An error occurred while fetching the experience user leaderboard.' });
     }
 });
 
@@ -91,6 +98,29 @@ leaderboardRouter.get('/elo', standardLimiter, cacheResponse("elo-leaderboard"),
                 (@rank := @rank + 1) as position
             FROM users, (SELECT @rank := 0) r
             ORDER BY elo DESC
+            LIMIT 100
+        `;
+
+        const [eloLeaderboard] = await db.promise().execute(leaderboardQuery);
+        res.json(eloLeaderboard);
+    } catch (err) {
+        console.error("Error fetching elo leaderboard:", err);
+        res.status(500).json({ error: 'An error occurred while fetching the elo leaderboard.' });
+    }
+});
+
+// Elo leaderboard, but only active duel players
+leaderboardRouter.get('/elo-active', standardLimiter, cacheResponse("elo-active-leaderboard"), async (req, res) => {
+    const db = getDB();
+
+    try {
+        const leaderboardQuery = `
+            SELECT u.user_name, u.elo, u.id, u.supporter_level,
+                (@rank := @rank + 1) as position
+            FROM users u, (SELECT @rank := 0) r
+            WHERE EXISTS (SELECT 1 FROM duel_entries d WHERE d.user1_id = u.id)
+            OR EXISTS (SELECT 1 FROM duel_entries d WHERE d.user2_id = u.id)
+            ORDER BY u.elo DESC
             LIMIT 100
         `;
 
@@ -126,7 +156,6 @@ leaderboardRouter.put('/elo-user-section', standardLimiter, authenticateTokenWit
         `, [user.elo, eloRank.toUpperBound(user.elo)]);
 
         if (!upperUser) return res.json([{ ...user, position: userPosition, id: userId }]);
-
         const upperUserPosition = Math.max(Math.min(eloRank.getRank(upperUser.elo), userPosition - 1), 1);
 
         res.json([
@@ -135,18 +164,74 @@ leaderboardRouter.put('/elo-user-section', standardLimiter, authenticateTokenWit
         ]);
     } catch (err) {
         console.error(`Error fetching elo leaderboard for user ${userId}:`, err);
-        res.status(500).json({ error: 'An error occurred while fetching the user leaderboard.' });
+        res.status(500).json({ error: 'An error occurred while fetching the elo user leaderboard.' });
     }
 });
 
-// Refresh rank approximators every 10 minutes
-cron.schedule('*/10 * * * *', async () => {
+// Endpoint for user-specific elo leaderboard, but only with active duel players
+leaderboardRouter.put('/elo-active-user-section', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const db = getDB();
+    const userId = req.body.id;
+    if (userId == null) return res.status(400).json({ error: 'User ID not provided.' });
+
     try {
-        await Promise.all([xpRank.refresh(), eloRank.refresh()]);
-        console.log("Refreshed experience and elo rank approximators.");
-    } catch (error) {
-        console.error('Error refreshing rank approximators:', error);
+        const [[row]] = await db.promise().execute(`
+            SELECT u.user_name, u.elo, u.supporter_level,
+            (EXISTS (SELECT 1 FROM duel_entries d WHERE d.user1_id = u.id)
+            OR EXISTS (SELECT 1 FROM duel_entries d WHERE d.user2_id = u.id)) AS is_active
+            FROM users u
+            WHERE u.id = ?
+        `, [userId]);
+        if (!row) return res.status(404).json({ error: 'User not found.' });
+
+        // The requesting user is ranked among the active players even when inactive, but we include a flag
+        const { is_active, ...user } = row;
+        user.isActive = Boolean(is_active);
+
+        await eloActiveRank.ensureLoaded();
+        const userPosition = eloActiveRank.getRank(user.elo);
+
+        const [[upperUser]] = await db.promise().execute(`
+            SELECT u.user_name, u.elo, u.supporter_level, u.id
+            FROM users u
+            WHERE u.elo > ? AND u.elo <= ?
+            AND (EXISTS (SELECT 1 FROM duel_entries d WHERE d.user1_id = u.id)
+            OR EXISTS (SELECT 1 FROM duel_entries d WHERE d.user2_id = u.id))
+            ORDER BY u.elo DESC
+            LIMIT 1
+        `, [user.elo, eloActiveRank.toUpperBound(user.elo)]);
+
+        if (!upperUser) return res.json([{ ...user, position: userPosition, id: userId }]);
+        const upperUserPosition = Math.max(Math.min(eloActiveRank.getRank(upperUser.elo), userPosition - 1), 1);
+
+        res.json([
+            { ...upperUser, position: upperUserPosition },
+            { ...user, position: userPosition, id: userId }
+        ]);
+    } catch (err) {
+        console.error(`Error fetching active elo leaderboard for user ${userId}:`, err);
+        res.status(500).json({ error: 'An error occurred while fetching the active elo user leaderboard.' });
     }
+});
+
+// Refresh the rank approximators every 10 minutes, spaced out so the load is spread out
+const rankRefreshers = [
+    ['experience', xpRank],
+    ['elo', eloRank],
+    ['active elo', eloActiveRank],
+];
+const REFRESH_SPACING = 3 * 60 * 1000;
+
+cron.schedule('*/10 * * * *', () => {
+    rankRefreshers.forEach(([name, approximator], index) => {
+        setTimeout(async () => {
+            try {
+                await approximator.refresh();
+            } catch (error) {
+                console.error(`Error refreshing ${name} rank approximator:`, error);
+            }
+        }, index * REFRESH_SPACING);
+    });
 });
 
 // Monthly resets -----------------------------------------------------------------------------------
