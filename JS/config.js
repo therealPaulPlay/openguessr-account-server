@@ -63,3 +63,5 @@ export const s3Config = {
 
 export const openRouterKey = process.env.OPENROUTER_API_KEY;
 export const openRouterModel = process.env.OPENROUTER_MODEL;
+
+export const y8GamesAppId = process.env.Y8_GAMES_APP_ID;

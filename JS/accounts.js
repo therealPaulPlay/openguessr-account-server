@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, passwordResetLimiter } from "./rateLimiters.js";
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret } from "./config.js";
+import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret, y8GamesAppId } from "./config.js";
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
 import { emailConfig, corsOptions } from './config.js';
@@ -236,7 +236,6 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         const bearerToken = createNewJwtToken({ email, id: user.id });
 
         res.json({
-            message: 'Login successful',
             token: bearerToken,
             id: user.id
         });
@@ -247,11 +246,11 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
     }
 });
 
-// Crazy Games Register and/or Login Endpoint (it checks for active accounts etc.)
+// CrazyGames register and/or login endpoint
 accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
     const db = getDB();
-    let { crazyGamesToken } = req.body;
     const userIp = req.clientIp;
+    let crazyGamesToken = req.body.crazyGamesToken;
 
     if (!crazyGamesToken) return res.status(400).json({ error: 'CrazyGames token is required.' });
 
@@ -266,8 +265,8 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         const data = await response.json();
         publicKey = data["publicKey"];
         if (!publicKey) return res.status(400).json({ error: "Public key is empty" });
-    } catch (e) {
-        console.error("Failed to fetch CrazyGames public key", e);
+    } catch (error) {
+        console.error("Failed to fetch CrazyGames public key", error);
         return res.status(400).json({ error: "Failed to fetch CrazyGames public key" });
     }
 
@@ -276,58 +275,20 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         const payload = jwt.verify(crazyGamesToken, publicKey, { algorithms: ["RS256"] });
 
         // Extract username and userId from the payload
-        username = payload.username?.substring(0, 200); // Truncate if longer than 200 chars
+        username = payload.username;
         crazyGamesUserId = payload.userId;
-    } catch (e) {
-        console.error("Failed to verify token", e);
+    } catch (error) {
+        console.error("Failed to verify token", error);
         return res.status(400).json({ error: "Invalid token" });
     }
 
-    // Now, check if there is an account associated with that crazy games id
-    // UNIQUE indexes on crazy_games_id and user_name let us catch ER_DUP_ENTRY
-    // on INSERT instead of using FOR UPDATE, which avoids gap-lock deadlocks
     let connection;
     try {
         connection = await db.promise().getConnection();
 
         let userId;
         try {
-            await connection.beginTransaction();
-
-            // Check if user exists
-            const [existingUsers] = await connection.execute('SELECT id FROM users WHERE crazy_games_id = ?', [crazyGamesUserId]);
-            const existingUser = existingUsers[0];
-
-            if (existingUser) {
-                userId = existingUser.id; // If user already exists, just use their ID
-            } else {
-                // No account exists, create one (register via CrazyGames ID)
-                // Check if username already exists
-                const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ?', [username]);
-                if (existingUserNames[0]) username = `${username}_CG${generateRandomSuffix()}`;
-
-                const now = new Date();
-
-                // Insert new user, concurrent inserts between our SELECTs and here surface as ER_DUP_ENTRY
-                try {
-                    const [insertResult] = await connection.execute(
-                        'INSERT INTO users (user_name, ip_address, created_at, crazy_games_id) VALUES (?, ?, ?, ?)',
-                        [username, userIp, now, crazyGamesUserId]
-                    );
-                    userId = insertResult.insertId;
-                } catch (insertError) {
-                    if (insertError.code !== 'ER_DUP_ENTRY') throw insertError;
-
-                    // Either UNIQUE index could've fired, re-read by CG id to disambiguate
-                    // If a row exists, it's the crazy_games_id race - reuse it
-                    // If not, the collision was on user_name and the fallback suffix wasn't enough
-                    const [raceWinner] = await connection.execute('SELECT id FROM users WHERE crazy_games_id = ?', [crazyGamesUserId]);
-                    if (raceWinner[0]) userId = raceWinner[0].id;
-                    else throw new Error("Could not allocate a unique username, please retry");
-                }
-            }
-
-            await connection.commit();
+            userId = await getOrCreatePortalAccount(connection, userIp, username, crazyGamesUserId, "crazy_games_id", "CG");
         } catch (txError) {
             await connection.rollback();
             throw txError;
@@ -336,17 +297,124 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         const bearerToken = createNewJwtToken({ id: userId });
 
         return res.json({
-            message: 'Login successful',
             token: bearerToken,
             id: userId
         });
     } catch (error) {
-        console.error('Error during crazygames authentication:', error);
-        return res.status(500).json({ error: 'An unexpected error occurred during crazygames authentication.' });
+        console.error('Error during CrazyGames authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during CrazyGames authentication.' });
     } finally {
         if (connection) connection.release();
     }
 });
+
+// Y8 Games register and/or login endpoint
+accountRouter.post('/y8-authenticate', loginLimiter, async (req, res) => {
+    const db = getDB();
+    const userIp = req.clientIp;
+    let y8GamesToken = req.body.y8GamesToken;
+
+    if (!y8GamesToken) return res.status(400).json({ error: 'Y8 access token is required.' });
+
+    // Env var missing guard
+    if (!y8GamesAppId) {
+        console.error("Y8_GAMES_APP_ID is not configured, cannot verify Y8 tokens");
+        return res.status(500).json({ error: 'Y8 Games app ID is not configured.' });
+    }
+
+    let username;
+    let y8GamesUserId;
+
+    // Verify the access token matches the profile via the Y8 API
+    try {
+        const response = await fetch("https://account.y8.com/api/profile", { headers: { "Authorization": "Bearer " + y8GamesToken } });
+
+        // 401 means expired and Y8 recommends to refresh and retry on the client in this case
+        if (response.status === 401) return res.status(401).json({ error: "Y8 access token is invalid or expired." });
+
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        const data = await response.json();
+
+        y8GamesUserId = data.pid;
+        username = data.name;
+        const expectedAppId = data.client_id;
+
+        if (expectedAppId !== y8GamesAppId) throw new Error("App ID does not match, this token is for a different App");
+    } catch (error) {
+        console.error("Failed to verify Y8 access token", error);
+        return res.status(400).json({ error: "Failed to verify Y8 token" });
+    }
+
+    let connection;
+    try {
+        connection = await db.promise().getConnection();
+
+        let userId;
+        try {
+            userId = await getOrCreatePortalAccount(connection, userIp, username, y8GamesUserId, "y8_games_id", "Y8");
+        } catch (txError) {
+            await connection.rollback();
+            throw txError;
+        }
+
+        const bearerToken = createNewJwtToken({ id: userId });
+
+        return res.json({
+            token: bearerToken,
+            id: userId
+        });
+    } catch (error) {
+        console.error('Error during Y8 Games authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during Y8 Games authentication.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Helper for checking if there is an account associated with the portal user ID already
+// UNIQUE indexes on the idColumn and user_name let us catch ER_DUP_ENTRY on INSERT instead of using FOR UPDATE for avoiding races
+async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUserId, idColumn, nameSuffix) {
+    await connection.beginTransaction();
+
+    let userId; // OpenGuessr user ID
+
+    // Check if user exists
+    const [existingUsers] = await connection.execute(`SELECT id FROM users WHERE ${idColumn} = ?`, [portalUserId]);
+    const existingUser = existingUsers[0];
+
+    if (existingUser) userId = existingUser.id;
+    else {
+        // No account exists, create one
+        // Portals may not enforce a minimum or maximum length, so set here
+        portalUserName = portalUserName?.substring(0, 200) || `User_${nameSuffix}${generateRandomSuffix()}`;
+
+        // Check if username exists already
+        const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ?', [portalUserName]);
+        if (existingUserNames[0]) portalUserName = `${portalUserName}_${nameSuffix}${generateRandomSuffix()}`;
+        const now = new Date();
+
+        // Insert new user, concurrent inserts between our SELECTs and here surface as ER_DUP_ENTRY
+        try {
+            const [insertResult] = await connection.execute(
+                `INSERT INTO users (user_name, ip_address, created_at, ${idColumn}) VALUES (?, ?, ?, ?)`,
+                [portalUserName, ip, now, portalUserId]
+            );
+            userId = insertResult.insertId;
+        } catch (insertError) {
+            if (insertError.code !== 'ER_DUP_ENTRY') throw insertError;
+
+            // Either UNIQUE index could've fired, re-read by portal ID to disambiguate
+            // If a row exists, it's the portal ID race -> reuse it
+            // If not, the collision was on user_name and the fallback suffix wasn't enough
+            const [raceWinner] = await connection.execute(`SELECT id FROM users WHERE ${idColumn} = ?`, [portalUserId]);
+            if (raceWinner[0]) userId = raceWinner[0].id;
+            else throw new Error("Could not allocate a unique username, please retry");
+        }
+    }
+
+    await connection.commit();
+    return userId; // Return user ID of found or created account
+}
 
 // Google OAuth Register and/or Login Endpoint
 accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
@@ -419,7 +487,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
             await connection.commit();
 
             const bearerToken = createNewJwtToken({ id: existingGoogleUser.id });
-            return res.json({ message: 'Login successful', token: bearerToken, id: existingGoogleUser.id });
+            return res.json({ token: bearerToken, id: existingGoogleUser.id });
         }
 
         // If the email already has an account, link Google to it so both login methods work
@@ -437,7 +505,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
             await connection.commit();
 
             const bearerToken = createNewJwtToken({ id: existingEmailUser.id });
-            return res.json({ message: 'Login successful', token: bearerToken, id: existingEmailUser.id });
+            return res.json({ token: bearerToken, id: existingEmailUser.id });
         }
 
         let username = googleName || `User_GO${generateRandomSuffix()}`;
@@ -465,7 +533,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         await connection.commit();
 
         const bearerToken = createNewJwtToken({ id: insertResult.insertId });
-        return res.json({ message: 'Login successful', token: bearerToken, id: insertResult.insertId });
+        return res.json({ token: bearerToken, id: insertResult.insertId });
 
     } catch (error) {
         if (connection) await connection.rollback();
