@@ -336,7 +336,7 @@ accountRouter.post('/y8-authenticate', loginLimiter, async (req, res) => {
         const data = await response.json();
 
         y8GamesUserId = data.pid;
-        username = data.name;
+        username = data.nickname; // Nickname is correct, even though the docs for the verification endpoint show 'name'
         const expectedAppId = data.client_id;
 
         if (expectedAppId !== y8GamesAppId) throw new Error("App ID does not match, this token is for a different App");
