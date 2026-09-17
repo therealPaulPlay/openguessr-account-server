@@ -371,6 +371,67 @@ accountRouter.post('/y8-authenticate', loginLimiter, async (req, res) => {
     }
 });
 
+// Playgama register and/or login endpoint
+accountRouter.post('/pg-authenticate', loginLimiter, async (req, res) => {
+    const db = getDB();
+    const userIp = req.clientIp;
+    let playgamaData = req.body.playgamaData;
+
+    if (!playgamaData || typeof playgamaData !== 'object') return res.status(400).json({ error: 'Playgama authorization data is required.' });
+
+    let username;
+    let playgamaUserId;
+
+    // Verify the authorization data via the Playgama API is valid
+    try {
+        const response = await fetch("https://playgama.com/api/bridge/v1/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ platform: "playgama", type: "authorization", data: playgamaData })
+        });
+
+        if (!response.ok) throw new Error(`Request failed with status ${response.status}`);
+        const data = await response.json();
+        if (!data.success || !data.playerId) throw new Error(data.errorMessage || "Verification failed");
+
+        playgamaUserId = String(data.playerId);
+    } catch (error) {
+        console.error("Failed to verify Playgama authorization data", error);
+        return res.status(400).json({ error: "Failed to verify Playgama authorization" });
+    }
+
+    // The verify endpoint only returns the ID, the name is client-provided
+    if (typeof playgamaData.name === 'string') {
+        const name = playgamaData.name.replace(/\s+/g, ' ').trim();
+        if (name.length > 0 && validUsernameRegex.test(name) && check(name)) username = name;
+    }
+
+    let connection;
+    try {
+        connection = await db.promise().getConnection();
+
+        let userId;
+        try {
+            userId = await getOrCreatePortalAccount(connection, userIp, username, playgamaUserId, "playgama_id", "PG");
+        } catch (txError) {
+            await connection.rollback();
+            throw txError;
+        }
+
+        const bearerToken = createNewJwtToken({ id: userId });
+
+        return res.json({
+            token: bearerToken,
+            id: userId
+        });
+    } catch (error) {
+        console.error('Error during Playgama authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during Playgama authentication.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
 // Helper for checking if there is an account associated with the portal user ID already
 // UNIQUE indexes on the idColumn and user_name let us catch ER_DUP_ENTRY on INSERT instead of using FOR UPDATE for avoiding races
 async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUserId, idColumn, nameSuffix) {
