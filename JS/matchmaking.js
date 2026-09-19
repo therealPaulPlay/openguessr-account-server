@@ -269,6 +269,23 @@ matchmakingRouter.get('/all-rooms-of-type/:type', standardLimiter, async (req, r
     }
 });
 
+matchmakingRouter.get('/matchmaking-rooms-player-amount', standardLimiter, cacheResponse("matchmaking-player-amount", 5000), async (req, res) => {
+    try {
+        const rooms = playSocketServer.rooms;
+        const matchmakingRoomCodes = Object.keys(rooms);
+
+        let amount = 0;
+        matchmakingRoomCodes.forEach((roomId) => {
+            if (playSocketServer.getRoomStorage(roomId, { dangerouslySkipCloning: true })?.matchmakingRoom) amount += rooms[roomId].participants.length;
+        });
+
+        return res.json({ amount });
+    } catch (error) {
+        console.error("Error getting matchmaking player count:", error);
+        return res.status(500).json({ error: "Failed to retrieve matchmaking player count." });
+    }
+});
+
 // Webhook for OpenReport – kick banned players out of multiplayer immediately
 matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
     const signature = req.headers['x-webhook-signature'];
