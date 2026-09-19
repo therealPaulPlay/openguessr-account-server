@@ -6,6 +6,7 @@ import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 import { processEloRefunds } from './processDivisionResult.js';
+import { cacheResponse } from './responseCache.js';
 
 const matchmakingRouter = express.Router();
 
