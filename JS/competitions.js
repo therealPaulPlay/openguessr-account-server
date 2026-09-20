@@ -91,6 +91,11 @@ const cleanupCompetitions = async () => {
               AND ((c.created_at + INTERVAL c.duration SECOND + INTERVAL 7 DAY) < NOW())
         `);
 
+        // Drop streak days that have fallen out of the displayed week (actual streak is tracked as a streak integer so this doesn't shorten streaks)
+        await db.promise().execute(
+            'DELETE FROM daily_competition_streak WHERE day_at < DATE_SUB(UTC_DATE(), INTERVAL 7 DAY)'
+        );
+
         clearCompetitionListCaches();
         console.log('Competition cleanup completed.');
     } catch (error) {
@@ -142,7 +147,7 @@ competitionsRouter.get('/not-entered/:index', standardLimiter, authenticateToken
 competitionsRouter.get('/search/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
-        const userId = req.query.id || null;
+        const userId = req.query.id ?? null;
         const searchQuery = req.query.search || '';
         const offset = parseInt(index, 10) || 0;
         const db = getDB();
@@ -170,7 +175,7 @@ competitionsRouter.get('/search/:index', standardLimiter, async (req, res) => {
 competitionsRouter.get('/expired/:index', standardLimiter, cacheResponse("competitions-expired"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
-        const userId = req.query.id || null;
+        const userId = req.query.id ?? null;
         const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
@@ -320,10 +325,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
             'SELECT user_name, supporter_level FROM users WHERE id = ?',
             [id]
         );
-
-        if (!userResults[0]) {
-            return res.status(404).json({ status: 404, error: 'User not found' });
-        }
+        if (!userResults[0]) return res.status(404).json({ status: 404, error: 'User not found' });
 
         const { user_name, supporter_level } = userResults[0];
 
@@ -341,8 +343,36 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
             [compId, id, user_name, score, supporter_level]
         );
 
+        // Update profile and clear leaderboard cache
         updateProfileData(id, "competitions_entered", true, 1);
         clearResponseCache("competitions-leaderboard");
+
+        // Check if the competition was a daily competition, if so insert into streak
+        try {
+            const [competition] = await db.promise().execute(
+                `SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS day FROM competitions WHERE id = ? AND author_id IS NULL AND name = 'Daily Competition'`,
+                [compId]
+            );
+
+            if (competition[0]) {
+                const day = competition[0].day;
+
+                // Check if the previous day has a streak entry, if so take value and increment from there
+                // If it doesn't, start at 1 again
+                const [streakInsert] = await db.promise().execute(`
+                    INSERT IGNORE INTO daily_competition_streak (user_id, day_at, streak)
+                    SELECT ?, ?, COALESCE(MAX(streak), 0) + 1
+                    FROM daily_competition_streak
+                    WHERE user_id = ? AND day_at = DATE_SUB(?, INTERVAL 1 DAY)`,
+                    [id, day, id, day]
+                );
+
+                if (streakInsert.affectedRows > 0) clearResponseCache("daily-competition");
+            }
+        } catch (error) {
+            console.error('Error saving daily competition streak:', error);
+        }
+
         res.status(201).json({ status: 201, message: 'Results submitted successfully.' });
     } catch (error) {
         console.error('Error submitting results:', error);
@@ -354,7 +384,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
 competitionsRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("competitions-leaderboard"), async (req, res) => {
     try {
         const { id } = req.params;
-        const userId = req.query.id || null;
+        const userId = req.query.id ?? null;
         const db = getDB();
 
         const [competitionResults] = await db.promise().execute(
@@ -405,16 +435,16 @@ competitionsRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("compe
 // Get daily competition
 competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheResponse("daily-competition"), async (req, res) => {
     try {
-        const userId = req.query.id || null;
+        const userId = req.query.id ?? null;
         const db = getDB();
 
         const query = `
-      SELECT c.*, IF(e.user_id IS NOT NULL, TRUE, FALSE) AS entered
-      FROM competitions c
-      LEFT JOIN competition_entries e ON c.id = e.competition_id AND e.user_id = ?
-      WHERE c.name = 'Daily Competition' AND c.author_id IS NULL
-      ORDER BY c.expired ASC, c.id DESC
-      LIMIT 2
+        SELECT c.*, IF(e.user_id IS NOT NULL, TRUE, FALSE) AS entered
+        FROM competitions c
+        LEFT JOIN competition_entries e ON c.id = e.competition_id AND e.user_id = ?
+        WHERE c.name = 'Daily Competition' AND c.author_id IS NULL
+        ORDER BY c.expired ASC, c.id DESC
+        LIMIT 2
     `;
 
         let [results] = await db.promise().execute(query, [userId]);
@@ -433,7 +463,27 @@ competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheRespons
             console.log('Daily competition created and fetched successfully.');
         }
 
-        res.json({ competitions: results.map(formatCompetition) });
+        let streakDays = [];
+        let streak = 0;
+
+        // Include user daily competition streak if user ID is provided
+        if (userId != null) {
+            // Only 7 days of retention is kept so this returns 7 days maximum, no risk of massive payloads
+            const [streakResults] = await db.promise().execute(`
+                SELECT DATE_FORMAT(day_at, '%Y-%m-%d') AS day, streak, day_at >= DATE_SUB(UTC_DATE(), INTERVAL 1 DAY) AS is_current
+                FROM daily_competition_streak
+                WHERE user_id = ?
+                ORDER BY day_at ASC`,
+                [userId]
+            );
+            streakDays = streakResults.map(entry => entry.day);
+
+            // The streak is only active when the newest entry is current (today or yesterday), otherwise it is 0
+            const newest = streakResults[streakResults.length - 1];
+            if (newest?.is_current) streak = newest.streak;
+        }
+
+        res.json({ competitions: results.map(formatCompetition), streakDays, streak });
 
     } catch (error) {
         console.error('Error with daily competition:', error);
@@ -445,7 +495,7 @@ competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheRespons
 competitionsRouter.get('/:index', standardLimiter, cacheResponse("competitions-active"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
-        const userId = req.query.id || null;
+        const userId = req.query.id ?? null;
         const offset = parseInt(index, 10) || 0;
         const db = getDB();
 
