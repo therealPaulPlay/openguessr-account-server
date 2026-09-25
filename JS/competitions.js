@@ -235,7 +235,8 @@ competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId
         detailsRequestsMap.set(requestsKey, Date.now()); // Track to prevent re-opening the same competition (used by some cheaters)
 
         const remainingDuration = Math.max(0, competition.duration - Math.floor((Date.now() - new Date(competition.created_at).getTime()) / 1000));
-        res.json({ ...competition, remainingDuration, expired: false });
+        const isDaily = competition.author_id === null && competition.name === 'Daily Competition';
+        res.json({ ...competition, remainingDuration, expired: false, isDaily });
     } catch (error) {
         console.error('Error fetching competition details:', error);
         res.status(500).json({ status: 500, error: 'Failed to fetch competition details.' });
