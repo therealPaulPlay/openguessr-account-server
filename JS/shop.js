@@ -61,6 +61,11 @@ function createPinBundle() {
 // Create initial bundle
 createPinBundle();
 
+// Appends a pin to purchased_pins (concurrent, deduplicated)
+const appendPinQuery = `INSERT INTO profile_data (user_id, purchased_pins) VALUES (?, JSON_ARRAY(?))
+    ON DUPLICATE KEY UPDATE purchased_pins = IF(JSON_CONTAINS(COALESCE(purchased_pins, JSON_ARRAY()), JSON_ARRAY(?)),
+        purchased_pins, JSON_ARRAY_APPEND(COALESCE(purchased_pins, JSON_ARRAY()), '$', ?))`;
+
 // Buy a pin
 shopRouter.post('/purchase-pin', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const { id: userId, pinId: rawPinId } = req.body;
@@ -97,18 +102,15 @@ shopRouter.post('/purchase-pin', standardLimiter, authenticateTokenWithId, async
         // Check if user has enough tokens
         if (userTokens < pinPrice) return res.status(400).json({ error: 'Insufficient tokens.' });
 
-        // Add pin to purchased pins array
-        purchasedPins.push(pinId);
-
-        // Update user tokens
-        await db.promise().execute(
-            'UPDATE users SET tokens = tokens - ? WHERE id = ?',
-            [pinPrice, userId]
+        // Update user tokens, re-checking the balance to prevent race conditions
+        const [tokenResult] = await db.promise().execute(
+            'UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?',
+            [pinPrice, userId, pinPrice]
         );
+        if (tokenResult.affectedRows !== 1) return res.status(400).json({ error: 'Insufficient tokens.' });
 
-        // Update purchased pins
-        const result = await updateProfileData(userId, 'purchased_pins', false, JSON.stringify(purchasedPins));
-        if (!result.success) return res.status(500).json({ error: 'Failed to update purchased pins.' });
+        // Append pin to purchased pins
+        await db.promise().execute(appendPinQuery, [userId, pinId, pinId, pinId]);
 
         res.json({ message: 'Pin purchased successfully.' });
 
@@ -193,18 +195,15 @@ shopRouter.post('/purchase-bundle', standardLimiter, authenticateTokenWithId, as
         // Check if user has enough tokens
         if (userTokens < adjustedPrice) return res.status(400).json({ error: 'Insufficient tokens.' });
 
-        // Add new pins to purchased pins array
-        const updatedPurchasedPins = [...purchasedPins, ...pinsToAdd];
-
-        // Update user tokens
-        await db.promise().execute(
-            'UPDATE users SET tokens = tokens - ? WHERE id = ?',
-            [adjustedPrice, userId]
+        // Update user tokens, re-checking the balance to prevent race conditions
+        const [tokenResult] = await db.promise().execute(
+            'UPDATE users SET tokens = tokens - ? WHERE id = ? AND tokens >= ?',
+            [adjustedPrice, userId, adjustedPrice]
         );
+        if (tokenResult.affectedRows !== 1) return res.status(400).json({ error: 'Insufficient tokens.' });
 
-        // Update purchased pins
-        const result = await updateProfileData(userId, 'purchased_pins', false, JSON.stringify(updatedPurchasedPins));
-        if (!result.success) return res.status(500).json({ error: 'Failed to update purchased pins.' });
+        // Append new pins to purchased pins
+        for (const pinId of pinsToAdd) await db.promise().execute(appendPinQuery, [userId, pinId, pinId, pinId]);
 
         res.json({
             message: 'Bundle purchased successfully.',
@@ -275,12 +274,8 @@ shopRouter.post('/claim-youtube-pin', standardLimiter, authenticateTokenWithId, 
         let purchasedPins = user.purchased_pins || [];
         if (purchasedPins.includes(pinId)) return res.status(400).json({ error: 'Pin already claimed.' }); // Check if user already owns the pin
 
-        // Add pin to purchased pins array
-        purchasedPins.push(pinId);
-
-        // Update purchased pins
-        const result = await updateProfileData(userId, 'purchased_pins', false, JSON.stringify(purchasedPins));
-        if (!result.success) return res.status(500).json({ error: 'Failed to update purchased pins.' });
+        // Append pin to purchased pins
+        await db.promise().execute(appendPinQuery, [userId, pinId, pinId, pinId]);
 
         res.json({ message: 'Pin claimed successfully.', pinId });
 
