@@ -62,9 +62,9 @@ function createPinBundle() {
 createPinBundle();
 
 // Appends a pin to purchased_pins (concurrent, deduplicated)
-const appendPinQuery = `INSERT INTO profile_data (user_id, purchased_pins) VALUES (?, JSON_ARRAY(?))
-    ON DUPLICATE KEY UPDATE purchased_pins = IF(JSON_CONTAINS(COALESCE(purchased_pins, JSON_ARRAY()), JSON_ARRAY(?)),
-        purchased_pins, JSON_ARRAY_APPEND(COALESCE(purchased_pins, JSON_ARRAY()), '$', ?))`;
+const appendPinQuery = `INSERT INTO profile_data (user_id, purchased_pins) VALUES (?, JSON_ARRAY(CAST(? AS SIGNED)))
+    ON DUPLICATE KEY UPDATE purchased_pins = IF(JSON_CONTAINS(COALESCE(purchased_pins, JSON_ARRAY()), JSON_ARRAY(CAST(? AS SIGNED))),
+        purchased_pins, JSON_ARRAY_APPEND(COALESCE(purchased_pins, JSON_ARRAY()), '$', CAST(? AS SIGNED)))`;
 
 // Buy a pin
 shopRouter.post('/purchase-pin', standardLimiter, authenticateTokenWithId, async (req, res) => {
