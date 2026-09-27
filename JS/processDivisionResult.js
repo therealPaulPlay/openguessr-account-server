@@ -175,10 +175,22 @@ export async function processEloRefunds(bannedPlayerId) {
             await connection.query(`UPDATE users SET elo = CASE ${caseClauses} ELSE elo END WHERE id IN (${inPlaceholders})`, params);
         }
 
-        if (totalRefundedElo > 0) {
-            // Lower the banned player's elo, floor at 0
-            await connection.execute("UPDATE users SET elo = GREATEST(0, elo - ?) WHERE id = ?", [totalRefundedElo, bannedPlayerId]);
-        }
+        // Lower the banned player's elo but keep floor at 1000
+        const [[bannedPlayer]] = await connection.execute("SELECT elo FROM users WHERE id = ? FOR UPDATE", [bannedPlayerId]);
+
+        const uncappedNewElo = (bannedPlayer?.elo ?? 0) - totalRefundedElo;
+        let deductedElo;
+
+        // Examples:
+        // 1200 elo, we refund 300 -> new uncapped elo is 900, elo below 1000 is 100, we only deduct 200
+        // 200 elo, we refund 500 -> new uncapped elo is -300, elo below 1000 is 1300, we deduct 0 (since 500 minus 1300 is -800)
+        // 400 elo, we refund 2000 -> new uncapped elo is -1600, elo below 1000 is 2600, we deduct 0
+        if (uncappedNewElo < 1000) {
+            const eloBelow1000 = 1000 - uncappedNewElo;
+            deductedElo = Math.max(0, totalRefundedElo - eloBelow1000);
+        } else deductedElo = totalRefundedElo;
+
+        if (deductedElo > 0) await connection.execute("UPDATE users SET elo = elo - ? WHERE id = ?", [deductedElo, bannedPlayerId]);
 
         await connection.commit();
 
@@ -188,7 +200,7 @@ export async function processEloRefunds(bannedPlayerId) {
         });
 
         // Inform banned user too
-        if (totalRefundedElo > 0) sendEventToClient(bannedPlayerId, { type: "elo-deducted", amount: totalRefundedElo });
+        if (deductedElo > 0) sendEventToClient(bannedPlayerId, { type: "elo-deducted", amount: deductedElo });
 
     } catch (error) {
         if (connection) await connection.rollback();
