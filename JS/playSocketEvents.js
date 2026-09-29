@@ -248,7 +248,7 @@ function attachPlaySocketEvents(server) {
             const storage = server.getRoomStorage(roomId);
             const players = storage?.players;
             const player = players?.find(p => p.clientId === clientId);
-            if (!player) return "Player not found"; // Bail if player doesn't exist (don't change this error message, client shows special error for this)
+            if (!player) return "Player not found"; // Bail if player doesn't exist
             if (!Number.isFinite(data)) return "Invalid score value";
             if (storage?.style == "duel" && storage?.currentRound >= 4) data = Math.round(data * 1.5); // Duel multiplier for last 2 rounds
             const newPlayer = { ...player };
