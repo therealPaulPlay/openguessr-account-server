@@ -95,6 +95,11 @@ function attachPlaySocketEvents(server) {
             server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
             addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
 
+            // Update disconnected players array if player was authenticated & game is ongoing
+            // Old client ID is only there to keep each entry unique, only the score is saved, other values like teamIndex or spectator could change while player is disconnected
+            const gameEndedAndResultClosed = server.getRoomStorage(roomId)?.gameEnded && !server.getRoomStorage(roomId)?.showResult;
+            if (player.userId != null && !gameEndedAndResultClosed) server.updateRoomStorage(roomId, "disconnectedPlayers", "array-add", { oldClientId: player.clientId, userId: player.userId, score: player.score });
+
             // Update highest supporter level
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
 
@@ -148,6 +153,7 @@ function attachPlaySocketEvents(server) {
 
         // Block server-side-only game control updates
         if (key === "players") return false;
+        if (key === "disconnectedPlayers") return false;
         if (key === "teamScores") return false;
         if (key === "countdownActive") return false;
         if (key === "currentRound") return false;
@@ -220,6 +226,18 @@ function attachPlaySocketEvents(server) {
             const playerData = user
                 ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false }
                 : { clientId, username: guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
+
+            // Check if authed player was previously in this room, if so, restore data
+            if (user) {
+                const disconnectedPlayers = server.getRoomStorage(roomId)?.disconnectedPlayers;
+                const disconnectedPlayer = disconnectedPlayers?.find((e) => e.userId === userId);
+
+                // Apply saved score if available
+                if (disconnectedPlayer) {
+                    playerData.score = disconnectedPlayer.score;
+                    server.updateRoomStorage(roomId, "disconnectedPlayers", "array-remove-matching", disconnectedPlayer); // Then, delete disconnected entry
+                }
+            }
 
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
             addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
@@ -358,7 +376,7 @@ export function rematch(roomId) {
 
         // Reset scores
         const players = playSocketServer.getRoomStorage(roomId)?.players;
-        if (players) {
+        if (players && players.length) {
             const resetPlayers = players.map(p => ({ ...p, score: 0 }));
             playSocketServer.updateRoomStorage(roomId, "players", "set", resetPlayers);
         }
@@ -407,8 +425,9 @@ function goToNextRound(roomId) {
             playSocketServer.updateRoomStorage(roomId, "teamScores", "set", resetTeamScores);
         }
 
-        // Check if this is a division room that has ended and hasn't been processed yet
+        // Check if the game ended
         if (playSocketServer.getRoomStorage(roomId)?.gameEnded) {
+            // If this is a division room that hasn't been processed yet, process the result
             if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && !playSocketServer.getRoomStorage(roomId)?.duelProcessed) {
                 const players = playSocketServer.getRoomStorage(roomId)?.players;
                 const sortedPlayers = players?.sort((a, b) => b.score - a.score);
@@ -424,6 +443,10 @@ function goToNextRound(roomId) {
 
             // Tournament match evaluation
             if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) processTournamentMatchResults(roomId, playSocketServer.getRoomStorage(roomId)?.tournamentId);
+
+            // Reset disconnected player data
+            const disconnectedPlayers = playSocketServer.getRoomStorage(roomId)?.disconnectedPlayers;
+            if (disconnectedPlayers && disconnectedPlayers.length) playSocketServer.updateRoomStorage(roomId, "disconnectedPlayers", "set", []);
 
         } else {
             // If the game has not ended, continue with next round
@@ -605,6 +628,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (requestorClientId !== "server") storage.tournamentRoom = false;
     if (requestorClientId !== "server") storage.tournamentId = null;
     storage.players = []; // Ensure initial players array is empty
+    storage.disconnectedPlayers = [];
     storage.currentRound = 0;
     storage.location = null;
     storage.guessLocationsArray = []; // Guesses from players (with location data)
