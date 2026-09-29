@@ -254,6 +254,12 @@ export const isValidMap = (map, { minLocations = 50, maxLocations = null } = {})
     }
 };
 
+// Shared by map submission and description update
+const descriptionValidator = body('description').isString().withMessage('Description must be provided.').bail().isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
+    if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
+    return true;
+});
+
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
     failedMapSubmissionLimiter, authenticateTokenWithId,
@@ -263,10 +269,7 @@ communityMapRouter.post('/', [
             if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
             return true;
         }),
-    body('description').isString().withMessage('Description must be provided.').bail().isLength({ min: 50, max: 300 }).withMessage('Description must be between 50 and 300 characters.').custom((value) => {
-        if (!check(value)) throw new Error('Description is empty or contains inappropriate words.');
-        return true;
-    }),
+    descriptionValidator,
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
     body('category').isString().withMessage('Category must be provided.').bail()
         .isIn(['Nature', 'Architecture', 'Urban', 'Regions', 'Sports', 'Transport', 'Miscellaneous']).withMessage('Invalid map category.'),
@@ -413,6 +416,32 @@ communityMapRouter.put('/', [
     } catch (err) {
         console.error('Error updating map:', err);
         return res.status(500).json({ error: 'Failed to update map.' });
+    }
+});
+
+// Update map description
+communityMapRouter.put('/description', [
+    standardLimiter, authenticateTokenWithId,
+    body('name').isString().withMessage('Map name must be provided.'),
+    descriptionValidator,
+], async (req, res) => {
+    const { id: player_id, name, description: rawDescription } = req.body;
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    let description = rawDescription.trim();
+    description = /[.?!]$/.test(description) ? description : `${description}.`;
+
+    try {
+        const [result] = await getDB().promise().execute('UPDATE maps SET description = ? WHERE LOWER(name) = ? AND author_id = ?', [description, name.toLowerCase(), player_id]);
+        if (result.affectedRows === 0) return res.status(404).json({ error: 'Map not found or you do not have permission to update this map.' });
+
+        clearMapPageCaches();
+        res.status(200).json({ description });
+    } catch (err) {
+        console.error('Error updating description:', err);
+        return res.status(500).json({ error: 'Failed to update description.' });
     }
 });
 
