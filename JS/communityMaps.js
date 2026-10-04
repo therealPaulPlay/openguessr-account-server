@@ -264,7 +264,7 @@ const descriptionValidator = body('description').isString().withMessage('Descrip
 communityMapRouter.post('/', [
     failedMapSubmissionLimiter, authenticateTokenWithId,
     body('name').isString().withMessage('Map name must be provided.').bail()
-        .customSanitizer((value) => value.replace(/[_/+&#?]/g, ' ').replace(/\s+/g, ' ').trim())
+        .customSanitizer((value) => value.replace(/[_/+&#?%]/g, ' ').replace(/\s+/g, ' ').trim())
         .isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
             if (!check(value)) throw new Error('Map name is empty or contains inappropriate words.');
             return true;
@@ -353,7 +353,7 @@ communityMapRouter.post('/', [
         );
 
         clearMapPageCaches();
-        res.status(201).json({ message: 'Map submitted successfully!' });
+        res.status(201).json({ message: 'Map submitted successfully!', name }); // Name is returned since the sanitizer might alter it
 
     } catch (err) {
         console.error('Error inserting map:', err);
