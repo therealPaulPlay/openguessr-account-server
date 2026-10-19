@@ -193,9 +193,15 @@ communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"),
         if (results.length === 0) return res.status(404).json({ error: 'Map not found.' });
         const { id, name: mapName, author, author_id: authorId, description, storage_key, favourite, category, likes } = results[0];
 
+        // Check if this author has other maps
+        const [otherMaps] = await db.promise().execute(
+            'SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE author_id = ? AND id != ? ORDER BY likes DESC LIMIT 50',
+            [authorId, id]
+        );
+
         let mapDataUrl = await getPublicObjectURL(storage_key);
 
-        const map = {
+        const response = {
             id,
             name: mapName,
             author,
@@ -204,10 +210,11 @@ communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"),
             favourite: Boolean(favourite),
             category,
             likes,
-            map_data_url: mapDataUrl // Include file url
+            map_data_url: mapDataUrl, // Include file url
+            otherMaps: buildMapsResult(otherMaps)
         };
 
-        res.json(map);
+        res.json(response);
     } catch (err) {
         console.error('Error fetching map:', err);
         return res.status(500).json({ error: 'Failed to fetch map.' });
