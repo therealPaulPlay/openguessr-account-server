@@ -11,7 +11,7 @@ import { cacheResponse } from './responseCache.js';
 const matchmakingRouter = express.Router();
 
 // In-memory matchmaking room store
-// Room structure: { code, createdAt, userId, clientId, clientToken, userElo, map, type, username, eloRange, manualEloRange }
+// Room structure: { code, createdAt, userId, clientId, clientToken, userElo, map, type, username, eloRange, manualEloRange, paused }
 const matchmakingRoomCodes = [];
 
 // Players who provide a user ID must be guaranteed to actually be that user
@@ -96,7 +96,8 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
             type,
             username,
             eloRange,
-            manualEloRange: null // Set by the player if they wish to manually define the range
+            manualEloRange: null, // Set by the player if they wish to manually define the range
+            paused: false
         });
 
         res.status(201).json({ message: 'Matchmaking room submitted successfully.', eloRange });
@@ -120,15 +121,15 @@ setInterval(() => {
 
     try {
         matchmakingRoomCodes
-            .filter(room => room.type === 'division-duel')
+            .filter(room => room.type === 'division-duel' && !room.paused)
             .forEach(requestingRoom => {
                 if (!matchmakingRoomCodes.includes(requestingRoom)) return; // Also skips rooms matched earlier in the loop (via the .includes)
 
-                // Find the compatible player that has been queueing the longest
-                const opponentRoom = matchmakingRoomCodes
-                    .filter(room => room.type === 'division-duel' && room.userId !== requestingRoom.userId) // Ensure it's a different user (and room)
-                    .filter(room => roomUserInEloRange(room.userElo, requestingRoom) && roomUserInEloRange(requestingRoom.userElo, room)) // Ensure in range for both sides
-                    .sort((a, b) => a.createdAt - b.createdAt)[0];
+                // Find the compatible player (the room codes array has oldest first so this prefers long-time queuers)
+                const opponentRoom = matchmakingRoomCodes.find(room =>
+                    room.type === 'division-duel' && !room.paused && room.userId !== requestingRoom.userId && // Ensure it's a different user (and room)
+                    roomUserInEloRange(room.userElo, requestingRoom) && roomUserInEloRange(requestingRoom.userElo, room) // Ensure in range for both sides
+                );
                 if (!opponentRoom) return;
 
                 // The older room becomes the target room
@@ -244,7 +245,7 @@ matchmakingRouter.delete('/delete-room/:code', standardLimiter, async (req, res)
 matchmakingRouter.post('/set-elo-range/:code', standardLimiter, async (req, res) => {
     try {
         const code = req.params.code;
-        const { clientId, clientToken, lower, upper } = req.body;
+        const { clientId, clientToken, lower, upper, paused } = req.body;
 
         const room = matchmakingRoomCodes.find(room => room.code === code && room.type === 'division-duel');
         if (!room) return res.json({ updated: false }); // Already matched or cancelled
@@ -252,6 +253,7 @@ matchmakingRouter.post('/set-elo-range/:code', standardLimiter, async (req, res)
         if (typeof lower !== "number" || typeof upper !== "number" || lower > upper) return res.status(400).json({ error: 'Invalid range.' });
 
         room.manualEloRange = { lower, upper };
+        room.paused = Boolean(paused); // Allows pausing matchmaking (e.g. while adjusting the range)
         res.json({ updated: true });
     } catch (error) {
         console.error('Error setting matchmaking range:', error);
