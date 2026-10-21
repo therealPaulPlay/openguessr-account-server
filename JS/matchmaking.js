@@ -11,7 +11,7 @@ import { cacheResponse } from './responseCache.js';
 const matchmakingRouter = express.Router();
 
 // In-memory matchmaking room store
-// Room structure: { code, createdAt, userId, userElo, skillBased, map, type, username }
+// Room structure: { code, createdAt, userId, clientId, clientToken, userElo, map, type, username, eloRange, manualEloRange }
 const matchmakingRoomCodes = [];
 
 // Players who provide a user ID must be guaranteed to actually be that user
@@ -23,7 +23,7 @@ const authenticateIfUserIdProvided = (req, res, next) => {
 matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUserIdProvided, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
-    const { id: userId, skillBased, type, map = "World", clientId, clientToken } = req.body;
+    const { id: userId, type, map = "World", clientId, clientToken } = req.body;
 
     if (userId == null && type !== "team-duel") return res.status(400).json({ error: "This room type cannot be submitted by guests." });
     if (typeof code !== "string" || code.length > 10) return res.status(400).json({ error: 'Invalid code format.' });
@@ -72,6 +72,18 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
         const existingRoomIndex = matchmakingRoomCodes.findIndex(room => room.code === code);
         if (existingRoomIndex !== -1) matchmakingRoomCodes.splice(existingRoomIndex, 1);
 
+        // Division duel elo range (a range a player/room can be matched with that expands over time)
+        let eloRange;
+        if (type === "division-duel") {
+            const clampedElo = Math.min(2000, Math.max(1000, userElo)); // Below 1000 / above 2000 is one bucket each, as these players are rare
+            eloRange = {
+                clampedElo,
+                initialOffset: 125, // Initial +/- offset applied in both directions from user's elo (125 * 2 is 250, one division's width)
+                finalOffset: Math.max(clampedElo - 1000, 2000 - clampedElo), // Final offset at the end of the expansion (whatever is further away, lower or upper bound, is reached)
+                expandDuration: Math.min(30_000, 5_000 + getDivisionDuelPlayerAmount() * 500) // 5s base + 0.5s per online duel player, capped at 30s
+            }
+        }
+
         // Add new room to in-memory store
         matchmakingRoomCodes.push({
             code,
@@ -80,58 +92,61 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
             clientId,
             clientToken,
             userElo,
-            skillBased: Boolean(skillBased),
             map,
             type,
-            username
+            username,
+            eloRange,
+            manualEloRange: null // Set by the player if they wish to manually define the range
         });
 
-        res.status(201).json({ message: 'Matchmaking room submitted successfully.' });
+        res.status(201).json({ message: 'Matchmaking room submitted successfully.', eloRange });
     } catch (error) {
         console.error('Error submitting matchmaking room:', error);
         res.status(500).json({ error: 'An error occurred while submitting the room code.' });
     }
 });
 
-matchmakingRouter.post('/find-division-duel', standardLimiter, async (req, res) => {
-    const { code, clientToken } = req.body;
+// Find and form a division duel (1v1) by combining rooms
+setInterval(() => {
+    // Check if an elo value is in a target room's elo range
+    const roomUserInEloRange = (elo, room) => {
+        const { clampedElo, initialOffset, finalOffset, expandDuration } = room.eloRange;
+        const timeFactor = Math.min(1, (Date.now() - room.createdAt) / expandDuration); // 0 at start, 1 when fully expanded
+        const offset = initialOffset + (finalOffset - initialOffset) * timeFactor; // Current offset (expands over time)
+        const lower = room.manualEloRange?.lower ?? clampedElo - offset;
+        const upper = room.manualEloRange?.upper ?? clampedElo + offset;
+        return (lower <= 1000 || elo >= lower) && (upper >= 2000 || elo <= upper); // Reaching 1000 / 2000 includes everyone beyond, so e.g. if the range goes from 1000-2000, any user elo would fit in (even 2300)
+    };
 
     try {
-        // Find the requesting user's room in the matchmaking queue
-        const requestingRoom = matchmakingRoomCodes.find(room => room.code === code && room.type === 'division-duel');
-        if (!requestingRoom) return res.status(400).json({ error: 'There is no division-duel room in the matchmaking queue matching that room code.' });
-        if (requestingRoom.clientToken !== clientToken) return res.status(400).json({ error: 'Client token mismatch.' });
-        if (playSocketServer.rooms[code]?.participants?.length !== 1) return res.status(400).json({ error: 'Room has too many players for matchmaking.' });
+        matchmakingRoomCodes
+            .filter(room => room.type === 'division-duel')
+            .forEach(requestingRoom => {
+                if (!matchmakingRoomCodes.includes(requestingRoom)) return; // Also skips rooms matched earlier in the loop (via the .includes)
 
-        // Find the requesting user's ELO division
-        const breakpoints = [0, 1200, 1400, 1600, 2000, 100000];
-        let divIndex = 0;
-        while (divIndex < breakpoints.length - 1 && requestingRoom.userElo >= breakpoints[divIndex + 1]) divIndex++;
+                // Find the compatible player that has been queueing the longest
+                const opponentRoom = matchmakingRoomCodes
+                    .filter(room => room.type === 'division-duel' && room.userId !== requestingRoom.userId) // Ensure it's a different user (and room)
+                    .filter(room => roomUserInEloRange(room.userElo, requestingRoom) && roomUserInEloRange(requestingRoom.userElo, room)) // Ensure in range for both sides
+                    .sort((a, b) => a.createdAt - b.createdAt)[0];
+                if (!opponentRoom) return;
 
-        const minElo = breakpoints[divIndex];
-        const maxElo = breakpoints[divIndex + 1];
+                // The older room becomes the target room
+                const [targetRoom, roomToEmpty] = opponentRoom.createdAt <= requestingRoom.createdAt ? [opponentRoom, requestingRoom] : [requestingRoom, opponentRoom];
 
-        // Find the compatible player that has been queueing the longest
-        const opponentRoom = matchmakingRoomCodes
-            .filter(room => room.type === 'division-duel' && room.userId !== requestingRoom.userId) // The user ID also rules out the requesting user's own room
-            .filter(room => (requestingRoom.skillBased || room.skillBased) ? (room.userElo >= minElo && room.userElo < maxElo) : true) // Skill-based is opt-in, but binding for both sides
-            .sort((a, b) => a.createdAt - b.createdAt)[0];
+                // Move everyone over (typically in a division duel only one player)
+                const participantsToMove = [...playSocketServer.rooms[roomToEmpty.code].participants];
+                participantsToMove.forEach((clientId) => {
+                    playSocketServer.move(clientId, targetRoom.code);
+                });
 
-        if (!opponentRoom) return res.json({ matched: false });
-
-        // The room that was queued first becomes the target room - the other one empties out, which destroys it
-        const [targetRoom, roomToEmpty] = opponentRoom.createdAt <= requestingRoom.createdAt ? [opponentRoom, requestingRoom] : [requestingRoom, opponentRoom];
-        playSocketServer.move(playSocketServer.rooms[roomToEmpty.code].participants[0], targetRoom.code);
-
-        // Start the game and delete target room from matchmaking (delete is called inside startRoom)
-        startRoom(targetRoom.code);
-
-        return res.json({ matched: true, targetRoom: targetRoom.code });
+                // Start the game and delete target room from matchmaking (delete is called inside startRoom)
+                startRoom(targetRoom.code);
+            });
     } catch (error) {
-        console.error('Error during division duel match formation:', error);
-        return res.status(500).json({ error: 'Failed to form match.' });
+        console.error('Error during periodic division duel match check:', error);
     }
-});
+}, 1000);
 
 // Find and form a team duel (2v2) match by combining rooms
 matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
@@ -185,7 +200,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
 
         // Move all players from smaller rooms into target room
         for (const room of roomsToEmpty) {
-            const participants = [...(playSocketServer.rooms[room.code]?.participants || [])];
+            const participants = [...playSocketServer.rooms[room.code].participants]; // Copy (since move() mutates the array)
             for (const clientId of participants) {
                 playSocketServer.move(clientId, targetRoom.code); // All players get moved out -> room destroyed -> room gets removed from matchmaking
             }
@@ -222,6 +237,25 @@ matchmakingRouter.delete('/delete-room/:code', standardLimiter, async (req, res)
     } catch (error) {
         console.error('Error deleting matchmaking room:', error);
         res.status(500).json({ error: 'Failed to delete matchmaking room.' });
+    }
+});
+
+// Manually set the elo range of a division duel room
+matchmakingRouter.post('/set-elo-range/:code', standardLimiter, async (req, res) => {
+    try {
+        const code = req.params.code;
+        const { clientId, clientToken, lower, upper } = req.body;
+
+        const room = matchmakingRoomCodes.find(room => room.code === code && room.type === 'division-duel');
+        if (!room) return res.json({ updated: false }); // Already matched or cancelled
+        if (room.clientId !== clientId || room.clientToken !== clientToken) return res.status(403).json({ error: 'Not the owner of this room.' });
+        if (typeof lower !== "number" || typeof upper !== "number" || lower > upper) return res.status(400).json({ error: 'Invalid range.' });
+
+        room.manualEloRange = { lower, upper };
+        res.json({ updated: true });
+    } catch (error) {
+        console.error('Error setting matchmaking range:', error);
+        res.status(500).json({ error: 'Failed to set matchmaking range.' });
     }
 });
 
@@ -270,6 +304,14 @@ matchmakingRouter.get('/all-rooms-of-type/:type', standardLimiter, async (req, r
     }
 });
 
+function getDivisionDuelPlayerAmount() {
+    let amount = 0;
+    Object.keys(playSocketServer.rooms).forEach((roomId) => {
+        if (playSocketServer.getRoomStorage(roomId, { dangerouslySkipCloning: true })?.divisionRoom) amount += playSocketServer.rooms[roomId].participants.length;
+    });
+    return amount;
+}
+
 matchmakingRouter.get('/matchmaking-rooms-player-amount', standardLimiter, cacheResponse("matchmaking-player-amount", 5000), async (req, res) => {
     try {
         const rooms = playSocketServer.rooms;
@@ -311,7 +353,7 @@ matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) 
 
     } catch (error) {
         console.error("Error in OpenReport webhook:", error);
-        res.status(500).json({ error: "An internal server error occured processing the OpenReport webhook." });
+        res.status(500).json({ error: "An internal server error occurred processing the OpenReport webhook." });
     }
 });
 

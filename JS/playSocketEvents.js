@@ -80,7 +80,7 @@ function attachPlaySocketEvents(server) {
                 authedMultiplayerClients.set(clientId, userId);
 
             } catch (error) {
-                return "An error occured decoding the authentication token";
+                return "An error occurred decoding the authentication token";
             }
         }
         // All clients carry a clientToken so that guests can prove they own that client ID
@@ -392,7 +392,7 @@ export function rematch(roomId) {
     }
 }
 
-export async function startRoom(roomId) {
+export function startRoom(roomId) {
     playSocketServer.updateRoomStorage(roomId, "gameStarted", "set", true);
     startRound(roomId);
     deleteMatchmakingRoom(roomId);

@@ -75,7 +75,7 @@ communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-ind
     const limit = 50;
 
     const startIndex = parseInt(req.params.index, 10);
-    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index.' });
 
     const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
     if (isReturn) return;
@@ -99,7 +99,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, cacheRespo
 
     const category = req.params.category;
     const startIndex = parseInt(req.params.index, 10);
-    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index.' });
 
     const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
     if (isReturn) return;
@@ -122,8 +122,8 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
     const authorId = parseInt(req.params.id, 10);
     const startIndex = parseInt(req.params.index, 10);
 
-    if (isNaN(authorId) || authorId < 0) return res.status(400).json({ error: 'Invalid author ID' });
-    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
+    if (isNaN(authorId) || authorId < 0) return res.status(400).json({ error: 'Invalid author ID.' });
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index.' });
 
     const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
     if (isReturn) return;
@@ -152,7 +152,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const rawQuery = req.params.query.slice(0, 255);
     const query = `%${rawQuery}%`;
     const startIndex = parseInt(req.params.index, 10);
-    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index' });
+    if (isNaN(startIndex) || startIndex < 0) return res.status(400).json({ error: 'Invalid start index.' });
 
     const { columnName, direction, isReturn } = returnSortColumnByQuery(req, res);
     if (isReturn) return;

@@ -33,7 +33,7 @@ creatorRouter.post('/creator-link-statistic', standardLimiter, creatorStatisticL
 
     } catch (error) {
         console.error('Error creating creator link statistic:', error);
-        return res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({ error: "Internal server error." });
     }
 });
 

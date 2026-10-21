@@ -593,7 +593,7 @@ discordRouter.post("/interactions", verifyKeyMiddleware(process.env.DISCORD_PUBL
 
         if (!handler) {
             console.error(`Unknown command: ${data.name}`);
-            return res.status(400).json({ error: "Unknown command" });
+            return res.status(400).json({ error: "Unknown command." });
         }
 
         try {
@@ -606,7 +606,7 @@ discordRouter.post("/interactions", verifyKeyMiddleware(process.env.DISCORD_PUBL
     }
 
     console.error("Unknown interaction type:", type);
-    return res.status(400).json({ error: "Unknown interaction type" });
+    return res.status(400).json({ error: "Unknown interaction type." });
 });
 
 export default discordRouter;
