@@ -23,12 +23,12 @@ const authenticateIfUserIdProvided = (req, res, next) => {
 matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUserIdProvided, async (req, res) => {
     const db = getDB();
     const { code } = req.params;
-    const { id: userId, type, map = "World", clientId, clientToken } = req.body;
+    const { id: userId, type, clientId, clientToken } = req.body;
 
     if (userId == null && type !== "team-duel") return res.status(400).json({ error: "This room type cannot be submitted by guests." });
     if (typeof code !== "string" || code.length > 10) return res.status(400).json({ error: 'Invalid code format.' });
     if (typeof clientToken !== "string" || clientToken.length > 64) return res.status(400).json({ error: 'Invalid client token format.' });
-    if (!code || !map || !type || clientId == null || !clientToken) return res.status(400).json({ error: 'Code, map, type, client ID and client token are required.' });
+    if (!code || !type || clientId == null || !clientToken) return res.status(400).json({ error: 'Code, type, client ID and client token are required.' });
 
     try {
         let userElo = null;
@@ -55,6 +55,9 @@ matchmakingRouter.post('/submit-room/:code', standardLimiter, authenticateIfUser
         // Ensure that this client is actually in the room with the provided room code
         // This check is performed both for guests as well as authenticated users, since both the guest as well as the auth path should be valid for room deletion
         if (!checkIfTokenMatchesAndInRoom(code, clientId, clientToken)) return res.status(400).json({ error: "Room does not exist, you are not a part of it, or the provided client ID or client token are incorrect." });
+
+        // Get map
+        const map = playSocketServer.getRoomStorage(code).map;
 
         // Validate room, lock it & push to matchmaking synchronously (nothing async in between!)
         switch (type) {
