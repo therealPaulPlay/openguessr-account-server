@@ -1,10 +1,11 @@
 import express from 'express';
 const accountRouter = express.Router();
 import jwt from 'jsonwebtoken';
-import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, passwordResetLimiter } from "./rateLimiters.js";
+import crypto from 'crypto';
+import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, emailRequestLimiter } from "./rateLimiters.js";
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret, y8GamesAppId } from "./config.js";
+import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret, appleConfig, y8GamesAppId } from "./config.js";
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
 import { emailConfig, corsOptions } from './config.js';
@@ -228,7 +229,7 @@ accountRouter.post('/login', loginLimiter, async (req, res) => {
         if (!user) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Check password
-        if (!user.password) return res.status(400).json({ error: 'Please use Google or reset your password.' });
+        if (!user.password) return res.status(400).json({ error: 'Please use Google, Apple or reset your password.' });
         const isValidPassword = await isPasswordValid(password, user.password);
         if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
@@ -379,7 +380,6 @@ accountRouter.post('/pg-authenticate', loginLimiter, async (req, res) => {
 
     if (!playgamaData || typeof playgamaData !== 'object') return res.status(400).json({ error: 'Playgama authorization data is required.' });
 
-    let username;
     let playgamaUserId;
 
     // Verify the authorization data via the Playgama API is valid
@@ -400,19 +400,13 @@ accountRouter.post('/pg-authenticate', loginLimiter, async (req, res) => {
         return res.status(400).json({ error: "Failed to verify Playgama authorization" });
     }
 
-    // The verify endpoint only returns the ID, the name is client-provided
-    if (typeof playgamaData.name === 'string') {
-        const name = playgamaData.name.replace(/\s+/g, ' ').trim();
-        if (name.length > 0 && validUsernameRegex.test(name) && check(name)) username = name;
-    }
-
     let connection;
     try {
         connection = await db.promise().getConnection();
 
         let userId;
         try {
-            userId = await getOrCreatePortalAccount(connection, userIp, username, playgamaUserId, "playgama_id", "PG");
+            userId = await getOrCreatePortalAccount(connection, userIp, playgamaData.name, playgamaUserId, "playgama_id", "PG"); // The name is client-provided
         } catch (txError) {
             await connection.rollback();
             throw txError;
@@ -432,6 +426,23 @@ accountRouter.post('/pg-authenticate', loginLimiter, async (req, res) => {
     }
 });
 
+// OAuth and portal names may already exist in OpenGuessr, try with suffixes (+ include tag which marks the provider)
+async function findCreateUnusedUsername(connection, providedName, tag) {
+    const normalizedName = typeof providedName === 'string' ? providedName.replace(/\s+/g, ' ').trim().substring(0, 200) : '';
+    const name = validUsernameRegex.test(normalizedName) ? normalizedName : undefined;
+
+    const attempt1 = name;
+    const attempt2 = (name || "User") + "_" + tag + generateRandomSuffix();
+    const attempt3 = (name || "User") + "_" + tag + generateRandomSuffix(6);
+    const candidates = [...(name ? [attempt1] : []), attempt2, attempt3];
+
+    for (const candidate of candidates) {
+        const [existingNameUsers] = await connection.execute('SELECT id FROM users WHERE user_name = ?', [candidate]);
+        if (!existingNameUsers[0]) return candidate;
+    }
+    throw new Error("The username already exists and all fallbacks do too.");
+}
+
 // Helper for checking if there is an account associated with the portal user ID already
 // UNIQUE indexes on the idColumn and user_name let us catch ER_DUP_ENTRY on INSERT instead of using FOR UPDATE for avoiding races
 async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUserId, idColumn, nameSuffix) {
@@ -446,12 +457,7 @@ async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUs
     if (existingUser) userId = existingUser.id;
     else {
         // No account exists, create one
-        // Portals may not enforce a minimum or maximum length, so set here
-        portalUserName = portalUserName?.substring(0, 200) || `User_${nameSuffix}${generateRandomSuffix()}`;
-
-        // Check if username exists already
-        const [existingUserNames] = await connection.execute('SELECT id FROM users WHERE user_name = ?', [portalUserName]);
-        if (existingUserNames[0]) portalUserName = `${portalUserName}_${nameSuffix}${generateRandomSuffix()}`;
+        portalUserName = await findCreateUnusedUsername(connection, portalUserName, nameSuffix);
         const now = new Date();
 
         // Insert new user, concurrent inserts between our SELECTs and here surface as ER_DUP_ENTRY
@@ -467,7 +473,8 @@ async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUs
             // Either UNIQUE index could've fired, re-read by portal ID to disambiguate
             // If a row exists, it's the portal ID race -> reuse it
             // If not, the collision was on user_name and the fallback suffix wasn't enough
-            const [raceWinner] = await connection.execute(`SELECT id FROM users WHERE ${idColumn} = ?`, [portalUserId]);
+            // FOR SHARE reads the latest committed rows, a plain SELECT would only see this transaction's snapshot from before the race
+            const [raceWinner] = await connection.execute(`SELECT id FROM users WHERE ${idColumn} = ? FOR SHARE`, [portalUserId]);
             if (raceWinner[0]) userId = raceWinner[0].id;
             else throw new Error("Could not allocate a unique username, please retry");
         }
@@ -477,60 +484,84 @@ async function getOrCreatePortalAccount(connection, ip, portalUserName, portalUs
     return userId; // Return user ID of found or created account
 }
 
+// Verifies an ID token's signature with the provider's public keys, plus the given issuer and audience
+// Used for Google in-app OAuth and Apple on both web and app
+async function verifyIdToken(idToken, keysUrl, options) {
+    const keyId = jwt.decode(idToken, { complete: true })?.header.kid;
+    const { keys } = await (await fetch(keysUrl)).json();
+    const publicKey = keys.find(key => key.kid === keyId);
+    if (!publicKey) throw new Error('No public key matches the ID token');
+
+    return jwt.verify(idToken, crypto.createPublicKey({ key: publicKey, format: 'jwk' }), { algorithms: ['RS256'], ...options });
+}
+
 // Google OAuth Register and/or Login Endpoint
 accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
     const db = getDB();
-    const { code, redirectUri } = req.body;
+    const { code, redirectUri, idToken } = req.body; // ID token from apps, code from the web
     const userIp = req.clientIp;
 
-    if (!code || !redirectUri) return res.status(400).json({ error: 'Authorization code and redirect URI are required.' });
-
-    // Validate redirect URI against allowed CORS origins
-    let isAllowedUri = false;
-    try {
-        const redirectOrigin = new URL(redirectUri).origin;
-        isAllowedUri = corsOptions.origin.some(origin =>
-            origin instanceof RegExp ? origin.test(redirectOrigin) : redirectUri.startsWith(origin)
-        );
-    } catch { }
-    if (!isAllowedUri) return res.status(400).json({ error: 'Invalid redirect URI.' });
+    if (!idToken && (!code || !redirectUri)) return res.status(400).json({ error: 'An ID token, or an authorization code and redirect URI are required.' });
 
     let googleUserId;
     let googleEmail;
     let googleEmailVerified;
     let googleName;
 
-    // Exchange authorization code for tokens
     try {
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                code,
-                client_id: googleOAuthClientId,
-                client_secret: googleOAuthClientSecret,
-                redirect_uri: redirectUri,
-                grant_type: 'authorization_code'
-            })
-        });
+        if (idToken) {
+            const claims = await verifyIdToken(idToken, 'https://www.googleapis.com/oauth2/v3/certs', {
+                issuer: ['accounts.google.com', 'https://accounts.google.com'],
+                audience: googleOAuthClientId // The apps request their tokens for the web client ID too
+            });
+            if (!claims.email) return res.status(400).json({ error: 'Invalid Google ID token.' });
 
-        const tokenData = await tokenResponse.json();
-        if (!tokenResponse.ok || !tokenData.access_token) return res.status(400).json({ error: 'Failed to exchange authorization code.' });
+            googleUserId = claims.sub; // Same ID as the user info of the web flow
+            googleEmail = claims.email;
+            googleEmailVerified = String(claims.email_verified) === "true";
+            googleName = claims.name;
+        } else {
+            // Validate redirect URI against allowed CORS origins
+            let isAllowedUri = false;
+            try {
+                const redirectOrigin = new URL(redirectUri).origin;
+                isAllowedUri = corsOptions.origin.some(origin =>
+                    origin instanceof RegExp ? origin.test(redirectOrigin) : redirectUri.startsWith(origin)
+                );
+            } catch { }
+            if (!isAllowedUri) return res.status(400).json({ error: 'Invalid redirect URI.' });
 
-        // Fetch user info from Google
-        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-            headers: { Authorization: `Bearer ${tokenData.access_token}` }
-        });
+            // Exchange authorization code for tokens
+            const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    code,
+                    client_id: googleOAuthClientId,
+                    client_secret: googleOAuthClientSecret,
+                    redirect_uri: redirectUri,
+                    grant_type: 'authorization_code'
+                })
+            });
 
-        const userInfo = await userInfoResponse.json();
-        if (!userInfoResponse.ok || !userInfo.id || !userInfo.email) return res.status(400).json({ error: 'Failed to fetch Google user info.' });
+            const tokenData = await tokenResponse.json();
+            if (!tokenResponse.ok || !tokenData.access_token) return res.status(400).json({ error: 'Failed to exchange authorization code.' });
 
-        googleUserId = userInfo.id;
-        googleEmail = userInfo.email;
-        googleEmailVerified = userInfo.verified_email === true;
-        googleName = userInfo.name?.substring(0, 200); // Truncate if longer than 200 chars
-    } catch (e) {
-        console.error('Google OAuth token exchange failed:', e);
+            // Fetch user info from Google
+            const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                headers: { Authorization: `Bearer ${tokenData.access_token}` }
+            });
+
+            const userInfo = await userInfoResponse.json();
+            if (!userInfoResponse.ok || !userInfo.id || !userInfo.email) return res.status(400).json({ error: 'Failed to fetch Google user info.' });
+
+            googleUserId = userInfo.id;
+            googleEmail = userInfo.email;
+            googleEmailVerified = userInfo.verified_email === true;
+            googleName = userInfo.name;
+        }
+    } catch (error) {
+        console.error('Google authentication failed:', error);
         return res.status(400).json({ error: 'Google authentication failed.' });
     }
 
@@ -541,7 +572,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         await connection.beginTransaction();
 
         // Check if user exists by google_id
-        const [existingGoogleUsers] = await connection.execute('SELECT id FROM users WHERE google_id = ? FOR UPDATE', [googleUserId]);
+        const [existingGoogleUsers] = await connection.execute('SELECT id FROM users WHERE google_id = ?', [googleUserId]);
         const existingGoogleUser = existingGoogleUsers[0];
 
         if (existingGoogleUser) {
@@ -552,12 +583,12 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         }
 
         // If the email already has an account, link Google to it so both login methods work
-        const [existingEmailUsers] = await connection.execute('SELECT id, google_id FROM users WHERE email = ? FOR UPDATE', [googleEmail]);
+        const [existingEmailUsers] = await connection.execute('SELECT id, google_id FROM users WHERE email = ?', [googleEmail]);
         const existingEmailUser = existingEmailUsers[0];
 
         if (existingEmailUser) {
             // Refuse if email is unverified, or if the account is linked to a different Google account
-            if (!googleEmailVerified || (existingEmailUser.google_id && existingEmailUser.google_id !== googleUserId)) {
+            if (!googleEmailVerified || existingEmailUser.google_id) {
                 await connection.commit();
                 return res.status(409).json({ error: 'Please use email login for this account.' });
             }
@@ -569,22 +600,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
             return res.json({ token: bearerToken, id: existingEmailUser.id });
         }
 
-        let username = googleName || `User_GO${generateRandomSuffix()}`;
-
-        // Google names are not unique, so try progressively longer suffixes
-        const [existingNameUsers] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-        if (existingNameUsers[0]) {
-            username = `${googleName || 'User'}_GO${generateRandomSuffix()}`;
-
-            const [secondCheck] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-            if (secondCheck[0]) {
-                username = `${googleName || 'User'}_GO${generateRandomSuffix(6)}`;
-
-                const [thirdCheck] = await connection.execute('SELECT id FROM users WHERE user_name = ? FOR UPDATE', [username]);
-                if (thirdCheck[0]) throw new Error("The username already exists and all fallbacks do too.");
-            }
-        }
-
+        const username = await findCreateUnusedUsername(connection, googleName, 'GO');
         const now = new Date();
         const [insertResult] = await connection.execute(
             'INSERT INTO users (user_name, email, ip_address, created_at, google_id) VALUES (?, ?, ?, ?, ?)',
@@ -605,17 +621,188 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
     }
 });
 
-// Delete Account Endpoint ---------------------------------------------------------------------------------------------------------------------------
-// Guarded with authenticateTokenWithId to protect against password-guessing (means a valid session, which requires email address or oAuth, is needed)
-accountRouter.delete('/delete', loginLimiter, authenticateTokenWithId, async (req, res) => {
-    const db = getDB();
-    const { id, password } = req.body;
+// Signs the client secret for Apple's token endpoints, for the client ID the user signed in with
+const createAppleClientSecret = (clientId) => jwt.sign(
+    { iss: appleConfig.teamId, sub: clientId, aud: 'https://appleid.apple.com' },
+    appleConfig.privateKey,
+    { algorithm: 'ES256', keyid: appleConfig.keyId, expiresIn: '5m' }
+);
 
-    if (!id || !password) return res.status(400).json({ error: 'Id and password are required.' });
+// Apple OAuth Register and/or Login Endpoint
+accountRouter.post('/apple-authenticate', loginLimiter, async (req, res) => {
+    const db = getDB();
+    const { authorizationCode, redirectUri, name } = req.body; // Apple only shares the name with the client, and only on the first sign-in
+    const userIp = req.clientIp;
+
+    if (!authorizationCode) return res.status(400).json({ error: 'Authorization code is required.' });
+
+    const appleClientId = redirectUri ? appleConfig.servicesId : appleConfig.bundleId; // iOS signs in natively without a redirect URI
+    let appleUserId;
+    let appleEmail;
+    let appleEmailVerified;
+    let appleRefreshToken;
 
     try {
-        // Find user by ID to retrieve password hash
-        const userQuery = 'SELECT password FROM users WHERE id = ?';
+        // Use the ID token from exchanging the single-use code, a client-sent one could be replayed
+        // The refresh token is needed to revoke the authorization when the account gets deleted (Apple requirement)
+        const tokenResponse = await fetch('https://appleid.apple.com/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: appleClientId,
+                client_secret: createAppleClientSecret(appleClientId),
+                code: authorizationCode,
+                grant_type: 'authorization_code',
+                ...(redirectUri && { redirect_uri: redirectUri })
+            })
+        });
+
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok || !tokenData.id_token || !tokenData.refresh_token) return res.status(400).json({ error: 'Failed to exchange authorization code.' });
+
+        const claims = await verifyIdToken(tokenData.id_token, 'https://appleid.apple.com/auth/keys', {
+            issuer: 'https://appleid.apple.com',
+            audience: appleClientId
+        });
+        if (!claims.email) return res.status(400).json({ error: 'Apple did not share an email address.' });
+
+        appleUserId = claims.sub;
+        appleEmail = claims.email;
+        appleEmailVerified = String(claims.email_verified) === "true"; // Can be a string or boolean, false for Apple at Work & School accounts
+        appleRefreshToken = tokenData.refresh_token;
+    } catch (error) {
+        console.error('Apple authentication failed:', error);
+        return res.status(400).json({ error: 'Apple authentication failed.' });
+    }
+
+    // Find or create account
+    let connection;
+    try {
+        connection = await db.promise().getConnection();
+        await connection.beginTransaction();
+
+        // Every sign-in issues a new refresh token, store the latest one for revoking on deletion
+        const storeAppleRefreshToken = (userId) => connection.execute(
+            'INSERT INTO apple_oauth (user_id, refresh_token, client_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE refresh_token = ?, client_id = ?',
+            [userId, appleRefreshToken, appleClientId, appleRefreshToken, appleClientId]
+        );
+
+        // Check if user exists by apple_id
+        const [existingAppleUsers] = await connection.execute('SELECT id FROM users WHERE apple_id = ?', [appleUserId]);
+        const existingAppleUser = existingAppleUsers[0];
+
+        if (existingAppleUser) {
+            await storeAppleRefreshToken(existingAppleUser.id);
+            await connection.commit();
+
+            const bearerToken = createNewJwtToken({ id: existingAppleUser.id });
+            return res.json({ token: bearerToken, id: existingAppleUser.id });
+        }
+
+        // If the email already has an account, link Apple to it so both login methods work
+        const [existingEmailUsers] = await connection.execute('SELECT id, apple_id FROM users WHERE email = ?', [appleEmail]);
+        const existingEmailUser = existingEmailUsers[0];
+
+        if (existingEmailUser) {
+            // Refuse if email is unverified, or if the account is linked to a different Apple account
+            if (!appleEmailVerified || existingEmailUser.apple_id) {
+                await connection.commit();
+                return res.status(409).json({ error: 'Please use email login for this account.' });
+            }
+
+            await connection.execute('UPDATE users SET apple_id = ? WHERE id = ?', [appleUserId, existingEmailUser.id]);
+            await storeAppleRefreshToken(existingEmailUser.id);
+            await connection.commit();
+
+            const bearerToken = createNewJwtToken({ id: existingEmailUser.id });
+            return res.json({ token: bearerToken, id: existingEmailUser.id });
+        }
+
+        const username = await findCreateUnusedUsername(connection, name, 'AP');
+        const now = new Date();
+        const [insertResult] = await connection.execute(
+            'INSERT INTO users (user_name, email, ip_address, created_at, apple_id) VALUES (?, ?, ?, ?, ?)',
+            [username, appleEmail, userIp, now, appleUserId]
+        );
+        await storeAppleRefreshToken(insertResult.insertId);
+
+        await connection.commit();
+
+        const bearerToken = createNewJwtToken({ id: insertResult.insertId });
+        return res.json({ token: bearerToken, id: insertResult.insertId });
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error('Error during Apple authentication:', error);
+        return res.status(500).json({ error: 'An unexpected error occurred during Apple authentication.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// Delete account ------------------------------------------------------------------------------------------------------------------------
+
+// Account deletion request (sends email with link)
+accountRouter.post('/request-deletion', emailRequestLimiter, authenticateTokenWithId, async (req, res) => {
+    const db = getDB();
+    const { id } = req.body;
+
+    try {
+        const userQuery = 'SELECT email, user_name FROM users WHERE id = ?';
+        const user = await new Promise((resolve, reject) => {
+            db.execute(userQuery, [id], (err, results) => {
+                if (err) return reject(err);
+                resolve(results[0]);
+            });
+        });
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        if (!user.email) return res.status(400).json({ error: 'This account has no email address.' });
+
+        // Token used to verify authenticity for when the user clicks the link
+        const deletionToken = jwt.sign({ id: id, purpose: 'delete' }, RESET_KEY, { expiresIn: '30m' });
+
+        // Send email with the deletion token
+        const deletionUrl = `https://openguessr.com/signup?deletion-token=${deletionToken}`;
+        const mailOptions = {
+            from: emailConfig.auth.user,
+            to: user.email,
+            subject: 'OpenGuessr Account Deletion',
+            text: `Hey ${user.user_name},
+
+Please click on this link to confirm the account deletion: ${deletionUrl}
+
+This link expires in 30 minutes.`
+        };
+
+        await mailTransporter.sendMail(mailOptions);
+
+        res.json({ message: 'Account deletion email sent.' });
+    } catch (error) {
+        console.error('Error during account deletion request:', error);
+        res.status(500).json({ error: 'An error occurred during account deletion request.' });
+    }
+});
+
+// Deletion endpoint (takes token from deletion email -> deletes account)
+accountRouter.delete('/delete', loginLimiter, async (req, res) => {
+    const db = getDB();
+    const { token } = req.body;
+
+    if (!token) return res.status(400).json({ error: 'Token is required.' });
+
+    let id;
+    try {
+        const decoded = jwt.verify(token, RESET_KEY);
+        if (decoded.purpose !== 'delete') throw new Error('Not an account deletion token');
+        id = decoded.id;
+    } catch (error) {
+        console.error('Invalid account deletion token:', error.message);
+        return res.status(400).json({ error: 'This link is invalid or has expired.' });
+    }
+
+    try {
+        // Find user by ID to retrieve the Apple authorization
+        const userQuery = 'SELECT u.id, a.refresh_token AS apple_refresh_token, a.client_id AS apple_client_id FROM users u LEFT JOIN apple_oauth a ON a.user_id = u.id WHERE u.id = ?';
         const user = await new Promise((resolve, reject) => {
             db.execute(userQuery, [id], (err, results) => {
                 if (err) return reject(err);
@@ -623,11 +810,6 @@ accountRouter.delete('/delete', loginLimiter, authenticateTokenWithId, async (re
             });
         });
         if (!user) return res.status(400).json({ error: 'User not found.' });
-
-        // Check password
-        if (!user.password) return res.status(400).json({ error: 'No password set for this account.' });
-        const isValidPassword = await isPasswordValid(password, user.password);
-        if (!isValidPassword) return res.status(400).json({ error: 'Invalid credentials.' });
 
         // Delete user account
         const deleteUserQuery = 'DELETE FROM users WHERE id = ?';
@@ -638,12 +820,31 @@ accountRouter.delete('/delete', loginLimiter, authenticateTokenWithId, async (re
             });
         });
 
+        // Apple requires revoking its authorization on deletion, a failure is logged since the account is already gone
+        if (user.apple_refresh_token) {
+            try {
+                const revokeResponse = await fetch('https://appleid.apple.com/auth/revoke', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({
+                        client_id: user.apple_client_id,
+                        client_secret: createAppleClientSecret(user.apple_client_id),
+                        token: user.apple_refresh_token,
+                        token_type_hint: 'refresh_token'
+                    })
+                });
+                if (!revokeResponse.ok) console.error('Apple revoke failed for deleted user:', revokeResponse.status);
+            } catch (error) {
+                console.error('Error revoking Apple authorization for deleted user:', error);
+            }
+        }
+
         // Cascade chat-side cleanup, must happen after the user row is gone (per lib spec)
         // Errors here are logged but don't fail the response since the account itself is already deleted
         try { await headlessChatServer.deleteParticipant(String(id)); }
         catch (error) { console.error('Error during chat cleanup for deleted user:', error); }
 
-        res.json({ message: 'Account deleted successfully.' });
+        res.json({ message: 'Account deleted successfully.', userId: id }); // User ID is included so the client can log out if they are logged into this specific account
     } catch (error) {
         console.error('Error during account deletion:', error);
         res.status(500).json({ error: 'An error occurred during account deletion.' });
@@ -653,7 +854,7 @@ accountRouter.delete('/delete', loginLimiter, authenticateTokenWithId, async (re
 // Password resets via email -----------------------------------------------------------------------------
 
 // request password reset email endpoint
-accountRouter.post('/reset-password-request', passwordResetLimiter, async (req, res) => {
+accountRouter.post('/reset-password-request', emailRequestLimiter, async (req, res) => {
     const db = getDB();
     const { email } = req.body;
 
@@ -671,10 +872,10 @@ accountRouter.post('/reset-password-request', passwordResetLimiter, async (req, 
         if (!user) return res.status(404).json({ error: 'No account with that email found.' });
 
         // Create a password reset token
-        const resetToken = jwt.sign({ email: email, id: user.id }, RESET_KEY, { expiresIn: '1h' });
+        const resetToken = jwt.sign({ id: user.id, purpose: 'reset-password' }, RESET_KEY, { expiresIn: '1h' });
 
         // Send email with the reset token
-        const resetUrl = `https://openguessr.com/signup?token=${resetToken}`;
+        const resetUrl = `https://openguessr.com/signup?reset-token=${resetToken}`;
         const mailOptions = {
             from: emailConfig.auth.user,
             to: email,
@@ -702,17 +903,25 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
 
     if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required.' });
 
+    // Verify the reset token + get user Id from the token so that the correct account's password can be changed
+    let id;
     try {
-        // Verify the reset token + get user Id from the token so that the correct account's password can be changed
         const decoded = jwt.verify(token, RESET_KEY);
+        if (decoded.purpose !== 'reset-password') throw new Error('Not a password reset token');
+        id = decoded.id;
+    } catch (error) {
+        console.error('Invalid password reset token:', error.message);
+        return res.status(400).json({ error: 'This link is invalid or has expired.' });
+    }
 
+    try {
         // Hash the new password
         const hashedPassword = await getEncodedPassword(newPassword);
 
         // Update the user's password in the database
         const updatePasswordQuery = 'UPDATE users SET password = ? WHERE id = ?';
         await new Promise((resolve, reject) => {
-            db.execute(updatePasswordQuery, [hashedPassword, decoded.id], (err, results) => {
+            db.execute(updatePasswordQuery, [hashedPassword, id], (err, results) => {
                 if (err) return reject(err);
                 resolve(results);
             });

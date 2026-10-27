@@ -37,6 +37,14 @@ export const jwtResetSecret = process.env.JWT_RESET_SECRET;
 export const googleOAuthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
 export const googleOAuthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
 
+export const appleConfig = {
+    teamId: process.env.APPLE_TEAM_ID,
+    keyId: process.env.APPLE_KEY_ID,
+    privateKey: process.env.APPLE_PRIVATE_KEY,
+    bundleId: "com.paulplay.openguessr",
+    servicesId: "com.paulplay.openguessr.signin",
+};
+
 export const emailConfig = {
     host: process.env.EMAIL_HOST,
     port: 465,

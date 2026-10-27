@@ -15,11 +15,11 @@ const registerLimiter = rateLimit({
     message: { error: 'Too many accounts created, please try again later.' }
 });
 
-const passwordResetLimiter = rateLimit({
+const emailRequestLimiter = rateLimit({
     windowMs: 12 * 60 * 60 * 1000, // 12 hours
     keyGenerator: (req) => req.clientIp,
     max: 5, // limit each IP to 5 requests per windowMs
-    message: { error: 'Too many password resets, please try again later.' }
+    message: { error: 'Too many password reset or account deletion requests, please try again later.' }
 });
 
 const loginLimiter = rateLimit({
@@ -106,4 +106,4 @@ const creatorStatisticLimiter = rateLimit({
     message: { error: 'Too many creator statistic requests.' }
 });
 
-export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, passwordResetLimiter, supporterMapLoadLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
+export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, emailRequestLimiter, supporterMapLoadLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
