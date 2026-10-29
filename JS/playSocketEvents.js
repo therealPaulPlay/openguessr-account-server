@@ -93,7 +93,7 @@ function attachPlaySocketEvents(server) {
         if (player) {
             // Remove player from room storage
             server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-            addChat(roomId, "Server", "server", `${player?.username || "Unknown"} left.`);
+            addChat(roomId, { username: "Server", clientId: "server", text: `${player?.username || "Unknown"} left.` });
 
             // Update disconnected players array if player was authenticated & game is ongoing
             // Old client ID is only there to keep each entry unique, only the score is saved, other values like teamIndex or spectator could change while player is disconnected
@@ -173,10 +173,11 @@ function attachPlaySocketEvents(server) {
 
         // Restrict updates
         if (key === "chats") {
-            if (type !== "array-add") return false;
-            if (value?.username !== storage.players?.find((e) => e.clientId === clientId)?.username) return false;
-            if (value?.clientId !== clientId) return false;
-            if (value?.teamIndex != null && value?.teamIndex !== storage.players?.find((e) => e.clientId === clientId)?.teamIndex) return false;
+            if (type !== "array-add") return "Invalid chat update type";
+            if (value?.username !== storage.players?.find((e) => e.clientId === clientId)?.username) return "Chat username mismatch";
+            if (value?.clientId !== clientId) return "Invalid chat client ID";
+            if (value?.userId != null && value?.userId !== storage.players?.find((e) => e.clientId === clientId)?.userId) return "Chat user ID mismatch";
+            if (value?.teamIndex != null && value?.teamIndex !== storage.players?.find((e) => e.clientId === clientId)?.teamIndex) return "Chat teamindex mismatch";
         }
         if (key === "showResult" && (type !== "set" || value !== false)) return false;
 
@@ -240,7 +241,7 @@ function attachPlaySocketEvents(server) {
             }
 
             server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
-            addChat(roomId, "Server", "server", `${playerData.username || "Unknown"} joined.`);
+            addChat(roomId, { username: "Server", clientId: "server", text: `${playerData.username || "Unknown"} joined.` });
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
         }
 
@@ -513,7 +514,7 @@ async function startRound(roomId) {
     try {
         // Abort start if no locations are available (e.g. map doesn't exist but user client is outdated - edge case)
         if (!location) {
-            addChat(roomId, "Server", "server", "Couldn't load a location for this map.");
+            addChat(roomId, { username: "Server", clientId: "server", text: "Couldn't load a location for this map." });
             return;
         }
 
@@ -521,7 +522,7 @@ async function startRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "location", "set", location);
         playSocketServer.updateRoomStorage(roomId, "countdownActive", "set", true);
         playSocketServer.updateRoomStorage(roomId, "currentRound", "set", (playSocketServer.getRoomStorage(roomId).currentRound || 0) + 1);
-        addChat(roomId, "Server", "server", `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.`);
+        addChat(roomId, { username: "Server", clientId: "server", text: `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.` });
     } catch (error) {
         console.error("Error starting round:", error);
     }
@@ -548,8 +549,8 @@ async function startRound(roomId) {
     }, 4000);
 }
 
-export function addChat(roomId, username, clientId, text, teamIndex = null) {
-    playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username, clientId, text, teamIndex });
+export function addChat(roomId, { username, clientId, userId = null, text, teamIndex = null }) {
+    playSocketServer.updateRoomStorage(roomId, "chats", "array-add", { username, clientId, userId, text, teamIndex });
 }
 
 async function getUser(userId) {
