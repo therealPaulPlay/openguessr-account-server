@@ -1,4 +1,3 @@
-import fs from 'fs';
 import express from 'express';
 import { standardLimiter, rankingLimiter, createCompetitionLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
@@ -9,6 +8,7 @@ import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
 import { isValidMap } from './communityMaps.js';
+import { getLocations } from './locations.js';
 
 const competitionsRouter = express.Router();
 
@@ -24,21 +24,12 @@ const getSecondsUntilNextUTC = () => {
     return Math.floor((nextUTC - now) / 1000);
 };
 
+let dailyCompetitionCreation = null;
+
 const createDailyCompetition = async () => {
     try {
-        const data = fs.readFileSync('./JSON/dailyLocations.json', 'utf8');
-        const dailyLocations = JSON.parse(data);
-
-        if (!dailyLocations.locations || !Array.isArray(dailyLocations.locations) || dailyLocations.locations.length === 0) {
-            throw new Error('Invalid or empty locations array in dailyLocations.json');
-        }
-
-        const randomLocation = dailyLocations.locations[Math.floor(Math.random() * dailyLocations.locations.length)]
-            .map(coord => parseFloat(coord));
-
-        if (randomLocation.length !== 2 || randomLocation.some(isNaN)) {
-            throw new Error('Invalid coordinates in location data');
-        }
+        const randomLocation = (await getLocations("Daily Competition", 1, "daily-competition"))?.locations?.[0];
+        if (!randomLocation) throw new Error('Failed to get daily competition location from the map');
 
         const competitionData = {
             name: 'Daily Competition',
@@ -452,8 +443,12 @@ competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheRespons
 
         // If no current competition exists, create one
         if (!results.some(r => !r.expired)) {
-            console.log('No daily competition found, creating new one...');
-            await createDailyCompetition();
+            // If already creating a daily competition, await that, otherwise start
+            if (!dailyCompetitionCreation) {
+                console.log('No daily competition found, creating new one...');
+                dailyCompetitionCreation = createDailyCompetition().finally(() => dailyCompetitionCreation = null);
+            }
+            await dailyCompetitionCreation;
             clearResponseCache("daily-competition");
             [results] = await db.promise().execute(query, [userId]);
 

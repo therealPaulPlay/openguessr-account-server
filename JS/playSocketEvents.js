@@ -225,8 +225,8 @@ function attachPlaySocketEvents(server) {
             if (guestName?.length < 3) guestName = null;
 
             const playerData = user
-                ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, supporterLevel: user.supporter_level, spectator: false }
-                : { clientId, username: guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, supporterLevel: 0, spectator: false };
+                ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, flag: user.flag ?? null, supporterLevel: user.supporter_level, spectator: false }
+                : { clientId, username: guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, flag: null, supporterLevel: 0, spectator: false };
 
             // Check if authed player was previously in this room, if so, restore data
             if (user) {
@@ -395,8 +395,11 @@ export function rematch(roomId) {
 
 export function startRoom(roomId) {
     playSocketServer.updateRoomStorage(roomId, "gameStarted", "set", true);
-    startRound(roomId);
     deleteMatchmakingRoom(roomId);
+
+    // Short waiting period for matchmade games to give players time to see their opponent(s)
+    if (playSocketServer.getRoomStorage(roomId)?.matchmakingRoom) setRoomTimeout(roomId, () => startRound(roomId), 3_000);
+    else startRound(roomId);
 }
 
 function goToNextRound(roomId) {
@@ -556,7 +559,7 @@ export function addChat(roomId, { username, clientId, userId = null, text, teamI
 async function getUser(userId) {
     const db = getDB();
     const [rows] = await db.promise().execute(`
-        SELECT u.user_name, u.elo, u.supporter_level, p.badge, p.pin
+        SELECT u.user_name, u.elo, u.supporter_level, p.badge, p.pin, p.flag
         FROM users u LEFT JOIN profile_data p ON u.id = p.user_id 
         WHERE u.id = ?`, [userId]);
     return rows[0];
