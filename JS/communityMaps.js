@@ -1,5 +1,5 @@
 import express from 'express';
-import { standardLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter } from "./rateLimiters.js";
+import { standardLimiter, mapFailOrUpdateLimiter, successfulMapSubmissionLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
@@ -269,7 +269,7 @@ const descriptionValidator = body('description').isString().withMessage('Descrip
 
 // Endpoint to submit a new map
 communityMapRouter.post('/', [
-    failedMapSubmissionLimiter, authenticateTokenWithId,
+    mapFailOrUpdateLimiter, authenticateTokenWithId,
     body('name').isString().withMessage('Map name must be provided.').bail()
         .customSanitizer((value) => value.replace(/[_/+&#?%]/g, ' ').replace(/\s+/g, ' ').trim())
         .isLength({ min: 3, max: 25 }).withMessage('Map name must be between 3 and 25 characters.').custom((value) => {
@@ -370,7 +370,7 @@ communityMapRouter.post('/', [
 
 // Update map
 communityMapRouter.put('/', [
-    failedMapSubmissionLimiter, authenticateTokenWithId,
+    mapFailOrUpdateLimiter, authenticateTokenWithId,
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
     const { id: player_id, name, mapData } = req.body;

@@ -36,27 +36,7 @@ const nameChangeLimiter = rateLimit({
     message: { error: 'You can only change your username once per week.' }
 });
 
-const mapLoadLimiter = rateLimit({
-    windowMs: 16 * 60 * 60 * 1000, // 16h
-    keyGenerator: (req) => req.clientIp, // Use the correct IP and not the one of the proxy
-    max: 5, // Limit each IP to a certain number of requests per windowMs
-    message: {
-        error: 'To prevent unusually high API costs, please do not refresh the page - thereby reload the map - more than 5 times a day. This limit will be reset tomorrow.',
-    },
-    skipFailedRequests: true // Skip failed requests so we can handle them manually
-});
-
-const supporterMapLoadLimiter = rateLimit({
-    windowMs: 16 * 60 * 60 * 1000, // 16h
-    keyGenerator: (req) => req.clientIp, // Use the correct IP and not the one of the proxy
-    max: 20, // Limit each IP to a certain number of requests per windowMs
-    message: {
-        error: 'To prevent unusually high API costs, please do not refresh the page - thereby reload the map - more than 100 times a day for supporters. This limit will be reset tomorrow.',
-    },
-    skipFailedRequests: true // Skip failed requests so we can handle them manually
-});
-
-const failedMapSubmissionLimiter = rateLimit({
+const mapFailOrUpdateLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 1 day
     max: 100,
     keyGenerator: (req) => req.clientIp,
@@ -70,15 +50,24 @@ const successfulMapSubmissionLimiter = rateLimit({
     max: 3,
     keyGenerator: (req) => req.clientIp,
     message: {
-        error: 'Too many submissions for today.',
+        error: 'You have reached the map submission limit for today.',
     },
 });
 
-const createCompetitionLimiter = rateLimit({
-    windowMs: 24 * 60 * 60 * 1000, // 24 hours
+const successfulPublicCompCreationLimiter = rateLimit({
+    windowMs: 16 * 60 * 60 * 1000, // 16 hours
+    max: 8,
+    message: {
+        error: 'You have reached the public competition creation limit for today.'
+    },
+    keyGenerator: (req) => req.clientIp
+});
+
+const successfulPrivateCompCreationLimiter = rateLimit({
+    windowMs: 16 * 60 * 60 * 1000, // 16 hours
     max: 50,
     message: {
-        error: 'You have reached the limit of 50 competition creations per day.'
+        error: 'You have reached the private competition creation limit for today.'
     },
     keyGenerator: (req) => req.clientIp
 });
@@ -106,4 +95,4 @@ const creatorStatisticLimiter = rateLimit({
     message: { error: 'Too many creator statistic requests.' }
 });
 
-export { standardLimiter, registerLimiter, loginLimiter, mapLoadLimiter, emailRequestLimiter, supporterMapLoadLimiter, failedMapSubmissionLimiter, successfulMapSubmissionLimiter, createCompetitionLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };
+export { standardLimiter, registerLimiter, loginLimiter, emailRequestLimiter, mapFailOrUpdateLimiter, successfulMapSubmissionLimiter, successfulPublicCompCreationLimiter, successfulPrivateCompCreationLimiter, rankingLimiter, friendRequestLimiter, nameChangeLimiter, creatorStatisticLimiter };

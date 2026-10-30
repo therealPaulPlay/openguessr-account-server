@@ -1,5 +1,5 @@
 import express from 'express';
-import { standardLimiter, rankingLimiter, createCompetitionLimiter } from "./rateLimiters.js";
+import { standardLimiter, rankingLimiter, successfulPublicCompCreationLimiter, successfulPrivateCompCreationLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
 import { body, validationResult } from 'express-validator';
@@ -243,7 +243,7 @@ setInterval(() => {
 }, 60 * 1000);
 
 // Create competition
-competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWithId, [
+competitionsRouter.post('/create', standardLimiter, authenticateTokenWithId, [
     body('name').isString().withMessage('Name must be provided.').bail().trim().isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.').custom((value) => {
         if (!check(value)) throw new Error('Competition name is empty or contains inappropriate words.');
         return true;
@@ -256,7 +256,7 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
         return true;
     }),
     body('locations').isLength({ max: 10000 }).withMessage('Location data cannot exceed 10,000 characters.'),
-    body('private').isBoolean().withMessage('Private must be a boolean.'),
+    body('private').isBoolean({ strict: true }).withMessage('Private must be a boolean.'),
 ], async (req, res) => {
     try {
         const errors = validationResult(req);
@@ -280,6 +280,15 @@ competitionsRouter.post('/create', createCompetitionLimiter, authenticateTokenWi
         if (mapError) return res.status(400).json({ status: 400, error: mapError });
 
         const locationAmount = locations.length;
+
+        // Check rate limit BEFORE saving to database – this only counts for successful creations that made it so far
+        const rateLimiter = isPrivate === true ? successfulPrivateCompCreationLimiter : successfulPublicCompCreationLimiter;
+        await new Promise((resolve, reject) => {
+            rateLimiter(req, res, (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
 
         const [result] = await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
