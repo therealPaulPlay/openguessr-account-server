@@ -7,10 +7,11 @@ import { updateProfileData } from './dbWriteHelpers.js';
 import { fetchReportData } from './reportFetch.js';
 import { check } from 'fast-profanity-filter';
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
-import { isValidMap } from './communityMaps.js';
+import { isValidMap } from './maps.js';
 import { getLocations } from './locations.js';
+import { officialUserId } from './config.js';
 
-const competitionsRouter = express.Router();
+const competitionRouter = express.Router();
 
 function clearCompetitionListCaches() {
     clearResponseCache("competitions-active");
@@ -31,9 +32,12 @@ const createDailyCompetition = async () => {
         const randomLocation = (await getLocations("Daily Competition", 1, "daily-competition"))?.locations?.[0];
         if (!randomLocation) throw new Error('Failed to get daily competition location from the map');
 
+        const db = getDB();
+        const [[author]] = await db.promise().execute('SELECT user_name FROM users WHERE id = ?', [officialUserId]);
+
         const competitionData = {
             name: 'Daily Competition',
-            author: 'PaulPlay',
+            author: author?.user_name ?? "Default",
             author_id: null,
             restriction: 'none',
             duration: getSecondsUntilNextUTC(),
@@ -44,7 +48,6 @@ const createDailyCompetition = async () => {
             private: true
         };
 
-        const db = getDB();
         await db.promise().execute(
             'INSERT INTO competitions (name, author, author_id, restriction, duration, round_length, description, location_amount, locations, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [competitionData.name, competitionData.author, competitionData.author_id, competitionData.restriction,
@@ -109,7 +112,7 @@ const formatCompetition = (comp, includeLocations = false) => {
 };
 
 // Get competitions user hasn't entered
-competitionsRouter.get('/not-entered/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
+competitionRouter.get('/not-entered/:index', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.query.id;
@@ -135,7 +138,7 @@ competitionsRouter.get('/not-entered/:index', standardLimiter, authenticateToken
 });
 
 // Search competitions
-competitionsRouter.get('/search/:index', standardLimiter, async (req, res) => {
+competitionRouter.get('/search/:index', standardLimiter, async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.query.id ?? null;
@@ -163,7 +166,7 @@ competitionsRouter.get('/search/:index', standardLimiter, async (req, res) => {
 });
 
 // Get expired competitions
-competitionsRouter.get('/expired/:index', standardLimiter, cacheResponse("competitions-expired"), async (req, res) => {
+competitionRouter.get('/expired/:index', standardLimiter, cacheResponse("competitions-expired"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.query.id ?? null;
@@ -189,7 +192,7 @@ competitionsRouter.get('/expired/:index', standardLimiter, cacheResponse("compet
 const detailsRequestsMap = new Map(); // Competition ID - user ID -> timestamp of request
 
 // Get competition details
-competitionsRouter.post('/details/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
+competitionRouter.post('/details/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.body.id;
@@ -243,7 +246,7 @@ setInterval(() => {
 }, 60 * 1000);
 
 // Create competition
-competitionsRouter.post('/create', standardLimiter, authenticateTokenWithId, [
+competitionRouter.post('/create', standardLimiter, authenticateTokenWithId, [
     body('name').isString().withMessage('Name must be provided.').bail().trim().isLength({ min: 3, max: 30 }).withMessage('Name must be between 3 and 30 characters.').custom((value) => {
         if (!check(value)) throw new Error('Competition name is empty or contains inappropriate words.');
         return true;
@@ -311,7 +314,7 @@ competitionsRouter.post('/create', standardLimiter, authenticateTokenWithId, [
 });
 
 // Submit competition results
-competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
+competitionRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const compId = req.params.id;
         const { id, score } = req.body;
@@ -382,7 +385,7 @@ competitionsRouter.post('/submit/:id', standardLimiter, authenticateTokenWithId,
 });
 
 // Get competition leaderboard
-competitionsRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("competitions-leaderboard"), async (req, res) => {
+competitionRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("competitions-leaderboard"), async (req, res) => {
     try {
         const { id } = req.params;
         const userId = req.query.id ?? null;
@@ -434,7 +437,7 @@ competitionsRouter.get('/leaderboard/:id', standardLimiter, cacheResponse("compe
 });
 
 // Get daily competition
-competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheResponse("daily-competition"), async (req, res) => {
+competitionRouter.get('/daily/daily-competition', standardLimiter, cacheResponse("daily-competition"), async (req, res) => {
     try {
         const userId = req.query.id ?? null;
         const db = getDB();
@@ -497,7 +500,7 @@ competitionsRouter.get('/daily/daily-competition', standardLimiter, cacheRespons
 });
 
 // Get active competitions (must be after other GET routes to avoid /:index catching everything)
-competitionsRouter.get('/:index', standardLimiter, cacheResponse("competitions-active"), async (req, res) => {
+competitionRouter.get('/:index', standardLimiter, cacheResponse("competitions-active"), async (req, res) => {
     try {
         const { index = 0 } = req.params;
         const userId = req.query.id ?? null;
@@ -522,7 +525,7 @@ competitionsRouter.get('/:index', standardLimiter, cacheResponse("competitions-a
 });
 
 // Update competition ranking
-competitionsRouter.post('/ranking', rankingLimiter, authenticateTokenWithId, async (req, res) => {
+competitionRouter.post('/ranking', rankingLimiter, authenticateTokenWithId, async (req, res) => {
     try {
         const { compId, updateFactor } = req.body;
         const factor = Number(updateFactor);
@@ -543,4 +546,4 @@ competitionsRouter.post('/ranking', rankingLimiter, authenticateTokenWithId, asy
     }
 });
 
-export default competitionsRouter;
+export default competitionRouter;

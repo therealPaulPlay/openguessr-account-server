@@ -5,12 +5,15 @@ import { getDB } from "./dbConnection.js";
 import { cacheResponse, clearResponseCache } from "./responseCache.js";
 import { body, validationResult } from 'express-validator';
 import { getPublicObjectURL, spacesClient } from './spacesConnection.js';
-import { s3Config } from "./config.js";
+import { s3Config, officialUserId } from "./config.js";
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { removeMapFromCache } from './locations.js';
 import { check } from 'fast-profanity-filter';
+import fs from 'node:fs';
 
-const communityMapRouter = express.Router();
+const mapRouter = express.Router();
+
+const OFFICIAL_MAP_DESCRIPTIONS = JSON.parse(fs.readFileSync("./JSON/officialMapDescriptions.json", "utf8"));
 
 function clearMapPageCaches() {
     clearResponseCache("maps-index");
@@ -70,7 +73,7 @@ function returnSortColumnByQuery(req, res) {
 }
 
 // Return the next 50 maps starting from a given index (without map data!)
-communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-index"), (req, res) => {
+mapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-index"), (req, res) => {
     const db = getDB();
     const limit = 50;
 
@@ -93,7 +96,7 @@ communityMapRouter.get('/index/:index', standardLimiter, cacheResponse("maps-ind
 });
 
 // Filter maps by category with pagination
-communityMapRouter.get('/category/:category/:index', standardLimiter, cacheResponse("maps-category"), (req, res) => {
+mapRouter.get('/category/:category/:index', standardLimiter, cacheResponse("maps-category"), (req, res) => {
     const db = getDB();
     const limit = 50;
 
@@ -116,7 +119,7 @@ communityMapRouter.get('/category/:category/:index', standardLimiter, cacheRespo
 });
 
 // Get maps created by a certain user (user id)
-communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("maps-by-user"), (req, res) => {
+mapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("maps-by-user"), (req, res) => {
     const db = getDB();
     const limit = 50;
     const authorId = parseInt(req.params.id, 10);
@@ -145,7 +148,7 @@ communityMapRouter.get('/by-user/:id/:index', standardLimiter, cacheResponse("ma
 });
 
 // Search maps by query with pagination
-communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
+mapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
     const db = getDB();
     const limit = 50;
 
@@ -169,7 +172,7 @@ communityMapRouter.get('/search/:query/:index', standardLimiter, (req, res) => {
 });
 
 // Return all favourite maps
-communityMapRouter.get('/favourites', standardLimiter, cacheResponse("maps-favourites"), (req, res) => {
+mapRouter.get('/favourites', standardLimiter, cacheResponse("maps-favourites"), (req, res) => {
     const db = getDB();
 
     db.execute('SELECT name, author, description, favourite, category, author_id, likes FROM maps WHERE favourite = TRUE ORDER BY likes DESC', (err, results) => {
@@ -183,8 +186,31 @@ communityMapRouter.get('/favourites', standardLimiter, cacheResponse("maps-favou
     });
 });
 
-// Get the actual map data by the name of the map
-communityMapRouter.get('/:name', standardLimiter, cacheResponse("maps-by-name"), async (req, res) => {
+// Get official map data by the name of the map
+mapRouter.get('/official/:name', standardLimiter, cacheResponse("official-maps-by-name"), async (req, res) => {
+    const db = getDB();
+    const name = req.params.name.toLowerCase().replaceAll("_", " ");
+    const mapName = Object.keys(OFFICIAL_MAP_DESCRIPTIONS).find((key) => key.toLowerCase() === name);
+    if (!mapName) return res.status(404).json({ error: 'Map not found.' });
+
+    try {
+        const [[author]] = await db.promise().execute('SELECT user_name FROM users WHERE id = ?', [officialUserId]);
+
+        res.json({
+            name: mapName,
+            author: author?.user_name ?? "Default",
+            authorId: officialUserId,
+            description: OFFICIAL_MAP_DESCRIPTIONS[mapName],
+            map_data_url: await getPublicObjectURL("openguessr-official-maps/" + name.replaceAll(" ", "_") + ".json")
+        });
+    } catch (err) {
+        console.error('Error fetching official map:', err);
+        return res.status(500).json({ error: 'Failed to fetch map.' });
+    }
+});
+
+// Get the actual community map data by the name of the map
+mapRouter.get('/community/:name', standardLimiter, cacheResponse("maps-by-name"), async (req, res) => {
     const db = getDB();
     const name = req.params.name.toLowerCase().replaceAll("_", " ");
 
@@ -268,7 +294,7 @@ const descriptionValidator = body('description').isString().withMessage('Descrip
 });
 
 // Endpoint to submit a new map
-communityMapRouter.post('/', [
+mapRouter.post('/', [
     mapFailOrUpdateLimiter, authenticateTokenWithId,
     body('name').isString().withMessage('Map name must be provided.').bail()
         .customSanitizer((value) => value.replace(/[_/+&#?%]/g, ' ').replace(/\s+/g, ' ').trim())
@@ -369,7 +395,7 @@ communityMapRouter.post('/', [
 });
 
 // Update map
-communityMapRouter.put('/', [
+mapRouter.put('/', [
     mapFailOrUpdateLimiter, authenticateTokenWithId,
     body('mapData').isLength({ max: 600000 }).withMessage('Map data cannot exceed 600,000 characters (approx. 10,000 locations).'),
 ], async (req, res) => {
@@ -427,7 +453,7 @@ communityMapRouter.put('/', [
 });
 
 // Update map description
-communityMapRouter.put('/description', [
+mapRouter.put('/description', [
     standardLimiter, authenticateTokenWithId,
     body('name').isString().withMessage('Map name must be provided.'),
     descriptionValidator,
@@ -453,7 +479,7 @@ communityMapRouter.put('/description', [
 });
 
 // Delete map
-communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
+mapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const nameLowercase = req.params.name.toLowerCase();
     const author_id = req.body.id;
     const db = getDB();
@@ -497,7 +523,7 @@ communityMapRouter.delete('/:name', standardLimiter, authenticateTokenWithId, as
 });
 
 // Like or Dislike map
-communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
+mapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const player_id = req.body.id;
     const like = req.body.like;
@@ -529,7 +555,7 @@ communityMapRouter.post('/like/:name', standardLimiter, authenticateTokenWithId,
 });
 
 // Get map like amount & personal like status if id passed 
-communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
+mapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     const name = req.params.name.toLowerCase();
     const playerId = req.body.id;
     const db = getDB();
@@ -555,4 +581,4 @@ communityMapRouter.post('/rating/:name', standardLimiter, async (req, res) => {
     }
 });
 
-export default communityMapRouter;
+export default mapRouter;

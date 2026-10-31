@@ -1,5 +1,7 @@
 export const port = 3005;
 
+export const officialUserId = 2;
+
 export const corsOptions = {
     origin: [
         "http://localhost:3000",
