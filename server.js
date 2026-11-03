@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import requestIp from 'request-ip';
 import cors from 'cors';
 import http from 'node:http';
 import { initPlaySocket, playSocketServer } from './JS/playSocketEvents.js';
@@ -25,6 +24,7 @@ import headlessChatRouter, { headlessChatServer } from './JS/headlessChatIntegra
 import { port } from "./JS/config.js";
 import { corsOptions } from "./JS/config.js";
 import { initSSE } from './JS/serverSentEvents.js';
+import { getClientIp } from './JS/clientIp.js';
 
 // Initialize the server ---------------------------------------------------------------------------------
 const app = express();
@@ -36,21 +36,24 @@ initPlaySocket(server);
 // CORS configuration ------------------------------------------------------------------------------------
 app.use(cors(corsOptions));
 
-// Global Middleware -------------------------------------------------------------------------------------
+// Global middleware -------------------------------------------------------------------------------------
 app.use((req, res, next) => {
     if (['/stripe/webhook', '/discord/interactions'].includes(req.originalUrl)) express.raw({ type: 'application/json' })(req, res, next);
     else express.json({ limit: "1mb" })(req, res, next); // Automatically parse incoming JSON bodies
 });
 
-app.use(requestIp.mw()); // Apply the requestIp middleware to get the actual ip and not the ip of the proxy
+app.use((req, _res, next) => {
+    req.clientIp = getClientIp(req);
+    next();
+});
 
-// MySQL Database Connection -----------------------------------------------------------------------------
+// MySQL database connection -----------------------------------------------------------------------------
 connectDB();
 
 // Init SSE ----------------------------------------------------------------------------------------------
 initSSE(app);
 
-// Init Discord bot commands -----------------------------------------------------------------------------
+// Init discord bot commands -----------------------------------------------------------------------------
 InstallDiscordCommands();
 
 // Routes ------------------------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import requestIp from 'request-ip';
+import { getClientIp } from './clientIp.js';
 import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
@@ -45,7 +45,7 @@ export async function initPlaySocket(httpServer) {
         server: httpServer,
         path: '/socket',
         verifyClient: (info, callback) => {
-            const ip = requestIp.getClientIp(info.req);
+            const ip = getClientIp(info.req);
             if (isWsUpgradeRateLimited(ip)) return callback(false, 429, 'Too Many Requests');
             callback(true);
         }

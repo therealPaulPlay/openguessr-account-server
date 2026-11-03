@@ -1,9 +1,9 @@
 import rateLimit from 'express-rate-limit';
 
-// req.clientIp is being set by the request-ip middleware that's being applied in server.js
+// req.clientIp is being set by the client IP middleware in server.js
 const standardLimiter = rateLimit({
     windowMs: 1000, // 1 second
-    keyGenerator: (req) => req.clientIp, // Use correct ip and not the one of the proxy - This uses request-ip, a package that checks various aspects of the request to get the correct ip address
+    keyGenerator: (req) => req.clientIp, // Use correct ip and not the one of the proxy
     max: 10, // Limit each IP to 10 requests per windowMs
     message: { error: 'Too many standard requests.' }
 });
@@ -24,7 +24,7 @@ const emailRequestLimiter = rateLimit({
 
 const loginLimiter = rateLimit({
     windowMs: 30 * 1000, // 30 seconds
-    keyGenerator: (req) => req.clientIp, // use correct ip and not the one of the proxy. This uses request-ip.
+    keyGenerator: (req) => req.clientIp, // use correct ip and not the one of the proxy
     max: 10, // Limit each IP to 10 requests per windowMs
     message: { error: 'Too many login requests from this IP, please try again after 30 seconds.' }
 });

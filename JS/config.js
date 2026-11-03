@@ -1,5 +1,7 @@
 export const port = 3005;
 
+export const trustedProxiesCount = 2; // Proxy count for extracting IP from X-Forwarded-For header (right to left)
+
 export const officialUserId = 2;
 
 export const corsOptions = {
