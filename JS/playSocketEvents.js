@@ -9,7 +9,7 @@ import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
 import { processTournamentMatchResults } from './tournaments.js';
-import { deleteMatchmakingRoom } from './matchmaking.js';
+import { deleteMatchmakingRoom, deleteRoomMoveTokens } from './matchmaking.js';
 import { censor } from 'fast-profanity-filter';
 
 export let playSocketServer;
@@ -105,6 +105,13 @@ function attachPlaySocketEvents(server) {
 
             // Check if all players now have confirmed guesses
             endRoundIfAllPlayersGuessed(roomId);
+
+            // Remove client from teamMoveClients
+            const clients = server.getRoomStorage(roomId)?.teamMoveClients;
+            const teamIndex = player.teamIndex;
+            if (clients?.[teamIndex] && clients[teamIndex].includes(clientId)) {
+                server.updateRoomStorage(roomId, "teamMoveClients", "object-set-key", teamIndex, clients[teamIndex].filter(c => c !== clientId));
+            }
         }
 
         // Process division duel if user was in one
@@ -170,6 +177,7 @@ function attachPlaySocketEvents(server) {
         if (key === "location") return false;
         if (key === "mapBounds") return false;
         if (key === "locked") return false;
+        if (key === "teamMoveClients") return false;
 
         // Restrict updates
         if (key === "chats") {
@@ -354,6 +362,7 @@ function attachPlaySocketEvents(server) {
         roomTimer.stop(roomId);
         cancelAllRoomTimeouts(roomId);
         deleteMatchmakingRoom(roomId);
+        deleteRoomMoveTokens(roomId);
     });
 
     function determineHighestSupporterLevel(roomId) {
@@ -653,6 +662,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.locked = false;
     storage.divisionRoom = false;
     storage.teamScores = Object.fromEntries(Array.from({ length: storage.teamAmount }, (_, i) => [i, { roundBest: 0, score: 0 }]));
+    storage.teamMoveClients = {};
 
     return storage;
 }

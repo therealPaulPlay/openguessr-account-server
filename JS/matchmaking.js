@@ -220,6 +220,78 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
     }
 });
 
+const moveTokens = {};
+
+// Move a teammate into a new team duel (2v2) room for "play another" functionality
+matchmakingRouter.post('/prepare-move-team-duel-teammate', standardLimiter, async (req, res) => {
+    const { currentCode, clientId, clientToken } = req.body;
+
+    try {
+        // Check if clientToken and room are valid
+        if (!checkIfTokenMatchesAndInRoom(currentCode, clientId, clientToken)) return res.status(400).json({ error: "Not in room or invalid client token." });
+
+        // Get the teammate
+        const players = playSocketServer.getRoomStorage(currentCode).players;
+        const thisPlayer = players.find((p) => p.clientId === clientId);
+        const teammate = players.find((p) => p.clientId !== clientId && p.teamIndex === thisPlayer.teamIndex);
+        if (!teammate) return res.status(400).json({ error: "Teammate has already left." });
+
+        // Room code + team
+        const moveKey = currentCode + "-" + thisPlayer.teamIndex;
+
+        // Add entry to room storage for reactive display on the client (e.g. 1/2 accepted)
+        const addRoomStorageEntry = () => {
+            const teamMoves = playSocketServer.getRoomStorage(currentCode).teamMoveClients;
+            const current = teamMoves[thisPlayer.teamIndex] ?? [];
+            if (!current.includes(clientId)) playSocketServer.updateRoomStorage(currentCode, "teamMoveClients", "object-set-key", thisPlayer.teamIndex, [...current, clientId]);
+        }
+
+        // Check if a move is already prepared, or if they are the initiator
+        const entry = moveTokens[moveKey];
+        if (entry) {
+            if (entry.moveClientId === clientId) return res.status(400).json({ error: "Already waiting for teammate." });
+            addRoomStorageEntry();
+            return res.json({ create: true, moveKey, moveToken: entry.moveToken });
+        } else {
+            moveTokens[moveKey] = { moveToken: crypto.randomUUID(), roomId: currentCode, moveClientId: clientId };
+            addRoomStorageEntry();
+            return res.json({ create: false });
+        }
+    } catch (error) {
+        console.error('Error preparing team duel teammate move:', error);
+        return res.status(500).json({ error: 'Failed to prepare teammate move.' });
+    }
+});
+
+matchmakingRouter.post('/perform-move-team-duel-teammate', standardLimiter, async (req, res) => {
+    const { moveKey, moveToken, newRoomCode } = req.body;
+
+    try {
+        const move = moveTokens[moveKey];
+        if (!move) return res.status(400).json({ error: "Teammate has left & former room was destroyed." }); // Room destroyed means teammate must have left
+        if (move.moveToken !== moveToken) return res.status(403).json({ error: "Invalid move token." });
+
+        // Delete prepared move to avoid replaying
+        delete moveTokens[moveKey];
+
+        // Room is guaranteed to exist since the move would have been deleted if the room was destroyed
+        const participantToMove = playSocketServer.rooms[move.roomId].participants.includes(move.moveClientId);
+        if (!participantToMove) return res.status(400).json({ error: "Teammate is no longer in room." });
+
+        playSocketServer.move(move.moveClientId, newRoomCode);
+        return res.json({ message: "Teammate moved successfully." });
+    } catch (error) {
+        console.error("Error moving team duel teammate to new room:", error);
+        return res.status(500).json({ error: 'Failed to move teammate.' });
+    }
+});
+
+export function deleteRoomMoveTokens(roomId) {
+    Object.entries(moveTokens).forEach(([key, value]) => {
+        if (value.roomId === roomId) delete moveTokens[key];
+    });
+}
+
 // Safely cancel matchmaking by removing the room from the queue and destroying it
 // Clients use this instead of leaving directly, since leaving a room that was just matched (but not yet reflected client-side) would be a loss
 // Returns { removed } so the client knows whether cancellation succeeded or the game was already matched
