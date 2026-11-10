@@ -143,6 +143,15 @@ function attachPlaySocketEvents(server) {
         if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game";
         if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
+
+        // Check if this user had previously made a guess under a different client ID, if so, update it
+        // Done here (in -requested) so that when the player joins, the initial storage already points at the right client ID
+        const userId = authedMultiplayerClients.get(clientId);
+        const previousGuess = server.getRoomStorage(roomId)?.guesses?.find((g) => userId != null && g.userId === userId);
+        if (previousGuess) {
+            server.updateRoomStorage(roomId, "guesses", "array-update-matching", previousGuess, { ...previousGuess, clientId });
+            if (server.getRoomStorage(roomId)?.confirmedArray?.includes(previousGuess.clientId)) server.updateRoomStorage(roomId, "confirmedArray", "array-update-matching", previousGuess.clientId, clientId);
+        }
     });
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
@@ -169,9 +178,7 @@ function attachPlaySocketEvents(server) {
         if (key === "gameEnded") return false;
         if (key === "matchIndex") return false;
         if (key === "timeReducedOverlay") return false;
-        if (key === "guessLocationsArray") return false;
         if (key === "highestSupporterLevel") return false;
-        if (key === "confirmedArray") return false;
         if (key === "timerStart") return false;
         if (key === "overlay") return false;
         if (key === "location") return false;
@@ -187,10 +194,72 @@ function attachPlaySocketEvents(server) {
             if (value?.userId != null && value?.userId !== storage.players?.find((e) => e.clientId === clientId)?.userId) return "Chat user ID mismatch";
             if (value?.teamIndex != null && value?.teamIndex !== storage.players?.find((e) => e.clientId === clientId)?.teamIndex) return "Chat teamindex mismatch";
         }
+
+        if (key === "guesses") {
+            const player = storage.players?.find((e) => e.clientId === clientId);
+            const existingGuess = storage.guesses?.find((e) => e.clientId === clientId);
+            const guess = type === "array-update-matching" ? secondValue : value;
+
+            if (!player) return "Player not found";
+            if (!storage.timerStart) return "Round not active";
+            if (type !== "array-add" && type !== "array-update-matching") return "Invalid guess update type";
+            if (type === "array-add" && existingGuess) return "Client already has guess";
+            if (type === "array-update-matching" && value?.clientId !== clientId) return "Cannot update guess from different client";
+            if (existingGuess?.scoreAdded) return "Score already added"; // If a score was added for this round, the guess can't be changed again
+            if (storage.confirmedArray?.includes(clientId)) return "Already locked in (confirmed) another guess";
+
+            if (guess?.clientId !== clientId) return "Invalid guess client ID";
+            if (guess?.userId !== player.userId) return "Guess user ID mismatch";
+            if (guess?.username !== player.username) return "Guess username mismatch";
+            if (guess?.pin !== player.pin) return "Guess pin mismatch";
+            if (guess?.teamIndex !== player.teamIndex) return "Guess team mismatch";
+            if (guess?.scoreAdded !== false) return "Invalid guess scoreAdded value";
+            if (!Number.isFinite(guess?.lat) || !Number.isFinite(guess?.lon)) return "Invalid guess coordinates";
+        }
+
+        if (key === "confirmedArray") {
+            if (type !== "array-add-unique" || value !== clientId) return "Can only confirm own guess";
+            if (!storage.timerStart) return "Round not active"; // Ignore late-arriving confirmations (they'd count for the next round)
+            if (!storage.guesses?.some((g) => g.clientId === clientId)) return "No guess placed";
+            if (storage.confirmedArray?.includes(clientId)) return "Already confirmed";
+        }
+
         if (key === "showResult" && (type !== "set" || value !== false)) return false;
 
         // React to update before it has happened & ensure showResult was previously true (and not already false)
         if (key === "showResult" && value === false && storage.showResult === true) goToNextRound(roomId);
+    });
+
+    server.onEvent("storageUpdated", ({ roomId, clientId, update }) => {
+        const { key } = server.getUpdateDetails(update);
+
+        if (key === "confirmedArray") {
+            if (!clientId) return; // Server-authored update
+
+            // Time reduced overlay
+            const remainingTimerTime = server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp); // In ms
+
+            // Show the time reduced overlay if there are more than 3s left in the round, otherwise it would just be distraction
+            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length === 1 && remainingTimerTime > 3000) {
+                server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
+                if (remainingTimerTime > 15_000) {
+                    server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
+                    if (roomTimer.isRunning(roomId)) roomTimer.adjust(roomId, 15_000);
+                    else {
+                        // For rooms without a timer, start one
+                        roomTimer.set(roomId, 15_000, () => {
+                            endRound(roomId);
+                        });
+                    }
+                }
+
+                // Wait shortly, hide overlay
+                setRoomTimeout(roomId, () => server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false), 2000);
+            }
+
+            // Check if all guesses are in (which immediately ends the round)
+            endRoundIfAllPlayersGuessed(roomId);
+        }
     });
 
     server.onEvent("roomCreationRequested", ({ clientId, initialStorage }) => {
@@ -254,11 +323,21 @@ function attachPlaySocketEvents(server) {
         }
 
         if (name === 'addToScore') {
+            if (!Number.isFinite(data)) return "Invalid score value";
             const storage = server.getRoomStorage(roomId);
+
+            // Get player
             const players = storage?.players;
             const player = players?.find(p => p.clientId === clientId);
             if (!player) return "Player not found"; // Bail if player doesn't exist
-            if (!Number.isFinite(data)) return "Invalid score value";
+
+            // Get guess (& mark score as added)
+            const guess = storage.guesses?.find(g => g.clientId === clientId);
+            if (!guess) return "No guess from client found";
+            if (guess.scoreAdded) return "Score already added";
+            server.updateRoomStorage(roomId, "guesses", "array-update-matching", guess, { ...guess, scoreAdded: true });
+
+            // Add and calc score
             if (storage?.style == "duel" && storage?.currentRound >= 4) data = Math.round(data * 1.5); // Duel multiplier for last 2 rounds
             const newPlayer = { ...player };
             newPlayer.score += data;
@@ -292,56 +371,10 @@ function attachPlaySocketEvents(server) {
             if (!server.getRoomStorage(roomId).gameStarted) startRoom(roomId);
         }
 
-        if (name === 'confirmGuess') {
-            // Ignore confirmations while no round is active - the confirmed array is cleared on round end (right when the timer stops, and timerStart is set to null)
-            // and the confirmation would falsely count for the next round if it were allowed here
-            if (!server.getRoomStorage(roomId)?.timerStart) return;
-            server.updateRoomStorage(roomId, "confirmedArray", "array-add-unique", clientId);
-
-            // Time reduced overlay
-            const remainingTimerTime = server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp); // In ms
-
-            // Show the time reduced overlay if there are more than 3s left in the round, otherwise it would just be distraction
-            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length === 1 && remainingTimerTime > 3000) {
-                server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
-                if (remainingTimerTime > 15_000) {
-                    server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
-                    if (roomTimer.isRunning(roomId)) roomTimer.adjust(roomId, 15_000);
-                    else {
-                        // For rooms without a timer, start one
-                        roomTimer.set(roomId, 15_000, () => {
-                            endRound(roomId);
-                        });
-                    }
-                }
-
-                // Wait shortly, hide overlay
-                setRoomTimeout(roomId, () => {
-                    try {
-                        server.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
-                    } catch (error) {
-                        console.error(`Error hiding timeReducedOverlay:`, error);
-                    }
-                }, 2000);
-            }
-
-            // Check if all guesses are in (which immediately ends the round)
-            endRoundIfAllPlayersGuessed(roomId);
-        }
-
         if (name === 'rematch') {
             if (server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return "Tournament or matchmaking rooms disallow rematches";
             if (clientId !== server.rooms[roomId]?.host) return "Must be room host";
             if (server.getRoomStorage(roomId)?.gameEnded) rematch(roomId);
-        }
-
-        if (name === 'addGuessMarker') {
-            if (typeof data.lat !== "number" || typeof data.lon !== "number") return "Invalid coordinate values";
-            const player = server.getRoomStorage(roomId).players?.find((e) => e.clientId === clientId);
-            if (!player) return "Player not found";
-            const existingMarkerElement = server.getRoomStorage(roomId)?.guessLocationsArray?.find((e) => e.id === clientId);
-            if (existingMarkerElement) server.updateRoomStorage(roomId, "guessLocationsArray", "array-remove-matching", existingMarkerElement)
-            server.updateRoomStorage(roomId, "guessLocationsArray", "array-add-unique", { id: clientId, lat: data.lat, lon: data.lon, username: player.username, pin: player.pin, team: player.teamIndex });
         }
 
         if (name === "setRoomLock") {
@@ -415,8 +448,8 @@ function goToNextRound(roomId) {
     try {
         // Persist the round for division rooms
         if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && playSocketServer.getRoomStorage(roomId)?.currentRound > 0) {
-            const guesses = (playSocketServer.getRoomStorage(roomId)?.guessLocationsArray || []).map((g) => {
-                const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.clientId === g.id);
+            const guesses = (playSocketServer.getRoomStorage(roomId)?.guesses || []).map((g) => {
+                const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.clientId === g.clientId);
                 return { userId: player?.userId ?? null, username: g.username, lat: g.lat, lon: g.lon, totalPoints: player?.score || 0 };
             });
             const roundData = {
@@ -427,7 +460,7 @@ function goToNextRound(roomId) {
             saveDuelRoundResults(playSocketServer.getRoomStorage(roomId)?.duelUuid, roundData);
         }
 
-        playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", []); // Reset guesses
+        playSocketServer.updateRoomStorage(roomId, "guesses", "set", []); // Reset guesses
         playSocketServer.updateRoomStorage(roomId, "overlay", "set", true);
 
         // Reset every team's roundBest for the new round
@@ -474,7 +507,7 @@ function goToNextRound(roomId) {
 
 function endRoundIfAllPlayersGuessed(roomId) {
     if (playSocketServer.getRoomStorage(roomId)?.players?.length < 1) return; // Room doesn't exist or lacks added players
-    if (playSocketServer.getRoomStorage(roomId)?.confirmedArray?.length >= playSocketServer.getRoomStorage(roomId)?.players?.length && !playSocketServer.getRoomStorage(roomId)?.showResult) {
+    if (playSocketServer.getRoomStorage(roomId)?.players?.every((p) => playSocketServer.getRoomStorage(roomId)?.confirmedArray?.includes(p.clientId)) && !playSocketServer.getRoomStorage(roomId)?.showResult) {
         roomTimer.stop(roomId);
         endRound(roomId);
     }
@@ -487,12 +520,12 @@ function endRound(roomId) {
 
         // If any players have no guess submitted, add 0, 0 as the guess
         const players = playSocketServer.getRoomStorage(roomId)?.players;
-        const guessArray = playSocketServer.getRoomStorage(roomId)?.guessLocationsArray;
+        const guessArray = playSocketServer.getRoomStorage(roomId)?.guesses;
         players?.forEach((p) => {
-            const correspondingGuess = guessArray?.find((g) => (g.id === p.clientId));
-            if (!correspondingGuess) guessArray.push({ id: p.clientId, lat: 0, lon: 0, username: p.username, pin: p.pin, team: p.teamIndex });
+            const correspondingGuess = guessArray?.find((g) => (g.clientId === p.clientId));
+            if (!correspondingGuess) guessArray.push({ clientId: p.clientId, userId: p.userId, lat: 0, lon: 0, username: p.username, pin: p.pin, teamIndex: p.teamIndex, scoreAdded: false });
         });
-        playSocketServer.updateRoomStorage(roomId, "guessLocationsArray", "set", guessArray);
+        playSocketServer.updateRoomStorage(roomId, "guesses", "set", guessArray);
 
         playSocketServer.updateRoomStorage(roomId, "showResult", "set", true);
         playSocketServer.updateRoomStorage(roomId, "confirmedArray", "set", []);
@@ -644,7 +677,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.disconnectedPlayers = [];
     storage.currentRound = 0;
     storage.location = null;
-    storage.guessLocationsArray = []; // Guesses from players (with location data)
+    storage.guesses = []; // Guesses from players (with location data)
     storage.confirmedArray = []; // Client IDs that have confirmed their guess
     storage.duelUuid = crypto.randomUUID();
     storage.firstRoundPlayed = false; // Resets with rematch
