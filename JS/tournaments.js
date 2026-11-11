@@ -231,7 +231,7 @@ async function updateTournament(id, status = null, winnerId = null, winnerName =
 
 async function startTournament(tournamentId, map) {
     try {
-        const roomStorage = reviewAndConstructInitialRoomStorage("server", {
+        const roomStorage = reviewAndConstructInitialRoomStorage(null, {
             roundAmount: 5,
             roundLength: 60,
             category: map,
@@ -254,7 +254,7 @@ async function startTournament(tournamentId, map) {
             if (minutes > 0 && seconds > 0) timeString = `${minutes} minutes and ${seconds} seconds`;
             else if (minutes > 0) timeString = `${minutes} minute${minutes > 1 ? 's' : ''}`;
             else timeString = `${seconds} seconds`;
-            addChat(roomId, { username: "Server", clientId: "server", text: `Starting tournament in ${timeString}.` });
+            addChat(roomId, { username: "Server", clientId: null, text: `Starting tournament in ${timeString}.` });
         }, 30 * 1000);
 
         setTimeout(async () => {
@@ -331,7 +331,7 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
         // If room is empty (e.g. all non-spectator participants left) close as a failsave
         if (!playerArrayWithoutSpectators?.length) {
             console.log(`Tournament ${tournamentId}: No active participants remaining (playerArray: ${JSON.stringify(playerArray)}, playerArrayWithoutSpectators: ${JSON.stringify(playerArrayWithoutSpectators)}), ending tournament!`);
-            addChat(roomId, { username: "Server", clientId: "server", text: "No active tournament participants – room closing in 1 minute." });
+            addChat(roomId, { username: "Server", clientId: null, text: "No active tournament participants – room closing in 1 minute." });
             endTournament(tournamentId, roomId);
             return;
         }
@@ -371,7 +371,7 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
             });
 
             // Schedule room close
-            addChat(roomId, { username: "Server", clientId: "server", text: "Tournament over – room closing in 1 minute." });
+            addChat(roomId, { username: "Server", clientId: null, text: "Tournament over – room closing in 1 minute." });
             endTournament(tournamentId, roomId, winner.userId, winner.username);
 
             // Give winner the prize
@@ -409,7 +409,7 @@ export async function processTournamentMatchResults(roomId, tournamentId) {
             sendEventToClient(winner.userId, { type: 'tournament-won', tokenGain, supporterTier });
         } else {
             // Start a new match
-            addChat(roomId, { username: "Server", clientId: "server", text: "Next match starting in 10s." });
+            addChat(roomId, { username: "Server", clientId: null, text: "Next match starting in 10s." });
             setTimeout(() => {
                 rematch(roomId);
             }, 10000);

@@ -55,11 +55,14 @@ export async function initPlaySocket(httpServer) {
 
 const clientTokens = new Map(); // Client ID -> client token
 const authedMultiplayerClients = new Map(); // Client ID -> User ID (a user can have several clients, e.g. when playing on multiple devices)
+const guestNames = new Map(); // Client ID -> guest name (for unauthenticated clients)
 
 function attachPlaySocketEvents(server) {
     playSocketServer = server; // Assign server
 
     server.onEvent("clientRegistrationRequested", async (clientId, data) => {
+        let userId = null;
+
         // Authenticated users carry a bearer in the registration custom data
         if (data?.bearer) {
             try {
@@ -70,21 +73,31 @@ function attachPlaySocketEvents(server) {
                     });
                 });
                 if (!decoded?.userId) return "The authentication token lacks a user ID";
-                const userId = Number(decoded.userId);
+                userId = Number(decoded.userId);
 
                 // Fetch OpenReport status
                 const banStatus = await fetchReportData("blacklist", "user", "user-" + userId);
                 if (banStatus?.listed) return `You are banned for "${banStatus?.entry?.reason}" until ${new Date(banStatus?.entry?.expires_at)?.toLocaleDateString() || "forever"} – If you need help, please contact the moderators via Discord`;
 
-                // Store auth mapping after successful validation
-                authedMultiplayerClients.set(clientId, userId);
-
             } catch (error) {
                 return "An error occurred decoding the authentication token";
             }
         }
+
+        return { ...data, userId }; // Update the customData to pass the verified user ID on to clientRegistered
+    });
+
+    server.onEvent("clientRegistered", (clientId, data) => {
+        if (data.userId != null) authedMultiplayerClients.set(clientId, data.userId);
+
         // All clients carry a clientToken so that guests can prove they own that client ID
         if (data?.clientToken && typeof data?.clientToken === "string" && data?.clientToken.length <= 64) clientTokens.set(clientId, data.clientToken);
+
+        // Sanitize guest name
+        if (typeof data?.guestName === "string") {
+            const guestName = censor(data.guestName.trim()).slice(0, 30);
+            if (guestName.length >= 3) guestNames.set(clientId, guestName);
+        }
     });
 
     server.onEvent("clientLeftRoom", async (clientId, roomId) => {
@@ -93,18 +106,14 @@ function attachPlaySocketEvents(server) {
         if (player) {
             // Remove player from room storage
             server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
-            addChat(roomId, { username: "Server", clientId: "server", text: `${player?.username || "Unknown"} left.` });
+            addChat(roomId, { username: "Server", clientId: null, text: `${player?.username || "Unknown"} left.` });
 
-            // Update disconnected players array if player was authenticated & game is ongoing
-            // Old client ID is only there to keep each entry unique, only the score is saved, other values like teamIndex or spectator could change while player is disconnected
+            // Save the score if player was authenticated & game is ongoing, so it can be restored when they re-join
             const gameEndedAndResultClosed = server.getRoomStorage(roomId)?.gameEnded && !server.getRoomStorage(roomId)?.showResult;
-            if (player.userId != null && !gameEndedAndResultClosed) server.updateRoomStorage(roomId, "disconnectedPlayers", "array-add", { oldClientId: player.clientId, userId: player.userId, score: player.score });
+            if (player.userId != null && !gameEndedAndResultClosed) server.updateRoomStorage(roomId, "disconnectedScores", "object-set-key", player.userId, player.score);
 
             // Update highest supporter level
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
-
-            // Check if all players now have confirmed guesses
-            endRoundIfAllPlayersGuessed(roomId);
 
             // Remove client from teamMoveClients
             const clients = server.getRoomStorage(roomId)?.teamMoveClients;
@@ -113,6 +122,9 @@ function attachPlaySocketEvents(server) {
                 server.updateRoomStorage(roomId, "teamMoveClients", "object-set-key", teamIndex, clients[teamIndex].filter(c => c !== clientId));
             }
         }
+
+        // Check if all remaining participants have confirmed guesses
+        endRoundIfAllPlayersGuessed(roomId);
 
         // Process division duel if user was in one
         if (authedMultiplayerClients.has(clientId)) {
@@ -137,6 +149,7 @@ function attachPlaySocketEvents(server) {
     server.onEvent("clientDisconnected", async (clientId) => {
         authedMultiplayerClients.delete(clientId);
         clientTokens.delete(clientId);
+        guestNames.delete(clientId);
     });
 
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
@@ -144,14 +157,68 @@ function attachPlaySocketEvents(server) {
         if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
         if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
 
-        // Check if this user had previously made a guess under a different client ID, if so, update it
-        // Done here (in -requested) so that when the player joins, the initial storage already points at the right client ID
         const userId = authedMultiplayerClients.get(clientId);
+
+        // Check room size limit (other clients by this user will be kicked on join & therefore don't count towards the limit)
+        let participantCount = 0;
+        server.rooms[roomId].participants.forEach((participantId) => {
+            if (userId == null || authedMultiplayerClients.get(participantId) !== userId) participantCount++;
+        });
+        if (participantCount >= 500) return "Room is full"; // 500 is the limit (for performance reasons)
+
+        // Update client IDs for room data linked to the same user ID (if the user ID matches)
         const previousGuess = server.getRoomStorage(roomId)?.guesses?.find((g) => userId != null && g.userId === userId);
         if (previousGuess) {
             server.updateRoomStorage(roomId, "guesses", "array-update-matching", previousGuess, { ...previousGuess, clientId });
-            if (server.getRoomStorage(roomId)?.confirmedArray?.includes(previousGuess.clientId)) server.updateRoomStorage(roomId, "confirmedArray", "array-update-matching", previousGuess.clientId, clientId);
+            if (server.getRoomStorage(roomId)?.confirmedGuessClients?.includes(previousGuess.clientId)) server.updateRoomStorage(roomId, "confirmedGuessClients", "array-update-matching", previousGuess.clientId, clientId);
         }
+    });
+
+    server.onEvent("clientJoinedRoom", async (clientId, roomId) => {
+        const userId = authedMultiplayerClients.get(clientId);
+
+        // Kick other clients of this user (e.g. another tab, the previous client pending reconnect after a page reload..), so their score gets saved for restoring it
+        if (userId != null) {
+            server.rooms[roomId].participants.forEach((participantId) => {
+                if (participantId !== clientId && authedMultiplayerClients.get(participantId) === userId) server.kick(participantId, "You joined this room from another session");
+            });
+        }
+
+        // Fetch user data if authenticated (proceed without user if account no longer exists)
+        const user = userId ? await getUser(userId) : null;
+        if (!server.rooms[roomId]?.participants?.includes(clientId)) return; // Client left the room during the async call
+
+        // Re-assign players and calculate team index AFTER async call to prevent race conditions
+        const currentPlayers = server.getRoomStorage(roomId)?.players || [];
+        const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
+        if (currentPlayers.find(p => p.clientId === clientId)) return;
+
+        // Assign team
+        let teamIndex = 0;
+        if (teamAmount > 1) {
+            if (server.getRoomStorage(roomId)?.matchmakingRoom) {
+                // For team duels: Fill team 0 up until two players, then team 1
+                teamIndex = Math.min(Math.floor(currentPlayers.length / 2), teamAmount - 1);
+            } else {
+                // For regular rooms: round-robin assignment
+                teamIndex = currentPlayers.length % teamAmount;
+            }
+        }
+
+        const playerData = user
+            ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, flag: user.flag ?? null, supporterLevel: user.supporter_level, spectator: false }
+            : { clientId, username: guestNames.get(clientId) || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, flag: null, supporterLevel: 0, spectator: false };
+
+        // Restore the score if this user was previously in this room
+        const disconnectedScore = user ? server.getRoomStorage(roomId)?.disconnectedScores?.[userId] : null;
+        if (disconnectedScore != null) {
+            playerData.score = disconnectedScore;
+            server.updateRoomStorage(roomId, "disconnectedScores", "object-remove-key", userId);
+        }
+
+        server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
+        server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
+        addChat(roomId, { username: "Server", clientId: null, text: `${playerData.username || "Unknown"} joined.` });
     });
 
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
@@ -169,7 +236,7 @@ function attachPlaySocketEvents(server) {
 
         // Block server-side-only game control updates
         if (key === "players") return false;
-        if (key === "disconnectedPlayers") return false;
+        if (key === "disconnectedScores") return false;
         if (key === "teamScores") return false;
         if (key === "countdownActive") return false;
         if (key === "currentRound") return false;
@@ -206,7 +273,7 @@ function attachPlaySocketEvents(server) {
             if (type === "array-add" && existingGuess) return "Client already has guess";
             if (type === "array-update-matching" && value?.clientId !== clientId) return "Cannot update guess from different client";
             if (existingGuess?.scoreAdded) return "Score already added"; // If a score was added for this round, the guess can't be changed again
-            if (storage.confirmedArray?.includes(clientId)) return "Already locked in (confirmed) another guess";
+            if (storage.confirmedGuessClients?.includes(clientId)) return "Already locked in (confirmed) another guess";
 
             if (guess?.clientId !== clientId) return "Invalid guess client ID";
             if (guess?.userId !== player.userId) return "Guess user ID mismatch";
@@ -217,11 +284,11 @@ function attachPlaySocketEvents(server) {
             if (!Number.isFinite(guess?.lat) || !Number.isFinite(guess?.lon)) return "Invalid guess coordinates";
         }
 
-        if (key === "confirmedArray") {
+        if (key === "confirmedGuessClients") {
             if (type !== "array-add-unique" || value !== clientId) return "Can only confirm own guess";
             if (!storage.timerStart) return "Round not active"; // Ignore late-arriving confirmations (they'd count for the next round)
             if (!storage.guesses?.some((g) => g.clientId === clientId)) return "No guess placed";
-            if (storage.confirmedArray?.includes(clientId)) return "Already confirmed";
+            if (storage.confirmedGuessClients?.includes(clientId)) return "Already confirmed";
         }
 
         if (key === "showResult" && (type !== "set" || value !== false)) return false;
@@ -233,14 +300,14 @@ function attachPlaySocketEvents(server) {
     server.onEvent("storageUpdated", ({ roomId, clientId, update }) => {
         const { key } = server.getUpdateDetails(update);
 
-        if (key === "confirmedArray") {
+        if (key === "confirmedGuessClients") {
             if (!clientId) return; // Server-authored update
 
             // Time reduced overlay
             const remainingTimerTime = server.getRoomStorage(roomId).timerStart?.length * 1000 - (Date.now() - server.getRoomStorage(roomId).timerStart?.timestamp); // In ms
 
             // Show the time reduced overlay if there are more than 3s left in the round, otherwise it would just be distraction
-            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedArray?.length === 1 && remainingTimerTime > 3000) {
+            if (server.getRoomStorage(roomId).style === "duel" && server.getRoomStorage(roomId).confirmedGuessClients?.length === 1 && remainingTimerTime > 3000) {
                 server.updateRoomStorage(roomId, "timeReducedOverlay", "set", true);
                 if (remainingTimerTime > 15_000) {
                     server.updateRoomStorage(roomId, "timerStart", "set", { timestamp: Date.now(), length: 15 }); // Reduce timer to 15s if it has longer than that remaining
@@ -269,58 +336,6 @@ function attachPlaySocketEvents(server) {
     // Handle requests
     server.onEvent("requestReceived", async ({ roomId, clientId, name, data }) => {
         if (!roomId) return;
-
-        if (name === 'addPlayer') {
-            const userId = authedMultiplayerClients.get(clientId);
-            const players = server.getRoomStorage(roomId)?.players || [];
-            if (players.find(p => p.clientId === clientId)) return; // First check if already exists
-
-            // Fetch user data if authenticated (proceed without user if account no longer exists)
-            let user = null;
-            if (userId) user = await getUser(userId);
-
-            // Re-fetch players and calculate team index AFTER async call to prevent race conditions
-            const currentPlayers = server.getRoomStorage(roomId)?.players || [];
-            const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
-            if (currentPlayers.find(p => p.clientId === clientId)) return; // If client is already present, exit (second check to prevent race condition)
-
-            let teamIndex = 0;
-            if (teamAmount > 1) {
-                if (server.getRoomStorage(roomId)?.matchmakingRoom) {
-                    // For matchmaking rooms: fill teams sequentially (team 0 first, then team 1, etc.)
-                    const roomSize = server.rooms[roomId]?.size || teamAmount;
-                    const teamSize = Math.floor(roomSize / teamAmount);
-                    teamIndex = Math.min(Math.floor(currentPlayers.length / teamSize), teamAmount - 1);
-                } else {
-                    // For regular rooms: round-robin assignment
-                    teamIndex = currentPlayers.length % teamAmount;
-                }
-            }
-
-            // Sanitize the guest name, as it is client-provided and shown to strangers in matchmaking (censoring mirrors the client's guest name picker, min 3 & max 30 chars)
-            let guestName = typeof data?.guestName === "string" ? censor(data.guestName).replace(/\s+/g, " ").trim().slice(0, 30).trim() : null;
-            if (guestName?.length < 3) guestName = null;
-
-            const playerData = user
-                ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, flag: user.flag ?? null, supporterLevel: user.supporter_level, spectator: false }
-                : { clientId, username: guestName || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, flag: null, supporterLevel: 0, spectator: false };
-
-            // Check if authed player was previously in this room, if so, restore data
-            if (user) {
-                const disconnectedPlayers = server.getRoomStorage(roomId)?.disconnectedPlayers;
-                const disconnectedPlayer = disconnectedPlayers?.find((e) => e.userId === userId);
-
-                // Apply saved score if available
-                if (disconnectedPlayer) {
-                    playerData.score = disconnectedPlayer.score;
-                    server.updateRoomStorage(roomId, "disconnectedPlayers", "array-remove-matching", disconnectedPlayer); // Then, delete disconnected entry
-                }
-            }
-
-            server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
-            addChat(roomId, { username: "Server", clientId: "server", text: `${playerData.username || "Unknown"} joined.` });
-            server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
-        }
 
         if (name === 'addToScore') {
             if (!Number.isFinite(data)) return "Invalid score value";
@@ -387,6 +402,7 @@ function attachPlaySocketEvents(server) {
         if (name === "kickClient") {
             if (server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return "Cannot kick player from matchmaking or tournament rooms";
             if (clientId !== server.rooms[roomId]?.host) return "Must be room host";
+            if (!server.rooms[roomId].participants.includes(data)) return "Player not in same room";
             server.kick(data, "Removed by host");
         }
     });
@@ -490,9 +506,8 @@ function goToNextRound(roomId) {
             // Tournament match evaluation
             if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) processTournamentMatchResults(roomId, playSocketServer.getRoomStorage(roomId)?.tournamentId);
 
-            // Reset disconnected player data
-            const disconnectedPlayers = playSocketServer.getRoomStorage(roomId)?.disconnectedPlayers;
-            if (disconnectedPlayers && disconnectedPlayers.length) playSocketServer.updateRoomStorage(roomId, "disconnectedPlayers", "set", []);
+            // Reset persisted disconnected player's scores
+            if (Object.keys(playSocketServer.getRoomStorage(roomId)?.disconnectedScores || {}).length) playSocketServer.updateRoomStorage(roomId, "disconnectedScores", "set", {});
 
         } else {
             // If the game has not ended, continue with next round
@@ -506,8 +521,8 @@ function goToNextRound(roomId) {
 }
 
 function endRoundIfAllPlayersGuessed(roomId) {
-    if (playSocketServer.getRoomStorage(roomId)?.players?.length < 1) return; // Room doesn't exist or lacks added players
-    if (playSocketServer.getRoomStorage(roomId)?.players?.every((p) => playSocketServer.getRoomStorage(roomId)?.confirmedArray?.includes(p.clientId)) && !playSocketServer.getRoomStorage(roomId)?.showResult) {
+    if (playSocketServer.rooms[roomId]?.participants?.length < 1) return; // Room is empty
+    if (playSocketServer.rooms[roomId]?.participants?.every((clientId) => playSocketServer.getRoomStorage(roomId)?.confirmedGuessClients?.includes(clientId))) {
         roomTimer.stop(roomId);
         endRound(roomId);
     }
@@ -528,7 +543,7 @@ function endRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "guesses", "set", guessArray);
 
         playSocketServer.updateRoomStorage(roomId, "showResult", "set", true);
-        playSocketServer.updateRoomStorage(roomId, "confirmedArray", "set", []);
+        playSocketServer.updateRoomStorage(roomId, "confirmedGuessClients", "set", []);
 
         // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
         if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
@@ -559,7 +574,7 @@ async function startRound(roomId) {
     try {
         // Abort start if no locations are available (e.g. map doesn't exist but user client is outdated - edge case)
         if (!location) {
-            addChat(roomId, { username: "Server", clientId: "server", text: "Couldn't load a location for this map." });
+            addChat(roomId, { username: "Server", clientId: null, text: "Couldn't load a location for this map." });
             return;
         }
 
@@ -567,7 +582,7 @@ async function startRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "location", "set", location);
         playSocketServer.updateRoomStorage(roomId, "countdownActive", "set", true);
         playSocketServer.updateRoomStorage(roomId, "currentRound", "set", (playSocketServer.getRoomStorage(roomId).currentRound || 0) + 1);
-        addChat(roomId, { username: "Server", clientId: "server", text: `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.` });
+        addChat(roomId, { username: "Server", clientId: null, text: `Starting round ${playSocketServer.getRoomStorage(roomId).currentRound}.` });
     } catch (error) {
         console.error("Error starting round:", error);
     }
@@ -643,7 +658,6 @@ function validateMatchmakingRoomStorage(roomId) {
 export function validateDivisionDuelRoom(roomId) {
     if (!validateMatchmakingRoomStorage(roomId)) return false;
     if (playSocketServer.getRoomStorage(roomId)?.teamAmount !== 1) return false;
-    if (playSocketServer.rooms[roomId]?.size !== 2) return false;
     if (playSocketServer.rooms[roomId]?.participants?.length !== 1) return false;
     return true;
 }
@@ -651,7 +665,6 @@ export function validateDivisionDuelRoom(roomId) {
 export function validateTeamDuelRoom(roomId) {
     if (!validateMatchmakingRoomStorage(roomId)) return false;
     if (playSocketServer.getRoomStorage(roomId)?.teamAmount !== 2) return false;
-    if (playSocketServer.rooms[roomId]?.size !== 4) return false;
     if (playSocketServer.rooms[roomId]?.participants?.length > 2) return false;
     return true;
 }
@@ -671,19 +684,19 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (!["none", "nmpz", "grayscale", "invert", "hue", "fade"].includes(storage.restriction)) storage.restriction = "none";
     if (typeof storage.map !== "string") storage.map = "World";
     if (typeof storage.matchmakingRoom !== "boolean") storage.matchmakingRoom = false;
-    if (requestorClientId !== "server") storage.tournamentRoom = false;
-    if (requestorClientId !== "server") storage.tournamentId = null;
-    storage.players = []; // Ensure initial players array is empty
-    storage.disconnectedPlayers = [];
+    if (requestorClientId != null) storage.tournamentRoom = false; // Server-created rooms pass null
+    if (requestorClientId != null) storage.tournamentId = null;
+    storage.players = [];
+    storage.disconnectedScores = {};
     storage.currentRound = 0;
     storage.location = null;
     storage.guesses = []; // Guesses from players (with location data)
-    storage.confirmedArray = []; // Client IDs that have confirmed their guess
+    storage.confirmedGuessClients = []; // Client IDs that have confirmed their guess
     storage.duelUuid = crypto.randomUUID();
     storage.firstRoundPlayed = false; // Resets with rematch
     storage.chats = [];
     storage.overlay = true;
-    storage.timeReducedOverlay = false; // Duel "Opponent has guessed" overlay
+    storage.timeReducedOverlay = false;
     storage.showResult = false;
     storage.gameStarted = false; // Stays always true after the initial start
     storage.gameEnded = false;

@@ -139,7 +139,7 @@ setInterval(() => {
                 const [targetRoom, roomToEmpty] = opponentRoom.createdAt <= requestingRoom.createdAt ? [opponentRoom, requestingRoom] : [requestingRoom, opponentRoom];
 
                 // Move everyone over (typically in a division duel only one player)
-                const participantsToMove = [...playSocketServer.rooms[roomToEmpty.code].participants];
+                const participantsToMove = playSocketServer.rooms[roomToEmpty.code].participants;
                 participantsToMove.forEach((clientId) => {
                     playSocketServer.move(clientId, targetRoom.code);
                 });
@@ -162,13 +162,10 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
         if (!requestingRoom) return res.status(400).json({ error: 'There is no team-duel room in the matchmaking queue matching that room code.' });
         if (requestingRoom.clientToken !== clientToken) return res.status(400).json({ error: 'Client token mismatch.' });
 
-        const roomCapacity = playSocketServer.rooms[code].size;
-        const teamAmount = playSocketServer.getRoomStorage(code)?.teamAmount || 2;
-        const maxPlayersPerTeam = Math.floor(roomCapacity / teamAmount);
         const requestingRoomPlayerCount = playSocketServer.rooms[code].participants.length;
 
         // Validate that this room doesn't have more players than allowed per team
-        if (requestingRoomPlayerCount > maxPlayersPerTeam) return res.status(400).json({ error: 'Room has too many players for matchmaking.' });
+        if (requestingRoomPlayerCount > 2) return res.status(400).json({ error: 'Room cannot start with more than 2 players for matchmaking.' });
 
         // Get all team-duel rooms with their current player counts
         const teamDuelRooms = matchmakingRoomCodes
@@ -187,14 +184,14 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
         const roomsToMerge = [];
         let currentPlayerCount = requestingRoomPlayerCount;
         for (const room of otherRooms) {
-            if (currentPlayerCount + room.playerCount > roomCapacity) continue; // Skip rooms that would exceed target (safety check, technically not possible with 2 vs. 2)
+            if (currentPlayerCount + room.playerCount > 4) continue; // Skip room merges that would exceed 4 players (e.g. 1 + 2 + 2)
             roomsToMerge.push(room);
             currentPlayerCount += room.playerCount;
-            if (currentPlayerCount === roomCapacity) break;
+            if (currentPlayerCount === 4) break; // Full 2v2
         }
 
         // If we can't form a valid match, return not found
-        if (currentPlayerCount !== roomCapacity) return res.json({ matched: false });
+        if (currentPlayerCount !== 4) return res.json({ matched: false });
 
         // Determine the largest room (target room where everyone moves to)
         const allRoomsInMatch = [{ ...requestingRoom, playerCount: requestingRoomPlayerCount }, ...roomsToMerge];
@@ -204,7 +201,7 @@ matchmakingRouter.post('/find-team-duel', standardLimiter, async (req, res) => {
 
         // Move all players from smaller rooms into target room
         for (const room of roomsToEmpty) {
-            const participants = [...playSocketServer.rooms[room.code].participants]; // Copy (since move() mutates the array)
+            const participants = playSocketServer.rooms[room.code].participants; // (rooms returns a clone, this doesn't mutate)
             for (const clientId of participants) {
                 playSocketServer.move(clientId, targetRoom.code); // All players get moved out -> room destroyed -> room gets removed from matchmaking
             }
