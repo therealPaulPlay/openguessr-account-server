@@ -403,6 +403,30 @@ matchmakingRouter.get('/matchmaking-rooms-player-amount', standardLimiter, cache
     }
 });
 
+matchmakingRouter.post('/can-rejoin', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { oldClientId, code } = req.body;
+    if (oldClientId == null || !code) return res.status(400).json({ error: "Old client ID and room code are required." });
+
+    try {
+        // Check if room exists
+        const room = playSocketServer.rooms[code];
+        if (!room) return res.json({ rejoinable: false });
+
+        // Check if room has more participants than just the old client
+        if (room.participants.length === 1 && room.participants.includes(oldClientId)) return res.json({ rejoinable: false });
+
+        // Check if room is open to joiners
+        const storage = playSocketServer.getRoomStorage(code);
+        if (storage.locked || (storage.tournamentRoom && storage.gameStarted)) return res.json({ rejoinable: false });
+
+        res.json({ rejoinable: true });
+
+    } catch (error) {
+        console.error("Error checking if room is rejoinable:", error);
+        return res.status(500).json({ error: "Failed to check if room can be rejoined." });
+    }
+});
+
 // Webhook for OpenReport – kick banned players out of multiplayer immediately
 matchmakingRouter.post('/openreport-webhook', standardLimiter, async (req, res) => {
     const signature = req.headers['x-webhook-signature'];
