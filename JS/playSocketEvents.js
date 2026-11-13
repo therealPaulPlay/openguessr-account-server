@@ -3,12 +3,12 @@ import { getClientIp } from './clientIp.js';
 import { fetchReportData } from './reportFetch.js';
 import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
-import saveDivisionDuelResult from './processDivisionResult.js';
+import { processDivisionDuelMatchResults as processDivisionDuelResult, processDivisionDuelAbandon } from './processDivisionResult.js';
 import { saveDuelRoundResults } from './dbWriteHelpers.js';
 import { jwtSecret as SECRET_KEY } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
-import { processTournamentMatchResults } from './tournaments.js';
+import { processTournamentMatchResult } from './tournaments.js';
 import { deleteMatchmakingRoom, deleteRoomMoveTokens } from './matchmaking.js';
 import { censor } from 'fast-profanity-filter';
 
@@ -104,13 +104,12 @@ function attachPlaySocketEvents(server) {
         const players = server.getRoomStorage(roomId)?.players;
         const player = players?.find(p => p.clientId === clientId);
         if (player) {
-            // Remove player from room storage
-            server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
+            // Authenticated players stay (as disconnected) so they can rejoin, guests and players that left a matchmaking or tournament game before its start are removed
+            // Players that disconnected are only shown for the match they took part in - if they left before gameStarted or after a rematch, they are hidden
+            const leftBeforeAutoStart = !server.getRoomStorage(roomId).gameStarted && (server.getRoomStorage(roomId).matchmakingRoom || server.getRoomStorage(roomId).tournamentRoom);
+            if (player.userId != null && !leftBeforeAutoStart) server.updateRoomStorage(roomId, "players", "array-update-matching", player, { ...player, clientId: null, disconnected: true, hidden: !server.getRoomStorage(roomId).gameStarted }); // Client ID is cleared since another client could register with it
+            else server.updateRoomStorage(roomId, "players", "array-remove-matching", player);
             addChat(roomId, { username: "Server", clientId: null, text: `${player?.username || "Unknown"} left.` });
-
-            // Save the score if player was authenticated & game is ongoing, so it can be restored when they re-join
-            const gameEndedAndResultClosed = server.getRoomStorage(roomId)?.gameEnded && !server.getRoomStorage(roomId)?.showResult;
-            if (player.userId != null && !gameEndedAndResultClosed) server.updateRoomStorage(roomId, "disconnectedScores", "object-set-key", player.userId, player.score);
 
             // Update highest supporter level
             server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
@@ -126,24 +125,23 @@ function attachPlaySocketEvents(server) {
         // Check if all remaining participants have confirmed guesses
         endRoundIfAllPlayersGuessed(roomId);
 
-        // Process division duel if user was in one
-        if (authedMultiplayerClients.has(clientId)) {
-            const userId = authedMultiplayerClients.get(clientId);
+        // Process division duel if user was in an ongoing one
+        const userId = authedMultiplayerClients.get(clientId);
+        if (userId != null && server.getRoomStorage(roomId).divisionRoom && server.getRoomStorage(roomId).gameStarted && !server.getRoomStorage(roomId).divisionDuelProcessed) {
+            // Inform opponent if they stay disconnected (delayed to avoid printing this page reload)
+            roomTimer.set(roomId, 3_000, () => {
+                if (!server.getRoomStorage(roomId).divisionDuelProcessed) addChat(roomId, { username: "Server", clientId: null, text: "If they don't return within 30s, the game ends." });
+            }, "division-abandon-info-" + userId);
 
-            // Process the result if in ongoing duel room
-            if (userId && server.rooms[roomId] && !server.getRoomStorage(roomId).duelProcessed && server.getRoomStorage(roomId).gameStarted && server.getRoomStorage(roomId).divisionRoom) {
-                const players = server.getRoomStorage(roomId).players;
-
-                // If one other player is still in the room, that means this client left first and should lose
-                if (players.length === 1) {
-                    const otherPlayerUserId = players[0]?.userId;
-                    if (otherPlayerUserId != null) {
-                        server.updateRoomStorage(roomId, "duelProcessed", "set", true);
-                        saveDivisionDuelResult(server.getRoomStorage(roomId).duelUuid, otherPlayerUserId, userId);
-                    }
-                }
-            }
+            // The player loses if they don't return within 30s (rejoining aborts this timer)
+            roomTimer.set(roomId, 30_000, () => {
+                if (!server.getRoomStorage(roomId).divisionDuelProcessed) processDivisionDuelAbandon(roomId, userId); // Skip if game ended or the opponent's timer ran out beforehand
+                if (server.rooms[roomId].participants.length === 0) server.destroyRoom(roomId); // If the room is now empty, destroy
+            }, "division-rejoin-" + userId);
         }
+
+        // Destroy the duel room after it has been processed and everyone left (division duel rooms are server-created & need manual cleanup)
+        if (server.getRoomStorage(roomId).divisionDuelProcessed && server.rooms[roomId].participants.length === 0) server.destroyRoom(roomId);
     });
 
     server.onEvent("clientDisconnected", async (clientId) => {
@@ -153,11 +151,14 @@ function attachPlaySocketEvents(server) {
     });
 
     server.onEvent("clientJoinRequested", (clientId, roomId) => {
-        if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && !authedMultiplayerClients.has(clientId)) return "You need to be authenticated to participate in this game";
-        if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
-        if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
-
         const userId = authedMultiplayerClients.get(clientId);
+
+        // Returning players can always rejoin
+        if (!isReturningPlayer(roomId, userId)) {
+            if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && userId == null) return "You need to be authenticated to participate in this game";
+            if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
+            if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
+        }
 
         // Check room size limit (other clients by this user will be kicked on join & therefore don't count towards the limit)
         let participantCount = 0;
@@ -177,11 +178,13 @@ function attachPlaySocketEvents(server) {
     server.onEvent("clientJoinedRoom", async (clientId, roomId) => {
         const userId = authedMultiplayerClients.get(clientId);
 
-        // Kick other clients of this user (e.g. another tab, the previous client pending reconnect after a page reload..), so their score gets saved for restoring it
+        // Kick other clients of this user, like another tab or the old client after a reload, so this client takes over their player entry
         if (userId != null) {
             server.rooms[roomId].participants.forEach((participantId) => {
                 if (participantId !== clientId && authedMultiplayerClients.get(participantId) === userId) server.kick(participantId, "You joined this room from another session");
             });
+            roomTimer.stop(roomId, "division-rejoin-" + userId); // Cancel the 30s rejoin grace period
+            roomTimer.stop(roomId, "division-abandon-info-" + userId);
         }
 
         // Fetch user data if authenticated (proceed without user if account no longer exists)
@@ -193,28 +196,31 @@ function attachPlaySocketEvents(server) {
         const teamAmount = server.getRoomStorage(roomId)?.teamAmount;
         if (currentPlayers.find(p => p.clientId === clientId)) return;
 
-        // Assign team
+        // A returning player continues with their previous entry (score, team & spectator state)
+        const previousPlayer = user ? currentPlayers.find((p) => p.userId === userId) : null;
+        if (previousPlayer) {
+            server.updateRoomStorage(roomId, "players", "array-update-matching", previousPlayer, { ...previousPlayer, clientId, disconnected: false, hidden: false });
+            server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
+            addChat(roomId, { username: "Server", clientId: null, text: `${previousPlayer.username || "Unknown"} joined.` });
+            return;
+        }
+
+        // Assign team (hidden players don't count since they aren't playing)
+        const visiblePlayerCount = currentPlayers.filter((p) => !p.hidden).length;
         let teamIndex = 0;
         if (teamAmount > 1) {
             if (server.getRoomStorage(roomId)?.matchmakingRoom) {
                 // For team duels: Fill team 0 up until two players, then team 1
-                teamIndex = Math.min(Math.floor(currentPlayers.length / 2), teamAmount - 1);
+                teamIndex = Math.min(Math.floor(visiblePlayerCount / 2), teamAmount - 1);
             } else {
                 // For regular rooms: round-robin assignment
-                teamIndex = currentPlayers.length % teamAmount;
+                teamIndex = visiblePlayerCount % teamAmount;
             }
         }
 
         const playerData = user
-            ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, flag: user.flag ?? null, supporterLevel: user.supporter_level, spectator: false }
-            : { clientId, username: guestNames.get(clientId) || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, flag: null, supporterLevel: 0, spectator: false };
-
-        // Restore the score if this user was previously in this room
-        const disconnectedScore = user ? server.getRoomStorage(roomId)?.disconnectedScores?.[userId] : null;
-        if (disconnectedScore != null) {
-            playerData.score = disconnectedScore;
-            server.updateRoomStorage(roomId, "disconnectedScores", "object-remove-key", userId);
-        }
+            ? { clientId, username: user.user_name, elo: user.elo, score: 0, teamIndex, userId, badge: user.badge, pin: user.pin, flag: user.flag ?? null, supporterLevel: user.supporter_level, spectator: false, disconnected: false, hidden: false }
+            : { clientId, username: guestNames.get(clientId) || "(No name)", elo: 0, score: 0, teamIndex, userId: null, badge: null, pin: 0, flag: null, supporterLevel: 0, spectator: false, disconnected: false, hidden: false };
 
         server.updateRoomStorage(roomId, "players", "array-add-unique", playerData);
         server.updateRoomStorage(roomId, "highestSupporterLevel", "set", determineHighestSupporterLevel(roomId));
@@ -232,11 +238,10 @@ function attachPlaySocketEvents(server) {
         if (key === "matchmakingRoom") return false;
         if (key === "tournamentRoom") return false;
         if (key === "tournamentId") return false;
-        if (key === "duelProcessed") return false;
+        if (key === "divisionDuelProcessed") return false;
 
         // Block server-side-only game control updates
         if (key === "players") return false;
-        if (key === "disconnectedScores") return false;
         if (key === "teamScores") return false;
         if (key === "countdownActive") return false;
         if (key === "currentRound") return false;
@@ -403,12 +408,17 @@ function attachPlaySocketEvents(server) {
             if (server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) return "Cannot kick player from matchmaking or tournament rooms";
             if (clientId !== server.rooms[roomId]?.host) return "Must be room host";
             if (!server.rooms[roomId].participants.includes(data)) return "Player not in same room";
+            const userId = authedMultiplayerClients.get(data);
             server.kick(data, "Removed by host");
+
+            // Remove player entry to keep client from rejoining
+            const kickedPlayer = server.getRoomStorage(roomId).players.find((p) => userId != null && p.userId === userId);
+            if (kickedPlayer) server.updateRoomStorage(roomId, "players", "array-remove-matching", kickedPlayer);
         }
     });
 
     server.onEvent("roomDestroyed", (roomId) => {
-        roomTimer.stop(roomId);
+        roomTimer.stopAll(roomId);
         cancelAllRoomTimeouts(roomId);
         deleteMatchmakingRoom(roomId);
         deleteRoomMoveTokens(roomId);
@@ -418,7 +428,7 @@ function attachPlaySocketEvents(server) {
         const players = server.getRoomStorage(roomId)?.players;
         let highestSupporterLevel = 0;
 
-        players?.forEach((e) => {
+        players?.filter((e) => !e.disconnected).forEach((e) => {
             const supporterLevel = e.supporterLevel;
             if (supporterLevel > highestSupporterLevel) highestSupporterLevel = supporterLevel;
         });
@@ -436,7 +446,7 @@ export function rematch(roomId) {
         // Reset scores
         const players = playSocketServer.getRoomStorage(roomId)?.players;
         if (players && players.length) {
-            const resetPlayers = players.map(p => ({ ...p, score: 0 }));
+            const resetPlayers = players.map(p => ({ ...p, score: 0, hidden: p.disconnected })); // Players still disconnected from the last match become hidden
             playSocketServer.updateRoomStorage(roomId, "players", "set", resetPlayers);
         }
 
@@ -465,7 +475,7 @@ function goToNextRound(roomId) {
         // Persist the round for division rooms
         if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && playSocketServer.getRoomStorage(roomId)?.currentRound > 0) {
             const guesses = (playSocketServer.getRoomStorage(roomId)?.guesses || []).map((g) => {
-                const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.clientId === g.clientId);
+                const player = playSocketServer.getRoomStorage(roomId)?.players?.find((p) => p.userId === g.userId);
                 return { userId: player?.userId ?? null, username: g.username, lat: g.lat, lon: g.lon, totalPoints: player?.score || 0 };
             });
             const roundData = {
@@ -487,27 +497,13 @@ function goToNextRound(roomId) {
             playSocketServer.updateRoomStorage(roomId, "teamScores", "set", resetTeamScores);
         }
 
-        // Check if the game ended
+        // If game has ended...
         if (playSocketServer.getRoomStorage(roomId)?.gameEnded) {
-            // If this is a division room that hasn't been processed yet, process the result
-            if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && !playSocketServer.getRoomStorage(roomId)?.duelProcessed) {
-                const players = playSocketServer.getRoomStorage(roomId)?.players;
-                const sortedPlayers = players?.sort((a, b) => b.score - a.score);
-                const winner = sortedPlayers?.[0];
-                const loser = sortedPlayers?.[1];
-                const isDraw = winner?.score == loser?.score;
-
-                if (winner && loser) {
-                    playSocketServer.updateRoomStorage(roomId, "duelProcessed", "set", true);
-                    saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId)?.duelUuid, winner.userId, loser.userId, isDraw);
-                }
-            }
+            // Division duel evaluation
+            if (playSocketServer.getRoomStorage(roomId)?.divisionRoom && !playSocketServer.getRoomStorage(roomId)?.divisionDuelProcessed) processDivisionDuelResult(roomId);
 
             // Tournament match evaluation
-            if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) processTournamentMatchResults(roomId, playSocketServer.getRoomStorage(roomId)?.tournamentId);
-
-            // Reset persisted disconnected player's scores
-            if (Object.keys(playSocketServer.getRoomStorage(roomId)?.disconnectedScores || {}).length) playSocketServer.updateRoomStorage(roomId, "disconnectedScores", "set", {});
+            if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) processTournamentMatchResult(roomId, playSocketServer.getRoomStorage(roomId)?.tournamentId);
 
         } else {
             // If the game has not ended, continue with next round
@@ -519,6 +515,9 @@ function goToNextRound(roomId) {
         console.error("Error going to the next round:", error);
     }
 }
+
+// True if that user is in the players array of this room (which includes disconnected players)
+export const isReturningPlayer = (roomId, userId) => userId != null && playSocketServer.getRoomStorage(roomId).players.some((p) => p.userId === userId);
 
 function endRoundIfAllPlayersGuessed(roomId) {
     if (playSocketServer.rooms[roomId]?.participants?.length < 1) return; // Room is empty
@@ -533,10 +532,10 @@ function endRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "timerStart", "set", null);
         playSocketServer.updateRoomStorage(roomId, "timeReducedOverlay", "set", false);
 
-        // If any players have no guess submitted, add 0, 0 as the guess
+        // If any connected players have no guess submitted, add 0, 0 as the guess
         const players = playSocketServer.getRoomStorage(roomId)?.players;
         const guessArray = playSocketServer.getRoomStorage(roomId)?.guesses;
-        players?.forEach((p) => {
+        players?.filter((p) => !p.disconnected).forEach((p) => {
             const correspondingGuess = guessArray?.find((g) => (g.clientId === p.clientId));
             if (!correspondingGuess) guessArray.push({ clientId: p.clientId, userId: p.userId, lat: 0, lon: 0, username: p.username, pin: p.pin, teamIndex: p.teamIndex, scoreAdded: false });
         });
@@ -669,7 +668,7 @@ export function validateTeamDuelRoom(roomId) {
     return true;
 }
 
-// Locking makes the game attributable to matchmaking (the only way in now is the server moving a matched player in)
+// Locking makes the game attributable to matchmaking (the only way in now is the server moving a matched player in + rejoins)
 export function lockRoomForMatchmaking(roomId, divisionRoom = false) {
     if (divisionRoom) playSocketServer.updateRoomStorage(roomId, "divisionRoom", "set", true);
     playSocketServer.updateRoomStorage(roomId, "locked", "set", true);
@@ -687,7 +686,6 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     if (requestorClientId != null) storage.tournamentRoom = false; // Server-created rooms pass null
     if (requestorClientId != null) storage.tournamentId = null;
     storage.players = [];
-    storage.disconnectedScores = {};
     storage.currentRound = 0;
     storage.location = null;
     storage.guesses = []; // Guesses from players (with location data)
@@ -703,7 +701,7 @@ export function reviewAndConstructInitialRoomStorage(requestorClientId, storage)
     storage.matchIndex = 0;
     storage.countdownActive = false;
     storage.timerStart = false;
-    storage.duelProcessed = false;
+    storage.divisionDuelProcessed = false;
     storage.mapBounds = null;
     storage.locked = false;
     storage.divisionRoom = false;

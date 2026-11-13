@@ -1,8 +1,29 @@
 import { getDB } from "./dbConnection.js";
 import { updateProfileData } from "./dbWriteHelpers.js";
 import { sendEventToClient } from "./serverSentEvents.js";
+import { playSocketServer } from "./playSocketEvents.js";
 
-// Calculation function
+// Process the result once a division duel game ended
+export function processDivisionDuelMatchResults(roomId) {
+    playSocketServer.updateRoomStorage(roomId, "divisionDuelProcessed", "set", true);
+
+    const sortedPlayers = playSocketServer.getRoomStorage(roomId).players.sort((a, b) => b.score - a.score || a.disconnected - b.disconnected); // Ties go to connected players
+    const winner = sortedPlayers[0];
+    const loser = sortedPlayers[1];
+    const isDraw = winner?.score == loser?.score && winner?.disconnected == loser?.disconnected;
+    if (winner && loser) saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId).duelUuid, winner.userId, loser.userId, isDraw);
+}
+
+// Process the result once a division duel player didn't return within 30s
+export function processDivisionDuelAbandon(roomId, disconnectedUserId) {
+    playSocketServer.updateRoomStorage(roomId, "divisionDuelProcessed", "set", true);
+
+    // The opponent wins (even if they are also disconnected since whoever disconnects first loses)
+    const winner = playSocketServer.getRoomStorage(roomId).players.find((p) => p.userId !== disconnectedUserId);
+    if (winner) saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId).duelUuid, winner.userId, disconnectedUserId); // Missing if a player left before their user data was fetched (nothing was persisted then)
+}
+
+// Elo util
 const calculateEloChange = (winnerElo, loserElo) => {
     const K = 32;
     const expectedScore = 1 / (1 + Math.pow(10, (loserElo - winnerElo) / 600)); // Standard elo uses 400 – we use 600 to make the fall-off a bit longer
@@ -19,7 +40,7 @@ function randomTokenGain() {
 }
 
 // Save division duel result with winner/loser IDs
-export default async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
+async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
     winnerId = Number(winnerId);
     loserId = Number(loserId);
 

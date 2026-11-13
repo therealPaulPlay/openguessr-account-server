@@ -319,31 +319,33 @@ async function checkAndStartTournaments() {
 }
 
 // Check if tournaments should be started every 30 seconds
-setInterval(checkAndStartTournaments, 30000);
+setInterval(checkAndStartTournaments, 30_000);
 
 // Process results after each tournament match
-export async function processTournamentMatchResults(roomId, tournamentId) {
+export async function processTournamentMatchResult(roomId, tournamentId) {
     try {
         if (tournamentId == null) throw new Error("Tournament ID is not set!");
         const playerArray = playSocketServer.getRoomStorage(roomId)?.players;
         const playerArrayWithoutSpectators = playerArray?.filter((p) => p.spectator == false);
 
         // If room is empty (e.g. all non-spectator participants left) close as a failsave
-        if (!playerArrayWithoutSpectators?.length) {
+        if (!playerArrayWithoutSpectators?.some((p) => !p.disconnected)) {
             console.log(`Tournament ${tournamentId}: No active participants remaining (playerArray: ${JSON.stringify(playerArray)}, playerArrayWithoutSpectators: ${JSON.stringify(playerArrayWithoutSpectators)}), ending tournament!`);
             addChat(roomId, { username: "Server", clientId: null, text: "No active tournament participants – room closing in 1 minute." });
             endTournament(tournamentId, roomId);
             return;
         }
 
-        // Sort by score
-        const sortedPlayers = playerArrayWithoutSpectators.sort((a, b) => b.score - a.score);
+        // Sort by score (ties go to connected players)
+        const compareResults = (a, b) => b.score - a.score || a.disconnected - b.disconnected;
+        const sortedPlayers = playerArrayWithoutSpectators.sort(compareResults);
         const upperHalfCount = Math.ceil(sortedPlayers.length / 2);
-        const cutoffScore = sortedPlayers[upperHalfCount - 1].score;
+        const cutoffPlayer = sortedPlayers[upperHalfCount - 1];
 
-        // Split players based on scores, handling ties properly
-        const upperHalf = sortedPlayers.filter(player => player.score >= cutoffScore);
-        const lowerHalf = sortedPlayers.filter(player => player.score < cutoffScore);
+        // Split players based on scores, players tied with the cutoff ascend too (disconnected players don't)
+        const ascends = (player, index) => index < upperHalfCount || (!player.disconnected && compareResults(player, cutoffPlayer) === 0);
+        const upperHalf = sortedPlayers.filter(ascends);
+        const lowerHalf = sortedPlayers.filter((player, index) => !ascends(player, index));
 
         // Set players to spectator that were in the lower half
         const newPlayerArray = playerArray.map((i) => {

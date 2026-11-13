@@ -2,7 +2,7 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, lockRoomForMatchmaking, startRoom, checkIfTokenMatchesAndInRoom } from './playSocketEvents.js';
+import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, lockRoomForMatchmaking, startRoom, checkIfTokenMatchesAndInRoom, isReturningPlayer, reviewAndConstructInitialRoomStorage } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
 import { processEloRefunds } from './processDivisionResult.js';
@@ -135,17 +135,16 @@ setInterval(() => {
                 );
                 if (!opponentRoom) return;
 
-                // The older room becomes the target room
-                const [targetRoom, roomToEmpty] = opponentRoom.createdAt <= requestingRoom.createdAt ? [opponentRoom, requestingRoom] : [requestingRoom, opponentRoom];
+                // Server-created so the room persists while both players are away
+                const { id: duelRoomId } = playSocketServer.createRoom(reviewAndConstructInitialRoomStorage(null, playSocketServer.getRoomStorage(requestingRoom.code)));
+                lockRoomForMatchmaking(duelRoomId, true);
 
-                // Move everyone over (typically in a division duel only one player)
-                const participantsToMove = playSocketServer.rooms[roomToEmpty.code].participants;
-                participantsToMove.forEach((clientId) => {
-                    playSocketServer.move(clientId, targetRoom.code);
+                // Emptied rooms get destroyed and removed from matchmaking
+                [requestingRoom, opponentRoom].forEach((room) => {
+                    playSocketServer.rooms[room.code].participants.forEach((clientId) => playSocketServer.move(clientId, duelRoomId));
                 });
 
-                // Start the game and delete target room from matchmaking (delete is called inside startRoom)
-                startRoom(targetRoom.code);
+                startRoom(duelRoomId);
             });
     } catch (error) {
         console.error('Error during periodic division duel match check:', error);
@@ -230,7 +229,7 @@ matchmakingRouter.post('/prepare-move-team-duel-teammate', standardLimiter, asyn
         // Get the teammate
         const players = playSocketServer.getRoomStorage(currentCode).players;
         const thisPlayer = players.find((p) => p.clientId === clientId);
-        const teammate = players.find((p) => p.clientId !== clientId && p.teamIndex === thisPlayer.teamIndex);
+        const teammate = players.find((p) => p.clientId !== clientId && p.teamIndex === thisPlayer.teamIndex && !p.disconnected);
         if (!teammate) return res.status(400).json({ error: "Teammate has already left." });
 
         // Room code + team
@@ -404,22 +403,12 @@ matchmakingRouter.get('/matchmaking-rooms-player-amount', standardLimiter, cache
 });
 
 matchmakingRouter.post('/can-rejoin', standardLimiter, authenticateTokenWithId, async (req, res) => {
-    const { oldClientId, code } = req.body;
-    if (oldClientId == null || !code) return res.status(400).json({ error: "Old client ID and room code are required." });
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: "Room code is required." });
 
     try {
-        // Check if room exists
-        const room = playSocketServer.rooms[code];
-        if (!room) return res.json({ rejoinable: false });
-
-        // Check if room has more participants than just the old client
-        if (room.participants.length === 1 && room.participants.includes(oldClientId)) return res.json({ rejoinable: false });
-
-        // Check if room is open to joiners
-        const storage = playSocketServer.getRoomStorage(code);
-        if (storage.locked || (storage.tournamentRoom && storage.gameStarted)) return res.json({ rejoinable: false });
-
-        res.json({ rejoinable: true });
+        // Rejoinable if the room exists and the user is returning to it
+        res.json({ rejoinable: Boolean(playSocketServer.rooms[code]) && isReturningPlayer(code, Number(req.body.id)) });
 
     } catch (error) {
         console.error("Error checking if room is rejoinable:", error);

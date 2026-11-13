@@ -1,11 +1,16 @@
 const roomTimers = new Map();
 
+function getOrCreateTimers(roomId) {
+    if (!roomTimers.has(roomId)) roomTimers.set(roomId, new Map());
+    return roomTimers.get(roomId);
+}
+
 const roomTimer = {
-    set(roomId, ms, callback) {
-        this.stop(roomId);
-        roomTimers.set(roomId, {
+    set(roomId, ms, callback, timerId = null) {
+        this.stop(roomId, timerId);
+        getOrCreateTimers(roomId).set(timerId, {
             timeoutId: setTimeout(() => {
-                roomTimers.delete(roomId);
+                getOrCreateTimers(roomId).delete(timerId);
                 try {
                     callback();
                 } catch (error) {
@@ -16,21 +21,26 @@ const roomTimer = {
         });
     },
 
-    stop(roomId) {
-        const timeout = roomTimers.get(roomId);
+    stop(roomId, timerId = null) {
+        const timeout = getOrCreateTimers(roomId).get(timerId);
         if (timeout) {
             clearTimeout(timeout.timeoutId);
-            roomTimers.delete(roomId);
+            getOrCreateTimers(roomId).delete(timerId);
         }
     },
 
-    adjust(roomId, ms) {
-        const timeout = roomTimers.get(roomId);
-        if (timeout) this.set(roomId, ms, timeout.callback);
+    stopAll(roomId) {
+        getOrCreateTimers(roomId).forEach((timeout) => clearTimeout(timeout.timeoutId));
+        roomTimers.delete(roomId);
     },
 
-    isRunning(roomId) {
-        return roomTimers.has(roomId);
+    adjust(roomId, ms, timerId = null) {
+        const timeout = getOrCreateTimers(roomId).get(timerId);
+        if (timeout) this.set(roomId, ms, timeout.callback, timerId);
+    },
+
+    isRunning(roomId, timerId = null) {
+        return getOrCreateTimers(roomId).has(timerId);
     }
 };
 
