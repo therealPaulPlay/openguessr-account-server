@@ -14,13 +14,13 @@ export function processDivisionDuelMatchResults(roomId) {
     if (winner && loser) saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId).duelUuid, winner.userId, loser.userId, isDraw);
 }
 
-// Process the result once a division duel player didn't return within 30s
-export function processDivisionDuelAbandon(roomId, disconnectedUserId) {
+// Process the result once a division duel player left or didn't return within 30s
+export function processDivisionDuelAbandon(roomId, abandoningUserId) {
     playSocketServer.updateRoomStorage(roomId, "divisionDuelProcessed", "set", true);
 
     // The opponent wins (even if they are also disconnected since whoever disconnects first loses)
-    const winner = playSocketServer.getRoomStorage(roomId).players.find((p) => p.userId !== disconnectedUserId);
-    if (winner) saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId).duelUuid, winner.userId, disconnectedUserId); // Missing if a player left before their user data was fetched (nothing was persisted then)
+    const winner = playSocketServer.getRoomStorage(roomId).players.find((p) => p.userId !== abandoningUserId);
+    if (winner) saveDivisionDuelResult(playSocketServer.getRoomStorage(roomId).duelUuid, winner.userId, abandoningUserId, false, true); // Missing if a player left before their user data was fetched (nothing was persisted then)
 }
 
 // Elo util
@@ -40,7 +40,7 @@ function randomTokenGain() {
 }
 
 // Save division duel result with winner/loser IDs
-async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
+async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false, abandoned = false) {
     winnerId = Number(winnerId);
     loserId = Number(loserId);
 
@@ -87,8 +87,8 @@ async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
 
             await connection.commit();
 
-            // Send WebSocket notifications (no ELO changes)
-            const resultMessage = { type: 'duel-result', eloChanges: null, winnerId: null, tokenGain: null };
+            // Send SSE notifications (no ELO changes)
+            const resultMessage = { type: 'duel-result', duelUuid: uuid, eloChanges: null, winnerId: null, tokenGain: null };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
 
 
@@ -138,9 +138,9 @@ async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false) {
 
             await connection.commit();
 
-            // Send WebSocket notifications (brackets -> keys are the IDs)
+            // Send SSE notifications (brackets -> keys are the IDs)
             const eloChanges = { [winnerId]: eloChange, [loserId]: -eloChange };
-            const resultMessage = { type: 'duel-result', eloChanges, winnerId, tokenGain };
+            const resultMessage = { type: 'duel-result', duelUuid: uuid, abandoned, eloChanges, winnerId, tokenGain };
             [winnerId, loserId].forEach(playerId => sendEventToClient(playerId, resultMessage));
         }
 
@@ -215,7 +215,7 @@ export async function processEloRefunds(bannedPlayerId) {
 
         await connection.commit();
 
-        // Send WebSocket notifications
+        // Send SSE notifications
         usersWithEloRefunds.forEach((value, userId) => {
             sendEventToClient(userId, { type: "elo-refunded", amount: value });
         });

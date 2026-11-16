@@ -2,10 +2,10 @@ import express from 'express';
 import { standardLimiter } from "./rateLimiters.js";
 import { authenticateTokenWithId } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, lockRoomForMatchmaking, startRoom, checkIfTokenMatchesAndInRoom, isReturningPlayer, reviewAndConstructInitialRoomStorage } from './playSocketEvents.js';
+import { kickAllClientsOfUser, checkIfUserIdIsAssignedClientId, playSocketServer, validateDivisionDuelRoom, validateTeamDuelRoom, lockRoomForMatchmaking, startRoom, checkIfTokenMatchesAndInRoom, reviewAndConstructInitialRoomStorage } from './playSocketEvents.js';
 import { reportWebhookSecret } from './config.js';
 import crypto from 'crypto';
-import { processEloRefunds } from './processDivisionResult.js';
+import { processEloRefunds, processDivisionDuelAbandon } from './processDivisionResult.js';
 import { cacheResponse } from './responseCache.js';
 
 const matchmakingRouter = express.Router();
@@ -407,12 +407,28 @@ matchmakingRouter.post('/can-rejoin', standardLimiter, authenticateTokenWithId, 
     if (!code) return res.status(400).json({ error: "Room code is required." });
 
     try {
-        // Rejoinable if the room exists and the user is returning to it
-        res.json({ rejoinable: Boolean(playSocketServer.rooms[code]) && isReturningPlayer(code, Number(req.body.id)) });
+        // Rejoinable if the room exists, isn't in matchmaking queue, and the player is returning to it
+        res.json({ rejoinable: Boolean(playSocketServer.rooms[code]) && playSocketServer.getRoomStorage(code).players.some((p) => p.userId === Number(req.body.id)) && (!playSocketServer.getRoomStorage(code).matchmakingRoom || playSocketServer.getRoomStorage(code).gameStarted) });
 
     } catch (error) {
         console.error("Error checking if room is rejoinable:", error);
         return res.status(500).json({ error: "Failed to check if room can be rejoined." });
+    }
+});
+
+matchmakingRouter.post('/abandon-division-duel', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: "Room code is required." });
+
+    try {
+        if (!playSocketServer.rooms[code] || !playSocketServer.getRoomStorage(code).divisionRoom || playSocketServer.getRoomStorage(code).divisionDuelProcessed) return res.status(400).json({ error: "Not an ongoing division duel." });
+        if (!playSocketServer.getRoomStorage(code).players.some((p) => p.userId === Number(req.body.id))) return res.status(403).json({ error: "Not a player in this duel." });
+        processDivisionDuelAbandon(code, Number(req.body.id));
+        res.sendStatus(200);
+
+    } catch (error) {
+        console.error("Error abandoning division duel:", error);
+        return res.status(500).json({ error: "Failed to abandon division duel." });
     }
 });
 

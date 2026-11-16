@@ -154,7 +154,7 @@ function attachPlaySocketEvents(server) {
         const userId = authedMultiplayerClients.get(clientId);
 
         // Returning players can always rejoin
-        if (!isReturningPlayer(roomId, userId)) {
+        if (!(userId != null && server.getRoomStorage(roomId).players.some((p) => p.userId === userId))) {
             if ((server.getRoomStorage(roomId)?.divisionRoom || server.getRoomStorage(roomId)?.tournamentRoom) && userId == null) return "You need to be authenticated to participate in this game";
             if ((server.getRoomStorage(roomId)?.matchmakingRoom || server.getRoomStorage(roomId)?.tournamentRoom) && server.getRoomStorage(roomId)?.gameStarted) return "This game has already started and prohibits joining late";
             if (server.getRoomStorage(roomId)?.locked) return "This room is locked";
@@ -487,6 +487,9 @@ function goToNextRound(roomId) {
         }
 
         playSocketServer.updateRoomStorage(roomId, "guesses", "set", []); // Reset guesses
+
+        // Check if the game is over (before showing the overlay, so the client displays the winner instead of the round results)
+        if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
         playSocketServer.updateRoomStorage(roomId, "overlay", "set", true);
 
         // Reset every team's roundBest for the new round
@@ -516,9 +519,6 @@ function goToNextRound(roomId) {
     }
 }
 
-// True if that user is in the players array of this room (which includes disconnected players)
-export const isReturningPlayer = (roomId, userId) => userId != null && playSocketServer.getRoomStorage(roomId).players.some((p) => p.userId === userId);
-
 function endRoundIfAllPlayersGuessed(roomId) {
     if (playSocketServer.rooms[roomId]?.participants?.length < 1) return; // Room is empty
     if (playSocketServer.rooms[roomId]?.participants?.every((clientId) => playSocketServer.getRoomStorage(roomId)?.confirmedGuessClients?.includes(clientId))) {
@@ -544,8 +544,6 @@ function endRound(roomId) {
         playSocketServer.updateRoomStorage(roomId, "showResult", "set", true);
         playSocketServer.updateRoomStorage(roomId, "confirmedGuessClients", "set", []);
 
-        // Check if the game is over (Note that clients will send in addToScore requests AFTER this)
-        if (playSocketServer.getRoomStorage(roomId)?.roundAmount === playSocketServer.getRoomStorage(roomId)?.currentRound) playSocketServer.updateRoomStorage(roomId, "gameEnded", "set", true);
         if (playSocketServer.getRoomStorage(roomId)?.tournamentRoom) setRoomTimeout(roomId, () => {
             if (playSocketServer.getRoomStorage(roomId)?.showResult) {
                 playSocketServer.updateRoomStorage(roomId, "showResult", "set", false);
