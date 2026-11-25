@@ -3,7 +3,6 @@ const shopRouter = express.Router();
 import { standardLimiter } from "./rateLimiters.js";
 import { getDB } from "./dbConnection.js";
 import cron from 'node-cron';
-import { updateProfileData } from './dbWriteHelpers.js';
 import { authenticateTokenWithId } from './authUtils.js';
 
 // Pins are referenced by their id with the first digit being the rarity – e.g. 100 is the first common pin, 202 is the third rare pin
@@ -222,34 +221,45 @@ shopRouter.post('/claim-free-tokens', standardLimiter, authenticateTokenWithId, 
 
     if (!userId) return res.status(400).json({ error: 'User ID is required.' });
 
+    let connection;
     try {
-        const db = getDB();
+        connection = await getDB().promise().getConnection();
 
-        // Check if user has already claimed free tokens today
-        const [profileRows] = await db.promise().execute(
-            'SELECT u.id, p.free_tokens_claimed FROM users u LEFT JOIN profile_data p ON u.id = p.user_id WHERE u.id = ?',
+        const [userRows] = await connection.execute('SELECT id FROM users WHERE id = ?', [userId]);
+        if (userRows.length === 0) return res.status(404).json({ error: 'User not found.' });
+
+        await connection.beginTransaction();
+
+        await connection.execute('INSERT INTO profile_data (user_id) VALUES (?) ON DUPLICATE KEY UPDATE user_id = user_id', [userId]);
+
+        // Set free_tokens_claimed to 1
+        const [claimResult] = await connection.execute(
+            'UPDATE profile_data SET free_tokens_claimed = 1 WHERE user_id = ? AND (free_tokens_claimed IS NULL OR free_tokens_claimed <> 1)',
             [userId]
         );
-        if (profileRows.length === 0) return res.status(404).json({ error: 'User not found.' });
 
-        const alreadyClaimed = profileRows[0]?.free_tokens_claimed === 1;
-        if (alreadyClaimed) return res.status(400).json({ error: 'Free tokens already claimed today.' });
+        // Check if user has already claimed free tokens today
+        if (claimResult.affectedRows !== 1) {
+            await connection.rollback().catch(() => {});
+            return res.status(400).json({ error: 'Free tokens already claimed today.' });
+        }
 
         // Add tokens to user
-        await db.promise().execute(
+        await connection.execute(
             'UPDATE users SET tokens = COALESCE(tokens, 0) + 20 WHERE id = ?',
             [userId]
         );
 
-        // Set free_tokens_claimed to 1
-        const result = await updateProfileData(userId, 'free_tokens_claimed', false, 1);
-        if (!result.success) return res.status(500).json({ error: 'Failed to update claim status.' });
+        await connection.commit();
 
         res.json({ message: 'Free tokens claimed successfully.', count: 20 });
 
     } catch (error) {
+        if (connection) await connection.rollback().catch(() => {});
         console.error('Error claiming free tokens:', error);
         res.status(500).json({ error: 'An error occurred while claiming free tokens.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 

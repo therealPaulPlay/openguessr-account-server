@@ -474,7 +474,7 @@ async function addTournamentMatchResults(tournamentId, matchIndex, matchData) {
         broadcastEvent({ type: "tournament-updated" });
 
     } catch (error) {
-        if (connection) await connection.rollback();
+        if (connection) await connection.rollback().catch(() => {});
         console.error('Error adding tournament match result:', error);
         throw error;
     } finally {

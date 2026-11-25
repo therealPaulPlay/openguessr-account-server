@@ -145,7 +145,7 @@ async function saveDivisionDuelResult(uuid, winnerId, loserId, draw = false, aba
         }
 
     } catch (error) {
-        if (connection) await connection.rollback();
+        if (connection) await connection.rollback().catch(() => {});
         console.error('Error saving duel result:', error);
     } finally {
         if (connection) connection.release();
@@ -224,7 +224,7 @@ export async function processEloRefunds(bannedPlayerId) {
         if (deductedElo > 0) sendEventToClient(bannedPlayerId, { type: "elo-deducted", amount: deductedElo });
 
     } catch (error) {
-        if (connection) await connection.rollback();
+        if (connection) await connection.rollback().catch(() => {});
         console.error("Error processing elo refunds:", error);
     } finally {
         if (connection) connection.release();

@@ -44,6 +44,7 @@ export async function initPlaySocket(httpServer) {
     playSocketServer = new PlaySocketServer({
         server: httpServer,
         path: '/socket',
+        maxPayload: 256 * 1024,
         verifyClient: (info, callback) => {
             const ip = getClientIp(info.req);
             if (isWsUpgradeRateLimited(ip)) return callback(false, 429, 'Too Many Requests');
@@ -260,6 +261,7 @@ function attachPlaySocketEvents(server) {
         // Restrict updates
         if (key === "chats") {
             if (type !== "array-add") return "Invalid chat update type";
+            if (typeof value?.text !== "string" || value.text.length > 500) return "Chat message too long";
             if (value?.username !== storage.players?.find((e) => e.clientId === clientId)?.username) return "Chat username mismatch";
             if (value?.clientId !== clientId) return "Invalid chat client ID";
             if (value?.userId != null && value?.userId !== storage.players?.find((e) => e.clientId === clientId)?.userId) return "Chat user ID mismatch";

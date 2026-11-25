@@ -86,7 +86,7 @@ headlessChatRouter.post('/conversation-with-user', standardLimiter, authenticate
             await conn.commit();
 
         } catch (error) {
-            await conn.rollback();
+            await conn.rollback().catch(() => {});
             throw error;
         } finally {
             conn.release();
@@ -185,7 +185,7 @@ headlessChatServer.onCreateConversation(async (record, creatorParticipantId, con
         if (result.affectedRows === 0) throw new Error("Per-participant conversation limit exceeded");
         await conn.commit();
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -241,7 +241,7 @@ headlessChatServer.onDeleteConversationParticipantAndParticipantActivity(async (
         );
         await conn.commit();
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -319,7 +319,7 @@ headlessChatServer.onDeleteAllConversationParticipantsAndParticipantActivitiesFo
         await conn.commit();
         return { deletedConversations, remainingConversations };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -350,7 +350,7 @@ headlessChatServer.onDeleteConversationWithMessagesReactionsInvitesAndActivities
         await conn.commit();
         return { deletedInvites };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -406,7 +406,7 @@ headlessChatServer.onDeleteConversationsWithMessagesReactionsInvitesAndActivitie
         await conn.commit();
         return { deletedConversations };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -442,7 +442,7 @@ headlessChatServer.onCreateMessage(async (message) => {
         await conn.execute(`UPDATE hc_conversations SET last_activity_at = GREATEST(last_activity_at, ?) WHERE conversation_id = ?`, [message.createdAt, message.conversationId]);
         await conn.commit();
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -507,7 +507,7 @@ headlessChatServer.onCreateMessagesSystemRemoved(async (messages) => {
         await conn.commit();
         return { oldestMessagesByConversationId, updatedParticipantActivities };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -639,7 +639,7 @@ headlessChatServer.onDeleteMessagesBefore(async (thresholdDate) => {
         await conn.commit();
         return { affectedConversationIds };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();
@@ -767,7 +767,7 @@ headlessChatServer.onDeleteInvitesBefore(async (thresholdDate) => {
         await conn.commit();
         return { deletedInvites };
     } catch (error) {
-        await conn.rollback();
+        await conn.rollback().catch(() => {});
         throw error;
     } finally {
         conn.release();

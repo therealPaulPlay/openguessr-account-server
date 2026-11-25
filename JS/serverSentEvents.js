@@ -1,4 +1,6 @@
+import jwt from 'jsonwebtoken';
 import { headlessChatServer } from './headlessChatIntegration.js';
+import { jwtSecret, oldJwtSecret } from './config.js';
 
 // SSE clients store
 const clients = {};
@@ -24,7 +26,19 @@ export function initSSE(app) {
     // Middleware to handle SSE connections
     app.get('/events', (req, res) => {
         const userId = req.query.userId;
+        const token = req.query.bearer;
         if (!userId) return res.status(400).send('User ID is required');
+
+        // TODO 30 days after November 26th, remove support for old secret
+        try {
+            let decoded;
+            try {
+                decoded = jwt.verify(token, jwtSecret);
+            } catch { decoded = jwt.verify(token, oldJwtSecret); }
+            if (String(decoded.userId) !== String(userId)) throw new Error("Token user ID mismatch");
+        } catch {
+            return res.status(403).send('Invalid authentication token');
+        }
 
         // Set headers for SSE
         res.setHeader('Content-Type', 'text/event-stream');

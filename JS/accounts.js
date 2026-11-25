@@ -21,6 +21,7 @@ const validUsernameRegex = /^[\w!@#\$%\^&\*\(\)\-\+=\[\]\{\};:',<>\.\?\/\|~`\s\u
 
 // Fetch User Details (bearer protected, this is for the user itself, not for others - use profile for others) ------------------------------------------------------------------------------
 accountRouter.get('/user/:id', standardLimiter, authenticateTokenWithId, async (req, res) => {
+    if (req.query.id != null || req.body?.id != null) return res.status(400).json({ error: 'User ID should be passed in the path only.' });
     const db = getDB();
     try {
         const userId = req.params.id || 0;
@@ -291,7 +292,7 @@ accountRouter.post('/cg-authenticate', loginLimiter, async (req, res) => {
         try {
             userId = await getOrCreatePortalAccount(connection, userIp, username, crazyGamesUserId, "crazy_games_id", "CG");
         } catch (txError) {
-            await connection.rollback();
+            await connection.rollback().catch(() => {});
             throw txError;
         }
 
@@ -354,7 +355,7 @@ accountRouter.post('/y8-authenticate', loginLimiter, async (req, res) => {
         try {
             userId = await getOrCreatePortalAccount(connection, userIp, username, y8GamesUserId, "y8_games_id", "Y8");
         } catch (txError) {
-            await connection.rollback();
+            await connection.rollback().catch(() => {});
             throw txError;
         }
 
@@ -408,7 +409,7 @@ accountRouter.post('/pg-authenticate', loginLimiter, async (req, res) => {
         try {
             userId = await getOrCreatePortalAccount(connection, userIp, playgamaData.name, playgamaUserId, "playgama_id", "PG"); // The name is client-provided
         } catch (txError) {
-            await connection.rollback();
+            await connection.rollback().catch(() => {});
             throw txError;
         }
 
@@ -613,7 +614,7 @@ accountRouter.post('/google-authenticate', loginLimiter, async (req, res) => {
         return res.json({ token: bearerToken, id: insertResult.insertId });
 
     } catch (error) {
-        if (connection) await connection.rollback();
+        if (connection) await connection.rollback().catch(() => {});
         console.error('Error during Google authentication:', error);
         return res.status(500).json({ error: 'An unexpected error occurred during Google authentication.' });
     } finally {
@@ -732,7 +733,7 @@ accountRouter.post('/apple-authenticate', loginLimiter, async (req, res) => {
         return res.json({ token: bearerToken, id: insertResult.insertId });
 
     } catch (error) {
-        if (connection) await connection.rollback();
+        if (connection) await connection.rollback().catch(() => {});
         console.error('Error during Apple authentication:', error);
         return res.status(500).json({ error: 'An unexpected error occurred during Apple authentication.' });
     } finally {
