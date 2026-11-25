@@ -230,35 +230,6 @@ function attachPlaySocketEvents(server) {
     server.onEvent("storageUpdateRequested", ({ clientId, roomId, update, storage }) => {
         const { key, type, value, secondValue } = server.getUpdateDetails(update);
 
-        // Block room configuration updates
-        if (key === "roundAmount" || key === "style" || key === "roundLength" || key === "restriction" || key === "teamAmount") return false;
-        if (key === "map") return false;
-        if (key === "duelUuid") return false;
-        if (key === "divisionRoom") return false;
-        if (key === "matchmakingRoom") return false;
-        if (key === "tournamentRoom") return false;
-        if (key === "tournamentId") return false;
-        if (key === "divisionDuelProcessed") return false;
-
-        // Block server-side-only game control updates
-        if (key === "players") return false;
-        if (key === "teamScores") return false;
-        if (key === "countdownActive") return false;
-        if (key === "currentRound") return false;
-        if (key === "firstRoundPlayed") return false;
-        if (key === "gameStarted") return false;
-        if (key === "gameEnded") return false;
-        if (key === "matchIndex") return false;
-        if (key === "timeReducedOverlay") return false;
-        if (key === "highestSupporterLevel") return false;
-        if (key === "timerStart") return false;
-        if (key === "overlay") return false;
-        if (key === "location") return false;
-        if (key === "mapBounds") return false;
-        if (key === "locked") return false;
-        if (key === "teamMoveClients") return false;
-
-        // Restrict updates
         if (key === "chats") {
             if (type !== "array-add") return "Invalid chat update type";
             if (typeof value?.text !== "string" || value.text.length > 500) return "Chat message too long";
@@ -266,9 +237,7 @@ function attachPlaySocketEvents(server) {
             if (value?.clientId !== clientId) return "Invalid chat client ID";
             if (value?.userId != null && value?.userId !== storage.players?.find((e) => e.clientId === clientId)?.userId) return "Chat user ID mismatch";
             if (value?.teamIndex != null && value?.teamIndex !== storage.players?.find((e) => e.clientId === clientId)?.teamIndex) return "Chat teamindex mismatch";
-        }
-
-        if (key === "guesses") {
+        } else if (key === "guesses") {
             const player = storage.players?.find((e) => e.clientId === clientId);
             const existingGuess = storage.guesses?.find((e) => e.clientId === clientId);
             const guess = type === "array-update-matching" ? secondValue : value;
@@ -288,19 +257,17 @@ function attachPlaySocketEvents(server) {
             if (guess?.teamIndex !== player.teamIndex) return "Guess team mismatch";
             if (guess?.scoreAdded !== false) return "Invalid guess scoreAdded value";
             if (!Number.isFinite(guess?.lat) || !Number.isFinite(guess?.lon)) return "Invalid guess coordinates";
-        }
-
-        if (key === "confirmedGuessClients") {
+        } else if (key === "confirmedGuessClients") {
             if (type !== "array-add-unique" || value !== clientId) return "Can only confirm own guess";
             if (!storage.timerStart) return "Round not active"; // Ignore late-arriving confirmations (they'd count for the next round)
             if (!storage.guesses?.some((g) => g.clientId === clientId)) return "No guess placed";
             if (storage.confirmedGuessClients?.includes(clientId)) return "Already confirmed";
-        }
+        } else if (key === "showResult") {
+            if (type !== "set" || value !== false) return false;
 
-        if (key === "showResult" && (type !== "set" || value !== false)) return false;
-
-        // React to update before it has happened & ensure showResult was previously true (and not already false)
-        if (key === "showResult" && value === false && storage.showResult === true) goToNextRound(roomId);
+            // React to update before it has happened & ensure showResult was previously true (and not already false)
+            if (storage.showResult === true) goToNextRound(roomId);
+        } else return false;
     });
 
     server.onEvent("storageUpdated", ({ roomId, clientId, update }) => {
