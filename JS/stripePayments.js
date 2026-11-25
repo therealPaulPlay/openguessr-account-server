@@ -9,8 +9,6 @@ import { cacheResponse } from "./responseCache.js";
 
 const stripeRouter = express.Router();
 
-const testKey = "rk_test_51Ple5q1DTHjmMID9EMOkN5YcL81awit40q34fdsEWcdzkjO5vIfY3l89KxzzHVtIxARucrnsvaH7gYhwFHIHlKk900nYpXCPI2"; // Not a prod key, just for testing!
-
 const stripe = new Stripe(stripeKey, { apiVersion: '2025-08-27.basil' });
 
 // Create stripe session (helper function)

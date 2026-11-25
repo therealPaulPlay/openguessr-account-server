@@ -62,6 +62,7 @@ export const emailConfig = {
 export const turnstileSecret = process.env.TURNSTILE_SECRET;
 
 export const stripeKey = process.env.STRIPE_KEY;
+export const stripeTestKey = process.env.STRIPE_TEST_KEY;
 export const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 export const reportSecret = process.env.REPORT_SECRET;
