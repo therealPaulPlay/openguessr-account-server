@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { standardLimiter, registerLimiter, loginLimiter, nameChangeLimiter, emailRequestLimiter } from "./rateLimiters.js";
 import { getEncodedPassword, isPasswordValid, authenticateTokenWithId, createNewJwtToken } from "./authUtils.js";
 import { getDB } from "./dbConnection.js";
-import { jwtResetSecret as RESET_KEY, googleOAuthClientId, googleOAuthClientSecret, appleConfig, y8GamesAppId } from "./config.js";
+import { jwtResetSecret, googleOAuthClientId, googleOAuthClientSecret, appleConfig, y8GamesAppId } from "./config.js";
 import mailTransporter from "./mailer.js";
 import validateCaptcha from './captchaMiddleware.js';
 import { emailConfig, corsOptions } from './config.js';
@@ -759,7 +759,7 @@ accountRouter.post('/request-deletion', emailRequestLimiter, authenticateTokenWi
         if (!user.email) return res.status(400).json({ error: 'This account has no email address.' });
 
         // Token used to verify authenticity for when the user clicks the link
-        const deletionToken = jwt.sign({ id: id, purpose: 'delete' }, RESET_KEY, { expiresIn: '30m' });
+        const deletionToken = jwt.sign({ id: id, purpose: 'delete' }, jwtResetSecret, { expiresIn: '30m' });
 
         // Send email with the deletion token
         const deletionUrl = `https://openguessr.com/signup?deletion-token=${deletionToken}`;
@@ -792,7 +792,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
 
     let id;
     try {
-        const decoded = jwt.verify(token, RESET_KEY);
+        const decoded = jwt.verify(token, jwtResetSecret);
         if (decoded.purpose !== 'delete') throw new Error('Not an account deletion token');
         id = decoded.id;
     } catch (error) {
@@ -853,7 +853,7 @@ accountRouter.delete('/delete', loginLimiter, async (req, res) => {
 
 // Password resets via email -----------------------------------------------------------------------------
 
-// request password reset email endpoint
+// Request password reset email endpoint
 accountRouter.post('/reset-password-request', emailRequestLimiter, async (req, res) => {
     const db = getDB();
     const { email } = req.body;
@@ -872,7 +872,7 @@ accountRouter.post('/reset-password-request', emailRequestLimiter, async (req, r
         if (!user) return res.status(404).json({ error: 'No account with that email found.' });
 
         // Create a password reset token
-        const resetToken = jwt.sign({ id: user.id, purpose: 'reset-password' }, RESET_KEY, { expiresIn: '1h' });
+        const resetToken = jwt.sign({ id: user.id, purpose: 'reset-password' }, jwtResetSecret, { expiresIn: '1h' });
 
         // Send email with the reset token
         const resetUrl = `https://openguessr.com/signup?reset-token=${resetToken}`;
@@ -896,7 +896,7 @@ If you have not requested a password reset, simply ignore this email.`
     }
 });
 
-// reset endpoint
+// Reset endpoint
 accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
     const db = getDB();
     const { token, newPassword } = req.body;
@@ -906,7 +906,7 @@ accountRouter.post('/reset-password', loginLimiter, async (req, res) => {
     // Verify the reset token + get user Id from the token so that the correct account's password can be changed
     let id;
     try {
-        const decoded = jwt.verify(token, RESET_KEY);
+        const decoded = jwt.verify(token, jwtResetSecret);
         if (decoded.purpose !== 'reset-password') throw new Error('Not a password reset token');
         id = decoded.id;
     } catch (error) {

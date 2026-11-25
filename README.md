@@ -1,16 +1,21 @@
 # OpenGuessr account server
 
-This is the new main OpenGuessr server. Uses Express.js.
+This is the new main OpenGuessr server, built using Express.js.
 
-## What is this server used for?
+## Responsibilities of this server
 - Accounts
 - Leaderboards
-- Multiplayer & Matchmaking
+- Location distribution
+- Multiplayer & matchmaking
 - Profiles
 - Payments
 - Messages
-- ...
+- & more
 
-## What database does this server use?
+## Required database
 
 The server works with MySQL 8.0.14+.
+
+## Configuration
+
+Please refer to `.env.example` and `config.js`.

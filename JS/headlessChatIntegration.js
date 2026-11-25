@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { censor } from 'fast-profanity-filter';
 import { Server } from 'headless-chat/server';
-import { jwtSecret } from './config.js';
+import { jwtSecret, oldJwtSecret } from './config.js';
 import { getDB } from './dbConnection.js';
 import { sendEventToClient } from './serverSentEvents.js';
 import { standardLimiter } from './rateLimiters.js';
@@ -124,7 +124,12 @@ headlessChatRouter.post('/conversation-with-user', standardLimiter, authenticate
 headlessChatServer.onParticipantAuth(async (participantId, authData) => {
     if (typeof authData !== 'string') return false;
     try {
-        const decoded = jwt.verify(authData, jwtSecret);
+        // TODO 30 days after November 26th, remove support for old secret
+        let decoded;
+        try {
+            decoded = jwt.verify(authData, jwtSecret);
+        } catch { decoded = jwt.verify(authData, oldJwtSecret); }
+        if (decoded?.userId == null) throw new Error("Token lacks user ID");
         return String(decoded?.userId) === String(participantId);
     } catch { return false; }
 });

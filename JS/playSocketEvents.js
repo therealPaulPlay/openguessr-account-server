@@ -5,7 +5,7 @@ import { getDB } from './dbConnection.js';
 import { cancelAllRoomTimeouts, roomTimer, setRoomTimeout } from './roomTimer.js';
 import { processDivisionDuelMatchResults as processDivisionDuelResult, processDivisionDuelAbandon } from './processDivisionResult.js';
 import { saveDuelRoundResults } from './dbWriteHelpers.js';
-import { jwtSecret as SECRET_KEY } from "./config.js";
+import { jwtSecret, oldJwtSecret } from "./config.js";
 import { getLocations } from './locations.js';
 import PlaySocketServer from 'playsocketjs/server';
 import { processTournamentMatchResult } from './tournaments.js';
@@ -66,13 +66,12 @@ function attachPlaySocketEvents(server) {
         // Authenticated users carry a bearer in the registration custom data
         if (data?.bearer) {
             try {
-                const decoded = await new Promise((resolve, reject) => {
-                    jwt.verify(data.bearer, SECRET_KEY, (err, decoded) => {
-                        if (err) reject(err);
-                        else resolve(decoded);
-                    });
-                });
-                if (!decoded?.userId) return "The authentication token lacks a user ID";
+                // TODO 30 days after November 26th, remove support for old secret
+                let decoded;
+                try {
+                    decoded = jwt.verify(data.bearer, jwtSecret);
+                } catch { decoded = jwt.verify(data.bearer, oldJwtSecret) };
+                if (decoded?.userId == null) return "The authentication token lacks a user ID";
                 userId = Number(decoded.userId);
 
                 // Fetch OpenReport status
